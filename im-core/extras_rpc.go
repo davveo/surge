@@ -19,16 +19,26 @@ func (s *server) RemoveFriend(ctx context.Context, req *imv1.RemoveFriendRequest
 	if err := s.store.RemoveFriend(ctx, req.GetUid(), req.GetPeerUid()); err != nil {
 		return nil, mapErr(err)
 	}
+	s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_remove", "")
 	return &imv1.RemoveFriendResponse{PeerUid: req.GetPeerUid()}, nil
 }
 
 func (s *server) RequestFriend(ctx context.Context, req *imv1.AddFriendRequest) (*imv1.FriendRequestState, error) {
+	already, _ := s.store.AreFriends(ctx, req.GetUid(), req.GetPeerUid())
 	st, err := s.store.RequestFriend(ctx, req.GetUid(), req.GetPeerUid())
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	_ = s.store.EnsureUser(ctx, req.GetUid())
 	_ = s.store.EnsureUser(ctx, req.GetPeerUid())
+	switch st {
+	case "pending":
+		s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_request", "")
+	case "friends":
+		if !already {
+			s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_accept", "")
+		}
+	}
 	return &imv1.FriendRequestState{FromUid: req.GetUid(), ToUid: req.GetPeerUid(), Status: st}, nil
 }
 
@@ -36,6 +46,7 @@ func (s *server) AcceptFriend(ctx context.Context, req *imv1.AddFriendRequest) (
 	if err := s.store.AcceptFriend(ctx, req.GetPeerUid(), req.GetUid()); err != nil {
 		return nil, mapErr(err)
 	}
+	s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_accept", "")
 	return &imv1.AddFriendResponse{PeerUid: req.GetPeerUid()}, nil
 }
 
@@ -43,6 +54,7 @@ func (s *server) DeclineFriend(ctx context.Context, req *imv1.AddFriendRequest) 
 	if err := s.store.DeclineFriend(ctx, req.GetPeerUid(), req.GetUid()); err != nil {
 		return nil, mapErr(err)
 	}
+	s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_decline", "")
 	return &imv1.FriendRequestState{FromUid: req.GetPeerUid(), ToUid: req.GetUid(), Status: "declined"}, nil
 }
 
@@ -108,8 +120,18 @@ func (s *server) LeaveGroup(ctx context.Context, req *imv1.LeaveGroupRequest) (*
 }
 
 func (s *server) DissolveGroup(ctx context.Context, req *imv1.LeaveGroupRequest) (*imv1.GroupResponse, error) {
+	g, err := s.store.GetGroup(ctx, req.GetUid(), req.GetCid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
 	if err := s.store.DissolveGroup(ctx, req.GetUid(), req.GetCid()); err != nil {
 		return nil, mapErr(err)
+	}
+	for _, m := range g.Members {
+		if m.UID == req.GetUid() {
+			continue
+		}
+		s.notifyRoster(ctx, m.UID, req.GetUid(), "group_dissolve", req.GetCid())
 	}
 	return &imv1.GroupResponse{Cid: req.GetCid()}, nil
 }

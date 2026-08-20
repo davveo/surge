@@ -41,6 +41,30 @@ func TestPayloadBlobCompat(t *testing.T) {
 	}
 }
 
+func TestNormalizeSendPayload(t *testing.T) {
+	text := &imv1.Payload{Text: "hello"}
+	if err := validateSend("u1", "c1", text); err != nil {
+		t.Fatal(err)
+	}
+	if text.Type != imv1.Payload_TEXT {
+		t.Fatalf("text type %v", text.Type)
+	}
+	img := &imv1.Payload{StickerId: "s1", Media: &imv1.Media{ObjectKey: "sticker/s1"}}
+	if err := validateSend("u1", "c1", img); err != nil {
+		t.Fatal(err)
+	}
+	if img.Type != imv1.Payload_IMAGE {
+		t.Fatalf("sticker type %v", img.Type)
+	}
+	file := &imv1.Payload{Media: &imv1.Media{ObjectKey: "u1/a.webm", ContentType: "audio/webm"}}
+	if err := validateSend("u1", "c1", file); err != nil {
+		t.Fatal(err)
+	}
+	if file.Type != imv1.Payload_FILE {
+		t.Fatalf("file type %v", file.Type)
+	}
+}
+
 func TestExtractMentions(t *testing.T) {
 	got := extractMentions("hi @u2 and @u3")
 	if len(got) != 2 || got[0] != "u2" {

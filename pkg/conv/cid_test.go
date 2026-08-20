@@ -37,6 +37,13 @@ func TestResolveCID(t *testing.T) {
 	if cid2 != cid || peer2 != "u1" {
 		t.Fatalf("cid=%s peer=%s", cid2, peer2)
 	}
+	cid3, peer3, err := ResolveCID("u2", "p2p:u1:u2", "u2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cid3 != "p2p:u1:u2" || peer3 != "u1" {
+		t.Fatalf("mismatch ignored cid=%s peer=%s", cid3, peer3)
+	}
 }
 
 func TestPeerUIDRejectsStranger(t *testing.T) {

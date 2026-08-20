@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -15,6 +16,8 @@ import (
 	"github.com/davveo/surge/pkg/conv"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
+
+const rosterCID = "sys:roster"
 
 type locker struct {
 	mu sync.Mutex
@@ -184,6 +187,9 @@ func (s *server) AddFriend(ctx context.Context, req *imv1.AddFriendRequest) (*im
 	}
 	_ = s.store.EnsureUser(ctx, req.GetUid())
 	_ = s.store.EnsureUser(ctx, req.GetPeerUid())
+	if !already {
+		s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_accept", "")
+	}
 	return &imv1.AddFriendResponse{PeerUid: req.GetPeerUid(), Already: already}, nil
 }
 
@@ -330,6 +336,12 @@ func (s *server) CreateGroup(ctx context.Context, req *imv1.CreateGroupRequest) 
 		return nil, mapErr(err)
 	}
 	s.notifyGroup(ctx, req.GetOwnerUid(), g.CID, req.GetOwnerUid()+" 创建了群聊「"+g.Name+"」")
+	for _, m := range g.Members {
+		if m.UID == req.GetOwnerUid() {
+			continue
+		}
+		s.notifyRoster(ctx, m.UID, req.GetOwnerUid(), "group_invite", g.CID)
+	}
 	return &imv1.CreateGroupResponse{Cid: g.CID, Name: g.Name}, nil
 }
 
@@ -344,6 +356,9 @@ func (s *server) InviteGroup(ctx context.Context, req *imv1.InviteGroupRequest) 
 	}
 	if added := memberDiff(before, g); len(added) > 0 {
 		s.notifyGroup(ctx, req.GetOperatorUid(), g.CID, req.GetOperatorUid()+" 邀请 "+strings.Join(added, "、")+" 加入群聊")
+		for _, uid := range added {
+			s.notifyRoster(ctx, uid, req.GetOperatorUid(), "group_invite", g.CID)
+		}
 	}
 	return protoGroup(g), nil
 }
@@ -361,6 +376,7 @@ func (s *server) KickGroup(ctx context.Context, req *imv1.KickGroupRequest) (*im
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	s.notifyRoster(ctx, req.GetMemberUid(), req.GetOperatorUid(), "group_kick", req.GetCid())
 	return protoGroup(g), nil
 }
 
@@ -374,6 +390,30 @@ func (s *server) notifyGroup(ctx context.Context, fromUID, cid, text string) {
 	if err != nil {
 		log.Printf("group notify %s: %v", cid, err)
 	}
+}
+
+func (s *server) notifyRoster(ctx context.Context, toUID, fromUID, kind, extra string) {
+	toUID = strings.TrimSpace(toUID)
+	fromUID = strings.TrimSpace(fromUID)
+	if toUID == "" || toUID == fromUID {
+		return
+	}
+	text := strings.TrimSpace(kind)
+	if extra = strings.TrimSpace(extra); extra != "" {
+		text = text + " " + extra
+	}
+	if text == "" {
+		return
+	}
+	s.publish(ctx, toUID, &imv1.GatewayPush{
+		Uid: toUID,
+		Push: &imv1.Push{
+			Cid:         rosterCID,
+			FromUid:     fromUID,
+			Payload:     &imv1.Payload{Type: imv1.Payload_SYSTEM, Text: text},
+			CreatedAtMs: time.Now().UnixMilli(),
+		},
+	})
 }
 
 func memberDiff(before, after *groupInfo) []string {

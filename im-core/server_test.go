@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/davveo/surge/pkg/route"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
 
@@ -494,5 +497,88 @@ func TestEmailLoginMuteAllEphemeralSearchTags(t *testing.T) {
 	hits, err = st.SearchMessages(ctx, p.Uid, "find-me", 10)
 	if err != nil || len(hits) == 0 {
 		t.Fatalf("search %+v %v", hits, err)
+	}
+}
+
+type stubRouter struct {
+	pubs []*imv1.GatewayPush
+}
+
+func (r *stubRouter) Lookup(ctx context.Context, uid string) (*route.Record, error) {
+	all, err := r.LookupAll(ctx, uid)
+	if err != nil || len(all) == 0 {
+		return nil, err
+	}
+	rec := all[0]
+	return &rec, nil
+}
+
+func (r *stubRouter) LookupAll(_ context.Context, uid string) ([]route.Record, error) {
+	return []route.Record{{GatewayID: "gw", ConnID: "c-" + uid}}, nil
+}
+
+func (r *stubRouter) Publish(_ context.Context, _ string, push *imv1.GatewayPush) error {
+	r.pubs = append(r.pubs, proto.Clone(push).(*imv1.GatewayPush))
+	return nil
+}
+
+func rosterHits(pubs []*imv1.GatewayPush, uid, kind string) int {
+	n := 0
+	for _, gp := range pubs {
+		p := gp.GetPush()
+		if p == nil || gp.GetUid() != uid || p.GetCid() != rosterCID {
+			continue
+		}
+		text := ""
+		if p.GetPayload() != nil {
+			text = p.GetPayload().GetText()
+		}
+		if text == kind || strings.HasPrefix(text, kind+" ") {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRosterNotifyOnFriendAndInvite(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	rt := &stubRouter{}
+	srv := newServer(st, rt)
+	ctx := context.Background()
+
+	if _, err := srv.RequestFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
+		t.Fatal(err)
+	}
+	if rosterHits(rt.pubs, "u2", "friend_request") != 1 {
+		t.Fatalf("want friend_request to u2, got %+v", rt.pubs)
+	}
+
+	if _, err := srv.AcceptFriend(ctx, &imv1.AddFriendRequest{Uid: "u2", PeerUid: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	if rosterHits(rt.pubs, "u1", "friend_accept") != 1 {
+		t.Fatalf("want friend_accept to u1, got %+v", rt.pubs)
+	}
+
+	if _, err := srv.AddFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u3"}); err != nil {
+		t.Fatal(err)
+	}
+	if rosterHits(rt.pubs, "u3", "friend_accept") != 1 {
+		t.Fatalf("want friend_accept to u3, got %+v", rt.pubs)
+	}
+
+	g, err := srv.CreateGroup(ctx, &imv1.CreateGroupRequest{OwnerUid: "u1", Name: "t", MemberUids: []string{"u2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rosterHits(rt.pubs, "u2", "group_invite") < 1 {
+		t.Fatalf("want group_invite to u2, got %+v", rt.pubs)
+	}
+
+	if _, err := srv.InviteGroup(ctx, &imv1.InviteGroupRequest{OperatorUid: "u1", Cid: g.Cid, MemberUids: []string{"u3"}}); err != nil {
+		t.Fatal(err)
+	}
+	if rosterHits(rt.pubs, "u3", "group_invite") != 1 {
+		t.Fatalf("want group_invite to u3, got %+v", rt.pubs)
 	}
 }

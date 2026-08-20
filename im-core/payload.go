@@ -23,6 +23,7 @@ func validateSend(fromUID, clientMsgID string, payload *imv1.Payload) error {
 	if payload == nil {
 		return fmt.Errorf("%w: payload required", errInvalid)
 	}
+	normalizeSendPayload(payload)
 	if utf8.RuneCountInString(payload.Text) > 4000 {
 		return fmt.Errorf("%w: text too long", errInvalid)
 	}
@@ -38,10 +39,37 @@ func validateSend(fromUID, clientMsgID string, payload *imv1.Payload) error {
 		if strings.Contains(payload.Media.ObjectKey, "..") {
 			return fmt.Errorf("%w: invalid object_key", errInvalid)
 		}
+	case imv1.Payload_RECALL:
+		return fmt.Errorf("%w: cannot send recall payload", errInvalid)
 	default:
+		if strings.TrimSpace(payload.Text) != "" {
+			payload.Type = imv1.Payload_TEXT
+			return nil
+		}
 		return fmt.Errorf("%w: unsupported payload type", errInvalid)
 	}
 	return nil
+}
+
+// normalizeSendPayload fills TYPE_UNSPECIFIED from body content. protojson with
+// DiscardUnknown drops unknown enum names (and the numeric string "1"), so a
+// text/image send can arrive with Type=0 even though the rest of the payload is intact.
+func normalizeSendPayload(p *imv1.Payload) {
+	if p == nil || p.Type != imv1.Payload_TYPE_UNSPECIFIED {
+		return
+	}
+	if p.Media != nil && strings.TrimSpace(p.Media.ObjectKey) != "" {
+		ct := strings.ToLower(p.Media.ContentType)
+		if p.StickerId != "" || strings.HasPrefix(ct, "image/") {
+			p.Type = imv1.Payload_IMAGE
+			return
+		}
+		p.Type = imv1.Payload_FILE
+		return
+	}
+	if strings.TrimSpace(p.Text) != "" {
+		p.Type = imv1.Payload_TEXT
+	}
 }
 
 func previewOf(p *imv1.Payload) string {

@@ -1,7 +1,11 @@
 package wsframe
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -17,10 +21,10 @@ func Decode(isBinary bool, data []byte) (*imv1.Envelope, error) {
 	if isBinary {
 		err = proto.Unmarshal(data, env)
 	} else {
-		err = jsonUnmarshal.Unmarshal(data, env)
+		err = unmarshalJSON(data, env)
 		if err != nil {
 			if fixed, ok := rewriteLoneJSONSurrogates(data); ok {
-				err = jsonUnmarshal.Unmarshal(fixed, env)
+				err = unmarshalJSON(fixed, env)
 			}
 		}
 	}
@@ -31,6 +35,184 @@ func Decode(isBinary bool, data []byte) (*imv1.Envelope, error) {
 		return nil, fmt.Errorf("wsframe: empty body")
 	}
 	return env, nil
+}
+
+func unmarshalJSON(data []byte, env *imv1.Envelope) error {
+	return jsonUnmarshal.Unmarshal(rewritePayloadTypeEnums(data), env)
+}
+
+// rewritePayloadTypeEnums turns JS payload.type into a protojson enum name
+// ("TEXT", "IMAGE", …). protojson.DiscardUnknown drops unknown names and the
+// numeric string "1", leaving Type as TYPE_UNSPECIFIED.
+func rewritePayloadTypeEnums(data []byte) []byte {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return data
+	}
+	sendRaw, ok := root["send"]
+	if !ok {
+		return data
+	}
+	newSend, changed := rewriteSendPayloadType(sendRaw)
+	if !changed {
+		return data
+	}
+	root["send"] = newSend
+	out, err := json.Marshal(root)
+	if err != nil {
+		return data
+	}
+	return out
+}
+
+func rewriteSendPayloadType(sendRaw json.RawMessage) (json.RawMessage, bool) {
+	var send map[string]json.RawMessage
+	if err := json.Unmarshal(sendRaw, &send); err != nil {
+		return sendRaw, false
+	}
+	payloadRaw, ok := send["payload"]
+	if !ok {
+		return sendRaw, false
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		return sendRaw, false
+	}
+	n := int32(0)
+	if typeRaw, ok := payload["type"]; ok {
+		n, _ = parsePayloadTypeJSON(typeRaw)
+	}
+	if n == 0 {
+		n = inferPayloadType(payload)
+	}
+	if n == 0 {
+		return sendRaw, false
+	}
+	name := payloadTypeJSONName(n)
+	if name == "" {
+		return sendRaw, false
+	}
+	newType, err := json.Marshal(name)
+	if err != nil {
+		return sendRaw, false
+	}
+	if typeRaw, ok := payload["type"]; ok && bytes.Equal(bytes.TrimSpace(typeRaw), newType) {
+		return sendRaw, false
+	}
+	payload["type"] = newType
+	newPayload, err := json.Marshal(payload)
+	if err != nil {
+		return sendRaw, false
+	}
+	send["payload"] = newPayload
+	out, err := json.Marshal(send)
+	if err != nil {
+		return sendRaw, false
+	}
+	return out, true
+}
+
+func inferPayloadType(payload map[string]json.RawMessage) int32 {
+	if sticker, ok := payload["stickerId"]; ok && len(bytes.TrimSpace(sticker)) > 2 {
+		return int32(imv1.Payload_IMAGE)
+	}
+	if mediaRaw, ok := payload["media"]; ok {
+		var media map[string]json.RawMessage
+		if err := json.Unmarshal(mediaRaw, &media); err == nil {
+			key := jsonString(media["objectKey"])
+			if key == "" {
+				key = jsonString(media["object_key"])
+			}
+			if key != "" {
+				ct := strings.ToLower(jsonString(media["contentType"]))
+				if ct == "" {
+					ct = strings.ToLower(jsonString(media["content_type"]))
+				}
+				if strings.HasPrefix(ct, "image/") {
+					return int32(imv1.Payload_IMAGE)
+				}
+				return int32(imv1.Payload_FILE)
+			}
+		}
+	}
+	if strings.TrimSpace(jsonString(payload["text"])) != "" {
+		return int32(imv1.Payload_TEXT)
+	}
+	return 0
+}
+
+func jsonString(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return ""
+}
+
+func payloadTypeJSONName(n int32) string {
+	switch imv1.Payload_Type(n) {
+	case imv1.Payload_TEXT:
+		return "TEXT"
+	case imv1.Payload_RECALL:
+		return "RECALL"
+	case imv1.Payload_SYSTEM:
+		return "SYSTEM"
+	case imv1.Payload_IMAGE:
+		return "IMAGE"
+	case imv1.Payload_FILE:
+		return "FILE"
+	default:
+		return ""
+	}
+}
+
+func parsePayloadTypeJSON(raw json.RawMessage) (int32, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return 0, false
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return 0, false
+		}
+		return parsePayloadTypeString(s)
+	}
+	var n float64
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, false
+	}
+	return int32(n), true
+}
+
+func parsePayloadTypeString(s string) (int32, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseInt(s, 10, 32); err == nil {
+		return int32(n), true
+	}
+	switch strings.ToUpper(s) {
+	case "TYPE_UNSPECIFIED", "UNSPECIFIED":
+		return int32(imv1.Payload_TYPE_UNSPECIFIED), true
+	case "TEXT":
+		return int32(imv1.Payload_TEXT), true
+	case "RECALL":
+		return int32(imv1.Payload_RECALL), true
+	case "SYSTEM":
+		return int32(imv1.Payload_SYSTEM), true
+	case "IMAGE", "STICKER", "EMOJI":
+		return int32(imv1.Payload_IMAGE), true
+	case "FILE", "AUDIO", "VOICE":
+		return int32(imv1.Payload_FILE), true
+	default:
+		return 0, false
+	}
 }
 
 // rewriteLoneJSONSurrogates replaces unpaired \uD800-\uDFFF JSON escapes with \ufffd.

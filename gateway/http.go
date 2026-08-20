@@ -26,6 +26,7 @@ type httpAPI struct {
 	rdb    *redis.Client
 	media  *mediaStore
 	limit  *memLimiter
+	qrMem  *qrMem
 }
 
 func (a *httpAPI) routes() http.Handler {

@@ -26,6 +26,9 @@ func TestJSONRoundTrip(t *testing.T) {
 	if got.GetSend().GetPayload().GetText() != "hi" {
 		t.Fatalf("payload %v", got.GetSend().GetPayload())
 	}
+	if got.GetSend().GetPayload().GetType() != imv1.Payload_TEXT {
+		t.Fatalf("type %v", got.GetSend().GetPayload().GetType())
+	}
 }
 
 func TestJSONLoneSurrogateBeforeMentionUids(t *testing.T) {
@@ -42,6 +45,9 @@ func TestJSONLoneSurrogateBeforeMentionUids(t *testing.T) {
 	if len(got.GetSend().GetPayload().GetMentionUids()) != 1 {
 		t.Fatalf("mentions %v", got.GetSend().GetPayload().GetMentionUids())
 	}
+	if got.GetSend().GetPayload().GetType() != imv1.Payload_TEXT {
+		t.Fatalf("type %v", got.GetSend().GetPayload().GetType())
+	}
 }
 
 func TestJSONPairedEmojiSurrogate(t *testing.T) {
@@ -52,6 +58,35 @@ func TestJSONPairedEmojiSurrogate(t *testing.T) {
 	}
 	if got.GetSend().GetPayload().GetText() != "😀" {
 		t.Fatalf("text %q", got.GetSend().GetPayload().GetText())
+	}
+	if got.GetSend().GetPayload().GetType() != imv1.Payload_TEXT {
+		t.Fatalf("type %v", got.GetSend().GetPayload().GetType())
+	}
+}
+
+func TestJSONPayloadTypeAliases(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want imv1.Payload_Type
+	}{
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"TEXT","text":"hi"}}}`, imv1.Payload_TEXT},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"text","text":"hi"}}}`, imv1.Payload_TEXT},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":1,"text":"hi"}}}`, imv1.Payload_TEXT},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"1","text":"hi"}}}`, imv1.Payload_TEXT},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"IMAGE","media":{"objectKey":"a"}}}}`, imv1.Payload_IMAGE},
+		{`{"send":{"clientMsgId":"m1","payload":{"text":"hi"}}}`, imv1.Payload_TEXT},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"STICKER","stickerId":"x","media":{"objectKey":"sticker/x"}}}}`, imv1.Payload_IMAGE},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"AUDIO","media":{"objectKey":"a"}}}}`, imv1.Payload_FILE},
+		{`{"requestId":"5","send":{"clientMsgId":"m1","payload":{"type":"TEXT","text":"hi","mentionUids":[],"ephemeral":true}}}`, imv1.Payload_TEXT},
+	}
+	for _, tc := range cases {
+		got, err := Decode(false, []byte(tc.raw))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.raw, err)
+		}
+		if got.GetSend().GetPayload().GetType() != tc.want {
+			t.Fatalf("%s: type %v want %v", tc.raw, got.GetSend().GetPayload().GetType(), tc.want)
+		}
 	}
 }
 

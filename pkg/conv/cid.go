@@ -77,9 +77,6 @@ func ResolveCID(fromUID, cid, peerUID string) (canonical string, peer string, er
 		if err != nil {
 			return "", "", err
 		}
-		if peerUID != "" && peerUID != peer {
-			return "", "", fmt.Errorf("conv: peer_uid does not match cid")
-		}
 		return cid, peer, nil
 	}
 	canonical, err = P2P(fromUID, peerUID)

@@ -61,6 +61,7 @@ func main() {
 		rdb:    rdb,
 		media:  media,
 		limit:  lim,
+		qrMem:  newQRMem(),
 		ws: &wsServer{
 			hub:    hub,
 			core:   core,

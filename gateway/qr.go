@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,21 +20,71 @@ type qrSession struct {
 	Refresh string `json:"refresh,omitempty"`
 }
 
+type qrMemItem struct {
+	sess qrSession
+	exp  time.Time
+}
+
+type qrMem struct {
+	mu sync.Mutex
+	m  map[string]qrMemItem
+}
+
+func newQRMem() *qrMem {
+	return &qrMem{m: map[string]qrMemItem{}}
+}
+
+func (s *qrMem) put(ticket string, sess qrSession, ttl time.Duration) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for k, it := range s.m {
+		if now.After(it.exp) {
+			delete(s.m, k)
+		}
+	}
+	s.m[ticket] = qrMemItem{sess: sess, exp: now.Add(ttl)}
+}
+
+func (s *qrMem) get(ticket string) (qrSession, bool) {
+	if s == nil {
+		return qrSession{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it, ok := s.m[ticket]
+	if !ok || time.Now().After(it.exp) {
+		delete(s.m, ticket)
+		return qrSession{}, false
+	}
+	return it.sess, true
+}
+
 func qrRedisKey(ticket string) string { return "qrlogin:" + ticket }
+
+func (a *httpAPI) saveQR(r *http.Request, ticket string, sess qrSession, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = qrTTL
+	}
+	a.qrMem.put(ticket, sess, ttl)
+	if a.rdb != nil {
+		b, _ := json.Marshal(sess)
+		_ = a.rdb.Set(r.Context(), qrRedisKey(ticket), b, ttl).Err()
+	}
+	return nil
+}
 
 func (a *httpAPI) qrNew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if a.rdb == nil {
-		http.Error(w, "qr unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	ticket := uuid.NewString()
 	sess := qrSession{Status: "pending"}
-	b, _ := json.Marshal(sess)
-	if err := a.rdb.Set(r.Context(), qrRedisKey(ticket), b, qrTTL).Err(); err != nil {
+	if err := a.saveQR(r, ticket, sess, qrTTL); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -122,12 +173,13 @@ func (a *httpAPI) qrApprove(w http.ResponseWriter, r *http.Request) {
 	sess.UID = uid
 	sess.Token = sessOut.AccessToken
 	sess.Refresh = sessOut.RefreshToken
-	b, _ := json.Marshal(sess)
-	ttl, err := a.rdb.TTL(r.Context(), qrRedisKey(body.Ticket)).Result()
-	if err != nil || ttl <= 0 {
-		ttl = qrTTL
+	ttl := qrTTL
+	if a.rdb != nil {
+		if v, err := a.rdb.TTL(r.Context(), qrRedisKey(body.Ticket)).Result(); err == nil && v > 0 {
+			ttl = v
+		}
 	}
-	if err := a.rdb.Set(r.Context(), qrRedisKey(body.Ticket), b, ttl).Err(); err != nil {
+	if err := a.saveQR(r, body.Ticket, *sess, ttl); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -139,18 +191,20 @@ func (a *httpAPI) loadQR(r *http.Request, ticket string) (*qrSession, error) {
 	if ticket == "" {
 		return nil, errQR("ticket required")
 	}
-	if a.rdb == nil {
-		return nil, errQR("qr unavailable")
+	if a.rdb != nil {
+		raw, err := a.rdb.Get(r.Context(), qrRedisKey(ticket)).Bytes()
+		if err == nil {
+			var sess qrSession
+			if err := json.Unmarshal(raw, &sess); err != nil {
+				return nil, errQR("bad ticket")
+			}
+			return &sess, nil
+		}
 	}
-	raw, err := a.rdb.Get(r.Context(), qrRedisKey(ticket)).Bytes()
-	if err != nil {
-		return nil, errQR("ticket expired")
+	if sess, ok := a.qrMem.get(ticket); ok {
+		return &sess, nil
 	}
-	var sess qrSession
-	if err := json.Unmarshal(raw, &sess); err != nil {
-		return nil, errQR("bad ticket")
-	}
-	return &sess, nil
+	return nil, errQR("ticket expired")
 }
 
 type qrError string
