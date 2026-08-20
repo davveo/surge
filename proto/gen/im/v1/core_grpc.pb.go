@@ -19,29 +19,45 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	IMCore_Send_FullMethodName              = "/surge.im.v1.IMCore/Send"
-	IMCore_Sync_FullMethodName              = "/surge.im.v1.IMCore/Sync"
-	IMCore_Watermark_FullMethodName         = "/surge.im.v1.IMCore/Watermark"
-	IMCore_ListConversations_FullMethodName = "/surge.im.v1.IMCore/ListConversations"
-	IMCore_GetTimeline_FullMethodName       = "/surge.im.v1.IMCore/GetTimeline"
-	IMCore_AddFriend_FullMethodName         = "/surge.im.v1.IMCore/AddFriend"
-	IMCore_ListFriends_FullMethodName       = "/surge.im.v1.IMCore/ListFriends"
-	IMCore_LookupUser_FullMethodName        = "/surge.im.v1.IMCore/LookupUser"
-	IMCore_SearchUsers_FullMethodName       = "/surge.im.v1.IMCore/SearchUsers"
-	IMCore_Register_FullMethodName          = "/surge.im.v1.IMCore/Register"
-	IMCore_VerifyPassword_FullMethodName    = "/surge.im.v1.IMCore/VerifyPassword"
-	IMCore_GetProfile_FullMethodName        = "/surge.im.v1.IMCore/GetProfile"
-	IMCore_UpdateProfile_FullMethodName     = "/surge.im.v1.IMCore/UpdateProfile"
-	IMCore_CreateGroup_FullMethodName       = "/surge.im.v1.IMCore/CreateGroup"
-	IMCore_InviteGroup_FullMethodName       = "/surge.im.v1.IMCore/InviteGroup"
-	IMCore_KickGroup_FullMethodName         = "/surge.im.v1.IMCore/KickGroup"
-	IMCore_GetGroup_FullMethodName          = "/surge.im.v1.IMCore/GetGroup"
-	IMCore_UpdateGroup_FullMethodName       = "/surge.im.v1.IMCore/UpdateGroup"
-	IMCore_Recall_FullMethodName            = "/surge.im.v1.IMCore/Recall"
-	IMCore_MarkRead_FullMethodName          = "/surge.im.v1.IMCore/MarkRead"
-	IMCore_FanoutTyping_FullMethodName      = "/surge.im.v1.IMCore/FanoutTyping"
-	IMCore_SetMute_FullMethodName           = "/surge.im.v1.IMCore/SetMute"
-	IMCore_ListMutes_FullMethodName         = "/surge.im.v1.IMCore/ListMutes"
+	IMCore_Send_FullMethodName               = "/surge.im.v1.IMCore/Send"
+	IMCore_Sync_FullMethodName               = "/surge.im.v1.IMCore/Sync"
+	IMCore_Watermark_FullMethodName          = "/surge.im.v1.IMCore/Watermark"
+	IMCore_ListConversations_FullMethodName  = "/surge.im.v1.IMCore/ListConversations"
+	IMCore_GetTimeline_FullMethodName        = "/surge.im.v1.IMCore/GetTimeline"
+	IMCore_AddFriend_FullMethodName          = "/surge.im.v1.IMCore/AddFriend"
+	IMCore_ListFriends_FullMethodName        = "/surge.im.v1.IMCore/ListFriends"
+	IMCore_LookupUser_FullMethodName         = "/surge.im.v1.IMCore/LookupUser"
+	IMCore_SearchUsers_FullMethodName        = "/surge.im.v1.IMCore/SearchUsers"
+	IMCore_Register_FullMethodName           = "/surge.im.v1.IMCore/Register"
+	IMCore_VerifyPassword_FullMethodName     = "/surge.im.v1.IMCore/VerifyPassword"
+	IMCore_GetProfile_FullMethodName         = "/surge.im.v1.IMCore/GetProfile"
+	IMCore_UpdateProfile_FullMethodName      = "/surge.im.v1.IMCore/UpdateProfile"
+	IMCore_CreateGroup_FullMethodName        = "/surge.im.v1.IMCore/CreateGroup"
+	IMCore_InviteGroup_FullMethodName        = "/surge.im.v1.IMCore/InviteGroup"
+	IMCore_KickGroup_FullMethodName          = "/surge.im.v1.IMCore/KickGroup"
+	IMCore_GetGroup_FullMethodName           = "/surge.im.v1.IMCore/GetGroup"
+	IMCore_UpdateGroup_FullMethodName        = "/surge.im.v1.IMCore/UpdateGroup"
+	IMCore_Recall_FullMethodName             = "/surge.im.v1.IMCore/Recall"
+	IMCore_MarkRead_FullMethodName           = "/surge.im.v1.IMCore/MarkRead"
+	IMCore_FanoutTyping_FullMethodName       = "/surge.im.v1.IMCore/FanoutTyping"
+	IMCore_SetMute_FullMethodName            = "/surge.im.v1.IMCore/SetMute"
+	IMCore_ListMutes_FullMethodName          = "/surge.im.v1.IMCore/ListMutes"
+	IMCore_GetProfiles_FullMethodName        = "/surge.im.v1.IMCore/GetProfiles"
+	IMCore_RemoveFriend_FullMethodName       = "/surge.im.v1.IMCore/RemoveFriend"
+	IMCore_RequestFriend_FullMethodName      = "/surge.im.v1.IMCore/RequestFriend"
+	IMCore_AcceptFriend_FullMethodName       = "/surge.im.v1.IMCore/AcceptFriend"
+	IMCore_DeclineFriend_FullMethodName      = "/surge.im.v1.IMCore/DeclineFriend"
+	IMCore_ListFriendRequests_FullMethodName = "/surge.im.v1.IMCore/ListFriendRequests"
+	IMCore_BlockUser_FullMethodName          = "/surge.im.v1.IMCore/BlockUser"
+	IMCore_UnblockUser_FullMethodName        = "/surge.im.v1.IMCore/UnblockUser"
+	IMCore_ListBlocks_FullMethodName         = "/surge.im.v1.IMCore/ListBlocks"
+	IMCore_SetRemark_FullMethodName          = "/surge.im.v1.IMCore/SetRemark"
+	IMCore_LeaveGroup_FullMethodName         = "/surge.im.v1.IMCore/LeaveGroup"
+	IMCore_DissolveGroup_FullMethodName      = "/surge.im.v1.IMCore/DissolveGroup"
+	IMCore_TransferOwner_FullMethodName      = "/surge.im.v1.IMCore/TransferOwner"
+	IMCore_HideConversation_FullMethodName   = "/surge.im.v1.IMCore/HideConversation"
+	IMCore_SetPin_FullMethodName             = "/surge.im.v1.IMCore/SetPin"
+	IMCore_GetReadState_FullMethodName       = "/surge.im.v1.IMCore/GetReadState"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -71,6 +87,22 @@ type IMCoreClient interface {
 	FanoutTyping(ctx context.Context, in *Typing, opts ...grpc.CallOption) (*Typing, error)
 	SetMute(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*MuteState, error)
 	ListMutes(ctx context.Context, in *ListMutesRequest, opts ...grpc.CallOption) (*ListMutesResponse, error)
+	GetProfiles(ctx context.Context, in *GetProfilesRequest, opts ...grpc.CallOption) (*GetProfilesResponse, error)
+	RemoveFriend(ctx context.Context, in *RemoveFriendRequest, opts ...grpc.CallOption) (*RemoveFriendResponse, error)
+	RequestFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*FriendRequestState, error)
+	AcceptFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*AddFriendResponse, error)
+	DeclineFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*FriendRequestState, error)
+	ListFriendRequests(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListFriendRequestsResponse, error)
+	BlockUser(ctx context.Context, in *BlockUserRequest, opts ...grpc.CallOption) (*BlockUserResponse, error)
+	UnblockUser(ctx context.Context, in *BlockUserRequest, opts ...grpc.CallOption) (*BlockUserResponse, error)
+	ListBlocks(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListBlocksResponse, error)
+	SetRemark(ctx context.Context, in *SetRemarkRequest, opts ...grpc.CallOption) (*Friend, error)
+	LeaveGroup(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	DissolveGroup(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	TransferOwner(ctx context.Context, in *TransferOwnerRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	HideConversation(ctx context.Context, in *HideConversationRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	SetPin(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*MuteState, error)
+	GetReadState(ctx context.Context, in *GetReadStateRequest, opts ...grpc.CallOption) (*GetReadStateResponse, error)
 }
 
 type iMCoreClient struct {
@@ -288,6 +320,150 @@ func (c *iMCoreClient) ListMutes(ctx context.Context, in *ListMutesRequest, opts
 	return out, nil
 }
 
+func (c *iMCoreClient) GetProfiles(ctx context.Context, in *GetProfilesRequest, opts ...grpc.CallOption) (*GetProfilesResponse, error) {
+	out := new(GetProfilesResponse)
+	err := c.cc.Invoke(ctx, IMCore_GetProfiles_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) RemoveFriend(ctx context.Context, in *RemoveFriendRequest, opts ...grpc.CallOption) (*RemoveFriendResponse, error) {
+	out := new(RemoveFriendResponse)
+	err := c.cc.Invoke(ctx, IMCore_RemoveFriend_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) RequestFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*FriendRequestState, error) {
+	out := new(FriendRequestState)
+	err := c.cc.Invoke(ctx, IMCore_RequestFriend_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) AcceptFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*AddFriendResponse, error) {
+	out := new(AddFriendResponse)
+	err := c.cc.Invoke(ctx, IMCore_AcceptFriend_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) DeclineFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*FriendRequestState, error) {
+	out := new(FriendRequestState)
+	err := c.cc.Invoke(ctx, IMCore_DeclineFriend_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListFriendRequests(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListFriendRequestsResponse, error) {
+	out := new(ListFriendRequestsResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListFriendRequests_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) BlockUser(ctx context.Context, in *BlockUserRequest, opts ...grpc.CallOption) (*BlockUserResponse, error) {
+	out := new(BlockUserResponse)
+	err := c.cc.Invoke(ctx, IMCore_BlockUser_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) UnblockUser(ctx context.Context, in *BlockUserRequest, opts ...grpc.CallOption) (*BlockUserResponse, error) {
+	out := new(BlockUserResponse)
+	err := c.cc.Invoke(ctx, IMCore_UnblockUser_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListBlocks(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListBlocksResponse, error) {
+	out := new(ListBlocksResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListBlocks_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetRemark(ctx context.Context, in *SetRemarkRequest, opts ...grpc.CallOption) (*Friend, error) {
+	out := new(Friend)
+	err := c.cc.Invoke(ctx, IMCore_SetRemark_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) LeaveGroup(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_LeaveGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) DissolveGroup(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_DissolveGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) TransferOwner(ctx context.Context, in *TransferOwnerRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_TransferOwner_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) HideConversation(ctx context.Context, in *HideConversationRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_HideConversation_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetPin(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*MuteState, error) {
+	out := new(MuteState)
+	err := c.cc.Invoke(ctx, IMCore_SetPin_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) GetReadState(ctx context.Context, in *GetReadStateRequest, opts ...grpc.CallOption) (*GetReadStateResponse, error) {
+	out := new(GetReadStateResponse)
+	err := c.cc.Invoke(ctx, IMCore_GetReadState_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -315,6 +491,22 @@ type IMCoreServer interface {
 	FanoutTyping(context.Context, *Typing) (*Typing, error)
 	SetMute(context.Context, *SetMuteRequest) (*MuteState, error)
 	ListMutes(context.Context, *ListMutesRequest) (*ListMutesResponse, error)
+	GetProfiles(context.Context, *GetProfilesRequest) (*GetProfilesResponse, error)
+	RemoveFriend(context.Context, *RemoveFriendRequest) (*RemoveFriendResponse, error)
+	RequestFriend(context.Context, *AddFriendRequest) (*FriendRequestState, error)
+	AcceptFriend(context.Context, *AddFriendRequest) (*AddFriendResponse, error)
+	DeclineFriend(context.Context, *AddFriendRequest) (*FriendRequestState, error)
+	ListFriendRequests(context.Context, *ListFriendsRequest) (*ListFriendRequestsResponse, error)
+	BlockUser(context.Context, *BlockUserRequest) (*BlockUserResponse, error)
+	UnblockUser(context.Context, *BlockUserRequest) (*BlockUserResponse, error)
+	ListBlocks(context.Context, *ListFriendsRequest) (*ListBlocksResponse, error)
+	SetRemark(context.Context, *SetRemarkRequest) (*Friend, error)
+	LeaveGroup(context.Context, *LeaveGroupRequest) (*GroupResponse, error)
+	DissolveGroup(context.Context, *LeaveGroupRequest) (*GroupResponse, error)
+	TransferOwner(context.Context, *TransferOwnerRequest) (*GroupResponse, error)
+	HideConversation(context.Context, *HideConversationRequest) (*HideConversationResponse, error)
+	SetPin(context.Context, *SetMuteRequest) (*MuteState, error)
+	GetReadState(context.Context, *GetReadStateRequest) (*GetReadStateResponse, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -390,6 +582,54 @@ func (UnimplementedIMCoreServer) SetMute(context.Context, *SetMuteRequest) (*Mut
 }
 func (UnimplementedIMCoreServer) ListMutes(context.Context, *ListMutesRequest) (*ListMutesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListMutes not implemented")
+}
+func (UnimplementedIMCoreServer) GetProfiles(context.Context, *GetProfilesRequest) (*GetProfilesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProfiles not implemented")
+}
+func (UnimplementedIMCoreServer) RemoveFriend(context.Context, *RemoveFriendRequest) (*RemoveFriendResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveFriend not implemented")
+}
+func (UnimplementedIMCoreServer) RequestFriend(context.Context, *AddFriendRequest) (*FriendRequestState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestFriend not implemented")
+}
+func (UnimplementedIMCoreServer) AcceptFriend(context.Context, *AddFriendRequest) (*AddFriendResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcceptFriend not implemented")
+}
+func (UnimplementedIMCoreServer) DeclineFriend(context.Context, *AddFriendRequest) (*FriendRequestState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeclineFriend not implemented")
+}
+func (UnimplementedIMCoreServer) ListFriendRequests(context.Context, *ListFriendsRequest) (*ListFriendRequestsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFriendRequests not implemented")
+}
+func (UnimplementedIMCoreServer) BlockUser(context.Context, *BlockUserRequest) (*BlockUserResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BlockUser not implemented")
+}
+func (UnimplementedIMCoreServer) UnblockUser(context.Context, *BlockUserRequest) (*BlockUserResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnblockUser not implemented")
+}
+func (UnimplementedIMCoreServer) ListBlocks(context.Context, *ListFriendsRequest) (*ListBlocksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBlocks not implemented")
+}
+func (UnimplementedIMCoreServer) SetRemark(context.Context, *SetRemarkRequest) (*Friend, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetRemark not implemented")
+}
+func (UnimplementedIMCoreServer) LeaveGroup(context.Context, *LeaveGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LeaveGroup not implemented")
+}
+func (UnimplementedIMCoreServer) DissolveGroup(context.Context, *LeaveGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DissolveGroup not implemented")
+}
+func (UnimplementedIMCoreServer) TransferOwner(context.Context, *TransferOwnerRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TransferOwner not implemented")
+}
+func (UnimplementedIMCoreServer) HideConversation(context.Context, *HideConversationRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HideConversation not implemented")
+}
+func (UnimplementedIMCoreServer) SetPin(context.Context, *SetMuteRequest) (*MuteState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetPin not implemented")
+}
+func (UnimplementedIMCoreServer) GetReadState(context.Context, *GetReadStateRequest) (*GetReadStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReadState not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -818,6 +1058,294 @@ func _IMCore_ListMutes_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_GetProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetProfiles(ctx, req.(*GetProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_RemoveFriend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveFriendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).RemoveFriend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_RemoveFriend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).RemoveFriend(ctx, req.(*RemoveFriendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_RequestFriend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddFriendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).RequestFriend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_RequestFriend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).RequestFriend(ctx, req.(*AddFriendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_AcceptFriend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddFriendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).AcceptFriend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_AcceptFriend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).AcceptFriend(ctx, req.(*AddFriendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_DeclineFriend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddFriendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).DeclineFriend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_DeclineFriend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).DeclineFriend(ctx, req.(*AddFriendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListFriendRequests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFriendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListFriendRequests(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListFriendRequests_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListFriendRequests(ctx, req.(*ListFriendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_BlockUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BlockUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).BlockUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_BlockUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).BlockUser(ctx, req.(*BlockUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_UnblockUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BlockUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).UnblockUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_UnblockUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).UnblockUser(ctx, req.(*BlockUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListBlocks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFriendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListBlocks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListBlocks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListBlocks(ctx, req.(*ListFriendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetRemark_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRemarkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetRemark(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetRemark_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetRemark(ctx, req.(*SetRemarkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_LeaveGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).LeaveGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_LeaveGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).LeaveGroup(ctx, req.(*LeaveGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_DissolveGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).DissolveGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_DissolveGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).DissolveGroup(ctx, req.(*LeaveGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_TransferOwner_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TransferOwnerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).TransferOwner(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_TransferOwner_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).TransferOwner(ctx, req.(*TransferOwnerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_HideConversation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HideConversationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).HideConversation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_HideConversation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).HideConversation(ctx, req.(*HideConversationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetPin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMuteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetPin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetPin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetPin(ctx, req.(*SetMuteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_GetReadState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReadStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetReadState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetReadState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetReadState(ctx, req.(*GetReadStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -916,6 +1444,70 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMutes",
 			Handler:    _IMCore_ListMutes_Handler,
+		},
+		{
+			MethodName: "GetProfiles",
+			Handler:    _IMCore_GetProfiles_Handler,
+		},
+		{
+			MethodName: "RemoveFriend",
+			Handler:    _IMCore_RemoveFriend_Handler,
+		},
+		{
+			MethodName: "RequestFriend",
+			Handler:    _IMCore_RequestFriend_Handler,
+		},
+		{
+			MethodName: "AcceptFriend",
+			Handler:    _IMCore_AcceptFriend_Handler,
+		},
+		{
+			MethodName: "DeclineFriend",
+			Handler:    _IMCore_DeclineFriend_Handler,
+		},
+		{
+			MethodName: "ListFriendRequests",
+			Handler:    _IMCore_ListFriendRequests_Handler,
+		},
+		{
+			MethodName: "BlockUser",
+			Handler:    _IMCore_BlockUser_Handler,
+		},
+		{
+			MethodName: "UnblockUser",
+			Handler:    _IMCore_UnblockUser_Handler,
+		},
+		{
+			MethodName: "ListBlocks",
+			Handler:    _IMCore_ListBlocks_Handler,
+		},
+		{
+			MethodName: "SetRemark",
+			Handler:    _IMCore_SetRemark_Handler,
+		},
+		{
+			MethodName: "LeaveGroup",
+			Handler:    _IMCore_LeaveGroup_Handler,
+		},
+		{
+			MethodName: "DissolveGroup",
+			Handler:    _IMCore_DissolveGroup_Handler,
+		},
+		{
+			MethodName: "TransferOwner",
+			Handler:    _IMCore_TransferOwner_Handler,
+		},
+		{
+			MethodName: "HideConversation",
+			Handler:    _IMCore_HideConversation_Handler,
+		},
+		{
+			MethodName: "SetPin",
+			Handler:    _IMCore_SetPin_Handler,
+		},
+		{
+			MethodName: "GetReadState",
+			Handler:    _IMCore_GetReadState_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

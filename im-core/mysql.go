@@ -39,6 +39,8 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE messages ADD COLUMN quote_msg_id VARCHAR(36) NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN payload_media TEXT`,
 		`ALTER TABLE im_groups ADD COLUMN avatar_url VARCHAR(512) NOT NULL DEFAULT ''`,
+		`ALTER TABLE conversations ADD COLUMN hidden TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE conversations ADD COLUMN pinned TINYINT NOT NULL DEFAULT 0`,
 	}
 	for _, a := range alters {
 		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") {
@@ -188,7 +190,8 @@ func upsertConv(ctx context.Context, tx *sql.Tx, uid, cid, peer, title, kind, ms
 			unread = unread + ?,
 			updated_at_ms = VALUES(updated_at_ms),
 			title = IF(VALUES(title)='', title, VALUES(title)),
-			kind = IF(VALUES(kind)='', kind, VALUES(kind))`,
+			kind = IF(VALUES(kind)='', kind, VALUES(kind)),
+			hidden = 0`,
 		uid, cid, peer, msgID, convSeq, text, unreadInc, now, title, kind, unreadInc)
 	if err != nil {
 		return fmt.Errorf("upsert conversation: %w", err)
@@ -285,11 +288,11 @@ func (s *mysqlStore) Watermark(ctx context.Context, uid string) (uint64, error) 
 func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.cid, c.peer_uid, c.last_msg_id, c.last_conv_seq, c.unread, c.updated_at_ms, c.last_text, c.title, c.kind,
-			IFNULL(m.muted, 0)
+			IFNULL(m.muted, 0), IFNULL(c.pinned, 0)
 		FROM conversations c
 		LEFT JOIN conv_mutes m ON m.uid = c.uid AND m.cid = c.cid
-		WHERE c.uid = ?
-		ORDER BY c.updated_at_ms DESC`, uid)
+		WHERE c.uid = ? AND IFNULL(c.hidden, 0) = 0
+		ORDER BY c.pinned DESC, c.updated_at_ms DESC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -297,11 +300,12 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 	var out []*imv1.Conversation
 	for rows.Next() {
 		c := &imv1.Conversation{}
-		var muted int
-		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted); err != nil {
+		var muted, pinned int
+		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned); err != nil {
 			return nil, err
 		}
 		c.Muted = muted != 0
+		c.Pinned = pinned != 0
 		out = append(out, c)
 	}
 	return out, rows.Err()

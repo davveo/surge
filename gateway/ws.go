@@ -143,6 +143,19 @@ func (s *wsServer) onSend(c *Conn, reqID uint64, req *imv1.SendRequest) {
 		c.enqueue(errEnv(reqID, 401, "auth required", req.GetClientMsgId()))
 		return
 	}
+	if s.hub.rdb != nil {
+		key := "rl:send:" + c.uid
+		v, err := s.hub.rdb.Incr(context.Background(), key).Result()
+		if err == nil {
+			if v == 1 {
+				_ = s.hub.rdb.Expire(context.Background(), key, 10*time.Second).Err()
+			}
+			if v > 40 {
+				c.enqueue(errEnv(reqID, 429, "too many messages", req.GetClientMsgId()))
+				return
+			}
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	resp, err := s.core.Send(ctx, &imv1.SendMessageRequest{

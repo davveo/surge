@@ -31,6 +31,22 @@ service IMCore {
   rpc FanoutTyping(Typing) returns (Typing);
   rpc SetMute(SetMuteRequest) returns (MuteState);
   rpc ListMutes(ListMutesRequest) returns (ListMutesResponse);
+  rpc GetProfiles(GetProfilesRequest) returns (GetProfilesResponse);
+  rpc RemoveFriend(RemoveFriendRequest) returns (RemoveFriendResponse);
+  rpc RequestFriend(AddFriendRequest) returns (FriendRequestState);
+  rpc AcceptFriend(AddFriendRequest) returns (AddFriendResponse);
+  rpc DeclineFriend(AddFriendRequest) returns (FriendRequestState);
+  rpc ListFriendRequests(ListFriendsRequest) returns (ListFriendRequestsResponse);
+  rpc BlockUser(BlockUserRequest) returns (BlockUserResponse);
+  rpc UnblockUser(BlockUserRequest) returns (BlockUserResponse);
+  rpc ListBlocks(ListFriendsRequest) returns (ListBlocksResponse);
+  rpc SetRemark(SetRemarkRequest) returns (Friend);
+  rpc LeaveGroup(LeaveGroupRequest) returns (GroupResponse);
+  rpc DissolveGroup(LeaveGroupRequest) returns (GroupResponse);
+  rpc TransferOwner(TransferOwnerRequest) returns (GroupResponse);
+  rpc HideConversation(HideConversationRequest) returns (HideConversationResponse);
+  rpc SetPin(SetMuteRequest) returns (MuteState);
+  rpc GetReadState(GetReadStateRequest) returns (GetReadStateResponse);
 }
 
 message WatermarkRequest {
@@ -89,6 +105,8 @@ message Conversation {
   string title = 8;
   string kind = 9;
   bool muted = 10;
+  bool pinned = 11;
+  UserProfile peer_profile = 12;
 }
 
 message ListConversationsResponse {
@@ -100,6 +118,8 @@ message GetTimelineRequest {
   string cid = 2;
   uint64 after_conv_seq = 3;
   uint32 limit = 4;
+  uint64 before_conv_seq = 5;
+  string query = 6;
 }
 
 message TimelineMessage {
@@ -115,6 +135,7 @@ message TimelineMessage {
 message GetTimelineResponse {
   string cid = 1;
   repeated TimelineMessage messages = 2;
+  bool has_more = 3;
 }
 
 // Published on Redis channel gw:{gateway_id} so the owning node can Push.
@@ -140,6 +161,9 @@ message AddFriendResponse {
 
 message Friend {
   string uid = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+  string remark = 4;
 }
 
 message ListFriendsRequest {
@@ -271,4 +295,85 @@ message MarkReadRequest {
   string uid = 1;
   string cid = 2;
   uint64 conv_seq = 3;
+}
+
+message GetProfilesRequest {
+  repeated string uids = 1;
+}
+
+message GetProfilesResponse {
+  repeated UserProfile users = 1;
+}
+
+message RemoveFriendRequest {
+  string uid = 1;
+  string peer_uid = 2;
+}
+
+message RemoveFriendResponse {
+  string peer_uid = 1;
+}
+
+message FriendRequestState {
+  string from_uid = 1;
+  string to_uid = 2;
+  string status = 3;
+}
+
+message ListFriendRequestsResponse {
+  repeated FriendRequestState incoming = 1;
+  repeated FriendRequestState outgoing = 2;
+}
+
+message BlockUserRequest {
+  string uid = 1;
+  string peer_uid = 2;
+}
+
+message BlockUserResponse {
+  string peer_uid = 1;
+  bool blocked = 2;
+}
+
+message ListBlocksResponse {
+  repeated string uids = 1;
+}
+
+message SetRemarkRequest {
+  string uid = 1;
+  string peer_uid = 2;
+  string remark = 3;
+}
+
+message LeaveGroupRequest {
+  string uid = 1;
+  string cid = 2;
+}
+
+message TransferOwnerRequest {
+  string operator_uid = 1;
+  string cid = 2;
+  string member_uid = 3;
+}
+
+message HideConversationRequest {
+  string uid = 1;
+  string cid = 2;
+}
+
+message HideConversationResponse {
+  string cid = 1;
+}
+
+message GetReadStateRequest {
+  string uid = 1;
+  string cid = 2;
+  uint64 conv_seq = 3;
+}
+
+message GetReadStateResponse {
+  string cid = 1;
+  uint32 read_count = 2;
+  repeated string reader_uids = 3;
+  uint32 member_count = 4;
 }

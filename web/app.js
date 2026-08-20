@@ -29,6 +29,15 @@
     tabCh: null,
     tabId: "",
     leaderAt: 0,
+    online: {},
+    requests: { incoming: [], outgoing: [] },
+    blocks: [],
+    hasMore: false,
+    loadingMore: false,
+    searchQ: "",
+    readInfo: null,
+    presenceTimer: null,
+    forwarding: null,
   };
 
   const dbp = new Promise((resolve, reject) => {
@@ -65,7 +74,8 @@
         await refreshTokens();
         return api(path, opts, false);
       }
-      if (!r.ok) throw new Error(text || r.statusText);
+      if (r.status === 429) throw new Error("操作过于频繁，请稍后再试");
+      if (!r.ok) throw new Error(friendlyHttp(r.status, text));
       return text ? JSON.parse(text) : {};
     });
   }
@@ -102,10 +112,68 @@
     return obj[camel] !== undefined ? obj[camel] : obj[snake];
   }
 
+  function friendlyHttp(status, text) {
+    const t = String(text || "");
+    if (status === 429 || /too many/i.test(t)) return "操作过于频繁，请稍后再试";
+    if (/blocked/i.test(t)) return "已拉黑，无法发送";
+    return t || "请求失败";
+  }
+
+  function toast(msg) {
+    const el = $("toast");
+    if (!el) {
+      alert(msg);
+      return;
+    }
+    el.textContent = msg;
+    el.classList.remove("hidden");
+    clearTimeout(state.toastTimer);
+    state.toastTimer = setTimeout(() => el.classList.add("hidden"), 2600);
+  }
+
+  function peerProfile(c) {
+    return field(c, "peerProfile", "peer_profile") || {};
+  }
+
   function convTitle(c) {
     if (!c) return "";
     if (c.kind === "group" || isGroup(c.cid)) return c.title || "群聊";
-    return field(c, "peerUid", "peer_uid") || c.cid;
+    const p = peerProfile(c);
+    return field(p, "displayName", "display_name") || field(c, "peerUid", "peer_uid") || c.cid;
+  }
+
+  function convAvatar(c) {
+    if (!c) return "";
+    const p = peerProfile(c);
+    return field(p, "avatarUrl", "avatar_url") || "";
+  }
+
+  function friendUid(f) {
+    return typeof f === "string" ? f : f.uid || "";
+  }
+
+  function friendName(f) {
+    const uid = friendUid(f);
+    if (typeof f === "string") return uid;
+    return field(f, "displayName", "display_name") || f.remark || uid;
+  }
+
+  function friendAvatar(f) {
+    if (typeof f === "string") return "";
+    return field(f, "avatarUrl", "avatar_url") || "";
+  }
+
+  function avatarHTML(url, name, uid) {
+    const letter = String(name || uid || "?").slice(0, 1).toUpperCase();
+    const face = url
+      ? `<img class="avatar" src="${escapeHtml(url)}" alt="" />`
+      : `<span class="avatar letter">${escapeHtml(letter)}</span>`;
+    const on = uid && state.online[uid] ? " on" : "";
+    return `<div class="avatar-wrap">${face}<span class="presence${on}"></span></div>`;
+  }
+
+  function isBlocked(uid) {
+    return !!uid && state.blocks.indexOf(uid) >= 0;
   }
 
   function draftKey(cid) {
@@ -119,12 +187,29 @@
 
   function loadDraft(cid) {
     $("draft").value = localStorage.getItem(draftKey(cid)) || "";
+    fitDraft();
   }
 
   function setConn(text, on) {
     const el = $("conn-state");
     el.textContent = text;
-    el.classList.toggle("on", !!on);
+    el.classList.toggle("text-wechat", !!on);
+    el.classList.toggle("text-zinc-500", !on);
+  }
+
+  function setComposerEnabled(on) {
+    $("draft").disabled = !on;
+    $("send-btn").disabled = !on;
+    $("attach-btn").disabled = !on;
+    if ($("emoji-btn")) $("emoji-btn").disabled = !on;
+    if (on) fitDraft();
+  }
+
+  function fitDraft() {
+    const el = $("draft");
+    if (!el) return;
+    el.style.height = "36px";
+    el.style.height = Math.min(el.scrollHeight, 72) + "px";
   }
 
   function renderLists() {
@@ -141,8 +226,11 @@
         const pinCls = isPinned(c.cid) ? " pinned" : "";
         const badge = c.unread && Number(c.unread) > 0 ? `<span class="badge">${c.unread}</span>` : "";
         const peer = field(c, "peerUid", "peer_uid") || "";
+        const title = convTitle(c);
+        const uid = isGroup(c.cid) ? "" : peer;
         return `<div class="row${active}${pinCls}" data-peer="${peer}" data-cid="${c.cid}">
-          <div><div class="row-title">${escapeHtml(convTitle(c))}</div><div class="row-sub">${escapeHtml(c.lastText || c.last_text || "")}</div></div>${badge}
+          ${avatarHTML(convAvatar(c), title, uid)}
+          <div class="row-main"><div class="row-title">${escapeHtml(title)}</div><div class="row-sub">${escapeHtml(c.lastText || c.last_text || "")}</div></div>${badge}
         </div>`;
       })
       .join("");
@@ -153,14 +241,28 @@
     const fEl = $("friend-list");
     fEl.innerHTML = state.friends
       .map((f) => {
-        const uid = f.uid || f;
+        const uid = friendUid(f);
+        const name = friendName(f);
         const active = uid === state.activePeer ? " active" : "";
-        return `<div class="row${active}" data-peer="${uid}"><div class="row-title">${escapeHtml(uid)}</div></div>`;
+        return `<div class="row${active}" data-peer="${uid}">
+          ${avatarHTML(friendAvatar(f), name, uid)}
+          <div class="row-main"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}</div></div>
+          <div class="row-actions"><button type="button" class="danger" data-act="del">删除</button></div>
+        </div>`;
       })
       .join("");
     fEl.querySelectorAll(".row").forEach((row) => {
       row.onclick = () => openChat(row.dataset.peer, cidOf(state.uid, row.dataset.peer));
+      const del = row.querySelector("[data-act=del]");
+      if (del) {
+        del.onclick = (e) => {
+          e.stopPropagation();
+          removeFriend(row.dataset.peer);
+        };
+      }
     });
+    renderRequests();
+    renderBlocks();
   }
 
   function canRecall(m) {
@@ -180,16 +282,10 @@
   }
 
   function loadPins() {
-    try {
-      state.pins = JSON.parse(localStorage.getItem(pinKey()) || "{}");
-    } catch (_) {
-      state.pins = {};
-    }
+    state.pins = {};
   }
 
-  function savePins() {
-    localStorage.setItem(pinKey(), JSON.stringify(state.pins));
-  }
+  function savePins() {}
 
   function muteKey() {
     return "surge:mute:" + state.uid;
@@ -225,6 +321,14 @@
   function isFileMsg(m) {
     const t = payloadType(m.payload);
     return t === "FILE" || t === "5";
+  }
+
+  function isAudioMsg(m) {
+    if (!isFileMsg(m)) return false;
+    const media = mediaOf(m.payload);
+    const ct = String(media.contentType || media.content_type || "");
+    const name = String(media.filename || "");
+    return ct.indexOf("audio/") === 0 || /\.(m4a|mp3|wav|ogg|aac|webm)$/i.test(name);
   }
 
   function linkify(s) {
@@ -267,7 +371,14 @@
       const href = media.url || src;
       const cap = m.payload && m.payload.text ? `<div>${linkify(m.payload.text)}</div>` : "";
       if (!src) return escapeHtml("[图片]");
-      return `<a href="${escapeHtml(href)}" target="_blank"><img class="thumb" src="${escapeHtml(src)}" alt="" /></a>${cap}`;
+      return `<img class="thumb" data-full="${escapeHtml(href)}" src="${escapeHtml(src)}" alt="" />${cap}`;
+    }
+    if (isAudioMsg(m)) {
+      const media = mediaOf(m.payload);
+      const href = media.url || "";
+      const name = media.filename || "语音";
+      if (!href) return escapeHtml("[" + name + "]");
+      return `<div>${escapeHtml(name)}</div><audio controls preload="none" src="${escapeHtml(href)}"></audio>`;
     }
     if (isFileMsg(m)) {
       const media = mediaOf(m.payload);
@@ -289,36 +400,54 @@
     return seq;
   }
 
-  function renderMsgs() {
+  function renderMsgs(opts) {
     const box = $("msgs");
+    const stick = !opts || opts.stick !== false;
+    const prevH = box.scrollHeight;
+    const prevTop = box.scrollTop;
     const lastMine = lastMineSeq();
+    const group = isGroup(state.activeCid);
     box.innerHTML = state.messages
       .map((m) => {
         const mine = field(m, "fromUid", "from_uid") === state.uid;
         const recalled = m.recalled || (m.payload && (m.payload.type === "RECALL" || m.payload.type === 2));
         if (isSystemMsg(m) && !recalled) {
-          return `<div class="bubble system">${escapeHtml((m.payload && m.payload.text) || "")}</div>`;
+          return `<div class="msg-row system"><div class="bubble system">${escapeHtml((m.payload && m.payload.text) || "")}</div></div>`;
         }
         const st = m.status ? " " + m.status : "";
         const recCls = recalled ? " recalled" : "";
         const id = field(m, "msgId", "msg_id") || "";
         const from = field(m, "fromUid", "from_uid") || "";
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
-        const who = isGroup(state.activeCid) && !mine ? `<div class="meta">${escapeHtml(from)}</div>` : "";
+        const who = group && !mine ? `<div class="meta">${escapeHtml(from)}</div>` : "";
         const quote = quoteBlock(m);
         const body = recalled ? "已撤回一条消息" : renderBody(m) + (recalled ? "" : linkCard(m));
         const recallBtn = canRecall(m)
           ? `<button type="button" class="recall-btn ok" data-id="${id}">撤回</button>`
           : "";
+        const fwdBtn =
+          !recalled && id
+            ? `<button type="button" class="act-btn" data-act="fwd" data-id="${id}">转发</button>`
+            : "";
         const read =
           mine &&
-          !isGroup(state.activeCid) &&
+          !group &&
           seq &&
           seq === lastMine &&
           state.peerReadSeq >= seq
             ? `<div class="read-mark">已读</div>`
             : "";
-        return `<div class="bubble${mine ? " me" : " peer"}${st}${recCls}" data-id="${id}">${who}${quote}${recalled ? escapeHtml(body) : body}${recallBtn}${read}</div>`;
+        const gRead =
+          mine &&
+          group &&
+          !recalled &&
+          seq &&
+          state.readInfo &&
+          Number(state.readInfo.seq) === seq &&
+          state.readInfo.count > 0
+            ? `<div class="read-mark">${state.readInfo.count} 人已读</div>`
+            : "";
+        return `<div class="msg-row${mine ? " me" : " peer"}"><div class="bubble${mine ? " me" : " peer"}${st}${recCls}" data-id="${id}">${who}${quote}${recalled ? escapeHtml(body) : body}${fwdBtn}${recallBtn}${read}${gRead}</div></div>`;
       })
       .join("");
     box.querySelectorAll(".recall-btn").forEach((btn) => {
@@ -327,15 +456,28 @@
         recall(btn.dataset.id);
       };
     });
+    box.querySelectorAll("[data-act=fwd]").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        openForward(btn.dataset.id);
+      };
+    });
+    box.querySelectorAll("img.thumb").forEach((img) => {
+      img.onclick = (e) => {
+        e.stopPropagation();
+        openLightbox(img.dataset.full || img.src);
+      };
+    });
     box.querySelectorAll(".bubble:not(.system)").forEach((el) => {
       el.ondblclick = () => {
         if (!el.dataset.id) return;
-        state.quote = { id: el.dataset.id, preview: (el.querySelector(".quote-card") ? "" : "") || el.textContent.slice(0, 80) };
+        state.quote = { id: el.dataset.id, preview: el.textContent.slice(0, 80) };
         $("quote-text").textContent = "引用：" + state.quote.preview;
         $("quote-bar").classList.remove("hidden");
       };
     });
-    box.scrollTop = box.scrollHeight;
+    if (stick) box.scrollTop = box.scrollHeight;
+    else box.scrollTop = box.scrollHeight - prevH + prevTop;
   }
 
   function escapeHtml(s) {
@@ -349,8 +491,10 @@
     const data = await api("/v1/conversations");
     state.convs = data.conversations || [];
     state.muted = {};
+    state.pins = {};
     state.convs.forEach((c) => {
       if (c.muted) state.muted[c.cid] = true;
+      if (c.pinned) state.pins[c.cid] = true;
     });
     renderLists();
   }
@@ -359,6 +503,195 @@
     const data = await api("/v1/friends");
     state.friends = data.friends || [];
     renderLists();
+  }
+
+  async function loadRequests() {
+    try {
+      const data = await api("/v1/friend-requests");
+      state.requests = {
+        incoming: data.incoming || [],
+        outgoing: data.outgoing || [],
+      };
+    } catch (_) {
+      state.requests = { incoming: [], outgoing: [] };
+    }
+    renderRequests();
+  }
+
+  async function loadBlocks() {
+    try {
+      const data = await api("/v1/blocks");
+      state.blocks = data.uids || [];
+    } catch (_) {
+      state.blocks = [];
+    }
+    renderBlocks();
+    lockComposer();
+  }
+
+  function renderRequests() {
+    const el = $("req-list");
+    if (!el) return;
+    const incoming = state.requests.incoming || [];
+    const outgoing = state.requests.outgoing || [];
+    if (!incoming.length && !outgoing.length) {
+      el.innerHTML = `<div class="row"><div class="row-sub">暂无申请</div></div>`;
+      return;
+    }
+    el.innerHTML =
+      incoming
+        .map((r) => {
+          const from = field(r, "fromUid", "from_uid");
+          return `<div class="row" data-uid="${from}">
+            ${avatarHTML("", from, from)}
+            <div class="row-main"><div class="row-title">${escapeHtml(from)}</div><div class="row-sub">请求加为好友</div></div>
+            <div class="row-actions">
+              <button type="button" data-act="accept">通过</button>
+              <button type="button" class="danger" data-act="decline">拒绝</button>
+            </div>
+          </div>`;
+        })
+        .join("") +
+      outgoing
+        .map((r) => {
+          const to = field(r, "toUid", "to_uid");
+          return `<div class="row" data-uid="${to}">
+            ${avatarHTML("", to, to)}
+            <div class="row-main"><div class="row-title">${escapeHtml(to)}</div><div class="row-sub">等待验证</div></div>
+          </div>`;
+        })
+        .join("");
+    el.querySelectorAll("[data-act]").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        handleRequest(btn.closest(".row").dataset.uid, btn.dataset.act);
+      };
+    });
+  }
+
+  function renderBlocks() {
+    const el = $("block-list");
+    if (!el) return;
+    if (!state.blocks.length) {
+      el.innerHTML = `<div class="row"><div class="row-sub">空</div></div>`;
+      return;
+    }
+    el.innerHTML = state.blocks
+      .map(
+        (uid) => `<div class="row" data-uid="${uid}">
+          ${avatarHTML("", uid, uid)}
+          <div class="row-main"><div class="row-title">${escapeHtml(uid)}</div></div>
+          <div class="row-actions"><button type="button" data-act="unblock">解除</button></div>
+        </div>`
+      )
+      .join("");
+    el.querySelectorAll("[data-act=unblock]").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        setBlocked(btn.closest(".row").dataset.uid, false);
+      };
+    });
+  }
+
+  async function handleRequest(peer, action) {
+    try {
+      await api("/v1/friend-requests", {
+        method: "POST",
+        body: JSON.stringify({ peer_uid: peer, action }),
+      });
+      await loadRequests();
+      await loadFriends();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function removeFriend(peer) {
+    if (!peer || !confirm("删除好友 " + peer + "？")) return;
+    try {
+      await api("/v1/friends", { method: "DELETE", body: JSON.stringify({ peer_uid: peer }) });
+      await loadFriends();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function setBlocked(peer, blocked) {
+    try {
+      await api("/v1/blocks", {
+        method: "POST",
+        body: JSON.stringify({ peer_uid: peer, unblock: !blocked }),
+      });
+      await loadBlocks();
+      await loadFriends();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function refreshPresence() {
+    const uids = new Set();
+    state.friends.forEach((f) => {
+      const uid = friendUid(f);
+      if (uid) uids.add(uid);
+    });
+    state.convs.forEach((c) => {
+      const p = field(c, "peerUid", "peer_uid");
+      if (p) uids.add(p);
+    });
+    if (state.activePeer) uids.add(state.activePeer);
+    if (state.group) (state.group.members || []).forEach((m) => m.uid && uids.add(m.uid));
+    if (!uids.size) return;
+    try {
+      const data = await api("/v1/presence?uids=" + encodeURIComponent([...uids].join(",")));
+      state.online = data.online || {};
+      renderLists();
+      updateChatHeader();
+    } catch (_) {}
+  }
+
+  function startPresencePoll() {
+    clearInterval(state.presenceTimer);
+    refreshPresence();
+    state.presenceTimer = setInterval(refreshPresence, 15000);
+  }
+
+  function lockComposer() {
+    if (!state.activeCid) {
+      setComposerEnabled(false);
+      return;
+    }
+    const blocked = !isGroup(state.activeCid) && isBlocked(state.activePeer);
+    setComposerEnabled(!blocked);
+  }
+
+  function updateChatHeader() {
+    if (!state.activeCid) return;
+    if (isGroup(state.activeCid)) return;
+    const on = state.online[state.activePeer];
+    const sub = $("chat-sub");
+    if (isBlocked(state.activePeer)) sub.textContent = "已拉黑，无法发送";
+    else sub.textContent = (on ? "在线 · " : "离线 · ") + (state.activePeer || "");
+  }
+
+  async function refreshGroupRead() {
+    if (!isGroup(state.activeCid)) return;
+    const seq = lastMineSeq();
+    if (!seq) return;
+    try {
+      const data = await api(
+        "/v1/read-state?cid=" + encodeURIComponent(state.activeCid) + "&seq=" + seq
+      );
+      const count = Number(field(data, "readCount", "read_count") || 0);
+      const prev = state.readInfo;
+      state.readInfo = { seq, count, readers: data.readerUids || data.reader_uids || [] };
+      if (!prev || prev.seq !== seq || prev.count !== count) {
+        if (count > 0 || (prev && prev.count > 0)) renderMsgs({ stick: false });
+      }
+    } catch (_) {}
   }
 
   function markRead() {
@@ -390,10 +723,21 @@
       const members = g.members || [];
       $("chat-sub").textContent = members.map((m) => m.uid).join("、");
       const owner = g.ownerUid || g.owner_uid;
+      const isOwner = owner === state.uid;
+      $("transfer-btn").classList.toggle("hidden", !isOwner);
+      $("dissolve-btn").classList.toggle("hidden", !isOwner);
+      let names = {};
+      try {
+        const pr = await api("/v1/profiles?uids=" + encodeURIComponent(members.map((m) => m.uid).join(",")));
+        (pr.users || []).forEach((u) => {
+          names[u.uid] = field(u, "displayName", "display_name") || u.uid;
+        });
+      } catch (_) {}
       $("member-chips").innerHTML = members
         .map((m) => {
-          const kick = owner === state.uid && m.uid !== state.uid ? " kick" : "";
-          return `<span class="chip${kick}" data-uid="${m.uid}">${escapeHtml(m.uid)}${m.role === "owner" ? " ·群主" : ""}</span>`;
+          const kick = isOwner && m.uid !== state.uid ? " kick" : "";
+          const label = names[m.uid] || m.uid;
+          return `<span class="chip${kick}" data-uid="${m.uid}">${escapeHtml(label)}${m.role === "owner" ? " ·群主" : ""}</span>`;
         })
         .join("");
       $("member-chips").querySelectorAll(".chip.kick").forEach((el) => {
@@ -421,25 +765,70 @@
     state.activePeer = peer || "";
     state.activeCid = cid;
     state.peerReadSeq = 0;
-    $("chat-title").textContent = isGroup(cid) ? "群聊" : peer;
-    $("chat-sub").textContent = cid;
-    $("draft").disabled = false;
-    $("send-form").querySelector("button").disabled = false;
-    $("attach-btn").disabled = false;
+    state.hasMore = false;
+    state.searchQ = "";
+    state.readInfo = null;
+    if ($("chat-search")) $("chat-search").value = "";
+    $("chat-search-bar").classList.remove("hidden");
+    const conv = state.convs.find((c) => c.cid === cid);
+    if (isGroup(cid)) {
+      $("chat-title").textContent = (conv && conv.title) || "群聊";
+      $("chat-sub").textContent = cid;
+    } else {
+      $("chat-title").textContent = (conv && convTitle(conv)) || peer;
+      updateChatHeader();
+    }
     $("mute-btn").classList.remove("hidden");
     $("pin-btn").classList.remove("hidden");
+    $("hide-btn").classList.remove("hidden");
+    $("remark-btn").classList.toggle("hidden", isGroup(cid));
+    $("block-btn").classList.toggle("hidden", isGroup(cid));
+    $("block-btn").textContent = isBlocked(peer) ? "取消拉黑" : "拉黑";
     $("mute-btn").textContent = isMuted(cid) ? "已免打扰" : "免打扰";
     $("pin-btn").textContent = isPinned(cid) ? "取消置顶" : "置顶";
+    lockComposer();
     loadDraft(cid);
-    const data = await api("/v1/timeline?cid=" + encodeURIComponent(cid) + "&limit=200");
-    state.messages = data.messages || [];
-    const pending = state.outbox.filter((m) => m.cid === cid && m.status !== "acked");
-    state.messages = state.messages.concat(pending);
+    await reloadTimeline();
     renderLists();
-    renderMsgs();
     await refreshGroup();
     markRead();
     await loadConvs();
+    refreshPresence();
+    refreshGroupRead();
+  }
+
+  async function reloadTimeline() {
+    if (!state.activeCid) return;
+    const q = state.searchQ ? "&q=" + encodeURIComponent(state.searchQ) : "";
+    const data = await api("/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&limit=50" + q);
+    state.messages = data.messages || [];
+    state.hasMore = !state.searchQ && !!(data.hasMore || data.has_more);
+    const pending = state.outbox.filter((m) => m.cid === state.activeCid && m.status !== "acked");
+    if (!state.searchQ) state.messages = state.messages.concat(pending);
+    renderMsgs();
+  }
+
+  async function loadOlder() {
+    if (!state.activeCid || state.loadingMore || !state.hasMore || state.searchQ) return;
+    const first = state.messages[0];
+    const before = Number(field(first, "convSeq", "conv_seq") || 0);
+    if (!before) return;
+    state.loadingMore = true;
+    try {
+      const data = await api(
+        "/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&before=" + before + "&limit=50"
+      );
+      const older = data.messages || [];
+      state.hasMore = !!(data.hasMore || data.has_more);
+      if (!older.length) state.hasMore = false;
+      if (older.length) {
+        state.messages = older.concat(state.messages);
+        renderMsgs({ stick: false });
+      }
+    } catch (_) {
+      state.hasMore = false;
+    }
+    state.loadingMore = false;
   }
 
   function sendFrame(body) {
@@ -583,6 +972,7 @@
       }
       renderMsgs();
       loadConvs();
+      refreshGroupRead();
       return;
     }
     if (env.push) {
@@ -600,7 +990,8 @@
     if (env.read) {
       if (env.read.cid === state.activeCid) {
         state.peerReadSeq = Number(env.read.convSeq || env.read.conv_seq || 0);
-        renderMsgs();
+        renderMsgs({ stick: false });
+        refreshGroupRead();
       }
       return;
     }
@@ -618,8 +1009,20 @@
       if (item) item.status = "fail";
       const msg = state.messages.find((m) => m.clientMsgId === id);
       if (msg) msg.status = "fail";
-      renderMsgs();
-      if (env.error.message) setConn(env.error.message, false);
+      renderMsgs({ stick: false });
+      const code = Number(env.error.code || 0);
+      const raw = env.error.message || "";
+      if (code === 429 || /too many/i.test(raw)) {
+        toast("发送过于频繁，请稍后再试");
+        setConn("发送过于频繁", false);
+        return;
+      }
+      if (/blocked/i.test(raw)) {
+        toast("已拉黑，无法发送");
+        setConn(raw, false);
+        return;
+      }
+      if (raw) setConn(raw, false);
     }
   }
 
@@ -640,6 +1043,7 @@
         });
         renderMsgs();
         markRead();
+        refreshGroupRead();
       }
     }
     notifyIncoming(ev);
@@ -703,6 +1107,7 @@
           clientMsgId: m.clientMsgId,
           payload: m.payload && m.payload.type ? m.payload : { type: "TEXT", text: m.text },
         };
+        if (send.payload && typeof send.payload.text === "string") send.payload.text = wellFormed(send.payload.text);
         if (m.cid) send.cid = m.cid;
         if (m.peerUid) send.peerUid = m.peerUid;
         if (m.quoteMsgId) send.quoteMsgId = m.quoteMsgId;
@@ -732,7 +1137,10 @@
     state.lastSyncSeq = Number((await kvGet(state.uid + ":seq")) || 0);
     state.outbox = (await kvGet(state.uid + ":outbox")) || [];
     await loadFriends();
+    await loadRequests();
+    await loadBlocks();
     await loadConvs();
+    startPresencePoll();
     startWSElection();
     maybeApproveTicket();
   }
@@ -788,23 +1196,32 @@
     return payload;
   }
 
-  async function sendPayload(payload) {
-    if (!state.activeCid) return;
-    payload.mentionUids = mentionUidsOf(payload.text || "");
-    payload = await attachLinkPreview(payload);
+  async function sendPayload(payload, dest) {
+    const cid = dest && dest.cid ? dest.cid : state.activeCid;
+    if (!cid) return;
+    const peerUid = dest && dest.peerUid !== undefined ? dest.peerUid : isGroup(cid) ? "" : state.activePeer;
+    if (!isGroup(cid) && isBlocked(peerUid || state.activePeer)) {
+      toast("已拉黑，无法发送");
+      return;
+    }
+    if (typeof payload.text === "string") payload.text = wellFormed(payload.text);
+    if (!(dest && dest.forward)) {
+      payload.mentionUids = mentionUidsOf(payload.text || "");
+      payload = await attachLinkPreview(payload);
+    }
     const item = {
       clientMsgId: uuid(),
-      peerUid: isGroup(state.activeCid) ? "" : state.activePeer,
-      cid: state.activeCid,
+      peerUid: isGroup(cid) ? "" : peerUid,
+      cid,
       fromUid: state.uid,
       text: payload.text || "",
       payload,
-      quoteMsgId: state.quote ? state.quote.id : "",
+      quoteMsgId: dest && dest.forward ? "" : state.quote ? state.quote.id : "",
       status: "pending",
       createdAtMs: Date.now(),
     };
     state.outbox.push(item);
-    state.messages.push(item);
+    if (cid === state.activeCid) state.messages.push(item);
     await kvSet(state.uid + ":outbox", state.outbox);
     try {
       const send = {
@@ -817,10 +1234,13 @@
       sendFrame({ send });
     } catch (err) {
       item.status = "fail";
+      toast(err.message || "发送失败");
     }
-    state.quote = null;
-    $("quote-bar").classList.add("hidden");
-    renderMsgs();
+    if (!(dest && dest.forward)) {
+      state.quote = null;
+      $("quote-bar").classList.add("hidden");
+    }
+    if (cid === state.activeCid) renderMsgs();
   }
 
   async function uploadFile(file) {
@@ -864,6 +1284,7 @@
     });
     $("draft").value = "";
     localStorage.removeItem(draftKey());
+    fitDraft();
   }
 
   async function enter(uid, password) {
@@ -919,7 +1340,12 @@
   document.querySelectorAll(".rail-btn[data-tab]").forEach((btn) => {
     btn.onclick = () => {
       state.tab = btn.dataset.tab;
-      document.querySelectorAll(".rail-btn[data-tab]").forEach((b) => b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".rail-btn[data-tab]").forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle("bg-white/10", on);
+        b.classList.toggle("text-white", on);
+        b.classList.toggle("text-zinc-400", !on);
+      });
       $("pane-chats").classList.toggle("hidden", state.tab !== "chats");
       $("pane-contacts").classList.toggle("hidden", state.tab !== "contacts");
     };
@@ -930,9 +1356,10 @@
     const peer = $("add-uid").value.trim();
     if (!peer || peer === state.uid) return;
     try {
-      await api("/v1/friends", { method: "POST", body: JSON.stringify({ peer_uid: peer }) });
+      await api("/v1/friend-requests", { method: "POST", body: JSON.stringify({ peer_uid: peer }) });
       $("add-uid").value = "";
       $("search-hits").innerHTML = "";
+      await loadRequests();
       await loadFriends();
     } catch (err) {
       alert(err.message);
@@ -955,7 +1382,7 @@
           .map((u) => {
             const uid = u.uid;
             const name = u.displayName || u.display_name || uid;
-            return `<div class="row" data-uid="${uid}"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}</div></div>`;
+            return `<div class="row" data-uid="${uid}">${avatarHTML(u.avatarUrl || u.avatar_url || "", name, uid)}<div class="row-main"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}</div></div></div>`;
           })
           .join("");
         $("search-hits").querySelectorAll(".row").forEach((row) => {
@@ -1066,6 +1493,7 @@
     if (!text || !state.activeCid) return;
     $("draft").value = "";
     localStorage.removeItem(draftKey());
+    fitDraft();
     await sendPayload({ type: "TEXT", text });
   };
 
@@ -1092,18 +1520,232 @@
       alert(err.message);
     }
   };
-  $("pin-btn").onclick = () => {
+  $("pin-btn").onclick = async () => {
     if (!state.activeCid) return;
-    if (isPinned(state.activeCid)) delete state.pins[state.activeCid];
-    else state.pins[state.activeCid] = true;
-    savePins();
-    $("pin-btn").textContent = isPinned(state.activeCid) ? "取消置顶" : "置顶";
-    renderLists();
+    const next = !isPinned(state.activeCid);
+    try {
+      await api("/v1/pin", { method: "POST", body: JSON.stringify({ cid: state.activeCid, pinned: next }) });
+      if (next) state.pins[state.activeCid] = true;
+      else delete state.pins[state.activeCid];
+      $("pin-btn").textContent = next ? "取消置顶" : "置顶";
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  $("hide-btn").onclick = async () => {
+    if (!state.activeCid) return;
+    try {
+      await api("/v1/conversation-hide", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
+      state.activeCid = "";
+      state.activePeer = "";
+      state.messages = [];
+      $("chat-title").textContent = "选择一个会话";
+      $("chat-sub").textContent = "";
+      $("chat-search-bar").classList.add("hidden");
+      $("group-bar").classList.add("hidden");
+      $("hide-btn").classList.add("hidden");
+      $("pin-btn").classList.add("hidden");
+      $("mute-btn").classList.add("hidden");
+      $("remark-btn").classList.add("hidden");
+      $("block-btn").classList.add("hidden");
+      setComposerEnabled(false);
+      renderMsgs();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  $("remark-btn").onclick = async () => {
+    if (!state.activePeer) return;
+    const cur = prompt("好友备注", state.activePeer);
+    if (cur === null) return;
+    try {
+      await api("/v1/remark", { method: "POST", body: JSON.stringify({ peer_uid: state.activePeer, remark: cur.trim() }) });
+      await loadFriends();
+      await loadConvs();
+      const conv = state.convs.find((c) => c.cid === state.activeCid);
+      if (conv) $("chat-title").textContent = convTitle(conv);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  $("block-btn").onclick = async () => {
+    if (!state.activePeer) return;
+    const blocked = isBlocked(state.activePeer);
+    if (!blocked && !confirm("拉黑 " + state.activePeer + "？拉黑后双方无法发消息")) return;
+    await setBlocked(state.activePeer, !blocked);
+    $("block-btn").textContent = isBlocked(state.activePeer) ? "取消拉黑" : "拉黑";
+    lockComposer();
+    updateChatHeader();
+  };
+  $("leave-btn").onclick = async () => {
+    if (!state.activeCid) return;
+    const owner = state.group && (state.group.ownerUid || state.group.owner_uid);
+    if (owner === state.uid) {
+      alert("群主退群须先转让群主");
+      return;
+    }
+    if (!confirm("确定退出群聊？")) return;
+    try {
+      await api("/v1/group-leave", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
+      $("group-bar").classList.add("hidden");
+      state.activeCid = "";
+      state.messages = [];
+      $("chat-title").textContent = "选择一个会话";
+      $("chat-sub").textContent = "";
+      setComposerEnabled(false);
+      renderMsgs();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  $("transfer-btn").onclick = async () => {
+    if (!state.activeCid || !state.group) return;
+    const members = (state.group.members || []).filter((m) => m.uid !== state.uid).map((m) => m.uid);
+    const uid = prompt("转让给成员 uid\n" + members.join("、"), members[0] || "");
+    if (!uid) return;
+    try {
+      await api("/v1/group-transfer", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid: uid.trim() }) });
+      await refreshGroup();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  $("dissolve-btn").onclick = async () => {
+    if (!state.activeCid) return;
+    if (!confirm("解散群聊？此操作不可恢复")) return;
+    try {
+      await api("/v1/group-dissolve", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
+      $("group-bar").classList.add("hidden");
+      state.activeCid = "";
+      state.messages = [];
+      $("chat-title").textContent = "选择一个会话";
+      $("chat-sub").textContent = "";
+      setComposerEnabled(false);
+      renderMsgs();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
   };
   $("quote-clear").onclick = () => {
     state.quote = null;
     $("quote-bar").classList.add("hidden");
   };
+
+  // Whole graphemes only. String.prototype.split("") cuts supplementary-plane
+  // emoji into lone UTF-16 surrogates; JSON.stringify then emits \ud83d and
+  // protojson fails with: invalid escape code "\",\"men" in string.
+  const EMOJIS = ["😀","😃","😄","😁","😆","😅","😂","🤣","😊","😇","🙂","😉","😍","😘","😋","😜","🤔","😐","🙄","😏","😮","😪","😴","😌","😓","😔","🙃","😢","😭","😤","😡","🤯","😳","😷","🥳","🥺","👍","👎","👏","🙏","💪","❤️","🔥","⭐","🎉","✅","❌"];
+  function wellFormed(s) {
+    if (typeof s !== "string") return s;
+    if (typeof s.toWellFormed === "function") return s.toWellFormed();
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff) {
+        const d = s.charCodeAt(i + 1);
+        if (d >= 0xdc00 && d <= 0xdfff) {
+          out += s[i] + s[i + 1];
+          i++;
+        } else out += "\uFFFD";
+      } else if (c >= 0xdc00 && c <= 0xdfff) out += "\uFFFD";
+      else out += s[i];
+    }
+    return out;
+  }
+  function insertDraft(text) {
+    const el = $("draft");
+    const start = el.selectionStart || el.value.length;
+    const end = el.selectionEnd || start;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    el.focus();
+    el.selectionStart = el.selectionEnd = start + text.length;
+    fitDraft();
+    saveDraft();
+  }
+  function renderEmojiBox() {
+    const box = $("emoji-box");
+    if (!box || box.dataset.ready) return;
+    box.textContent = "";
+    EMOJIS.forEach((e) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = e;
+      btn.onclick = () => insertDraft(e);
+      box.appendChild(btn);
+    });
+    box.dataset.ready = "1";
+  }
+  $("emoji-btn").onclick = () => {
+    renderEmojiBox();
+    $("emoji-box").classList.toggle("hidden");
+  };
+  document.addEventListener("click", (e) => {
+    const box = $("emoji-box");
+    if (!box || box.classList.contains("hidden")) return;
+    if (e.target === $("emoji-btn") || box.contains(e.target)) return;
+    box.classList.add("hidden");
+  });
+
+  function openLightbox(src) {
+    if (!src) return;
+    $("lightbox-img").src = src;
+    $("lightbox").classList.remove("hidden");
+  }
+  $("lightbox").onclick = () => $("lightbox").classList.add("hidden");
+
+  function openForward(msgId) {
+    const src = state.messages.find((m) => field(m, "msgId", "msg_id") === msgId);
+    if (!src || !src.payload) return;
+    state.forwarding = src;
+    const list = $("forward-list");
+    list.innerHTML = state.convs
+      .filter((c) => c.cid !== state.activeCid)
+      .map((c) => {
+        const peer = field(c, "peerUid", "peer_uid") || "";
+        return `<div class="row" data-cid="${c.cid}" data-peer="${peer}">${avatarHTML(convAvatar(c), convTitle(c), isGroup(c.cid) ? "" : peer)}<div class="row-main"><div class="row-title">${escapeHtml(convTitle(c))}</div></div></div>`;
+      })
+      .join("");
+    if (!list.innerHTML) list.innerHTML = `<div class="row"><div class="row-sub">没有可转发的会话</div></div>`;
+    list.querySelectorAll(".row[data-cid]").forEach((row) => {
+      row.onclick = async () => {
+        const payload = JSON.parse(JSON.stringify(src.payload));
+        $("forward-box").classList.add("hidden");
+        try {
+          await sendPayload(payload, { cid: row.dataset.cid, peerUid: row.dataset.peer, forward: true });
+          toast("已转发");
+        } catch (err) {
+          alert(err.message);
+        }
+        state.forwarding = null;
+      };
+    });
+    $("forward-box").classList.remove("hidden");
+  }
+  $("forward-cancel").onclick = () => {
+    state.forwarding = null;
+    $("forward-box").classList.add("hidden");
+  };
+
+  let chatSearchTimer = 0;
+  $("chat-search").addEventListener("input", () => {
+    const q = $("chat-search").value.trim();
+    clearTimeout(chatSearchTimer);
+    chatSearchTimer = setTimeout(async () => {
+      state.searchQ = q;
+      try {
+        await reloadTimeline();
+      } catch (err) {
+        toast(err.message);
+      }
+    }, 250);
+  });
+  $("msgs").addEventListener("scroll", () => {
+    if ($("msgs").scrollTop < 48) loadOlder();
+  });
   $("qr-approve").onclick = () => {
     api("/v1/auth/qr/approve", { method: "POST", body: JSON.stringify({ ticket: state.pendingTicket }) })
       .then(() => {
@@ -1120,6 +1762,7 @@
   };
 
   $("draft").addEventListener("input", () => {
+    fitDraft();
     saveDraft();
     if (!state.activeCid) return;
     const now = Date.now();
@@ -1191,9 +1834,14 @@
       state.outbox = v || [];
     });
     loadFriends()
+      .then(loadRequests)
+      .then(loadBlocks)
       .then(loadConvs)
-      .then(startWSElection)
-      .then(maybeApproveTicket)
+      .then(() => {
+        startPresencePoll();
+        startWSElection();
+        maybeApproveTicket();
+      })
       .catch((e) => alert(e.message));
   } else {
     startQR();

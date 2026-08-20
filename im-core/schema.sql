@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated_at_ms BIGINT NOT NULL,
   title VARCHAR(128) NOT NULL DEFAULT '',
   kind VARCHAR(16) NOT NULL DEFAULT 'p2p',
+  hidden TINYINT NOT NULL DEFAULT 0,
+  pinned TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (uid, cid),
   KEY idx_uid_updated (uid, updated_at_ms)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -90,4 +92,26 @@ CREATE TABLE IF NOT EXISTS conv_mutes (
   cid VARCHAR(128) NOT NULL,
   muted TINYINT NOT NULL DEFAULT 1,
   PRIMARY KEY (uid, cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS friend_requests (
+  from_uid VARCHAR(64) NOT NULL,
+  to_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (from_uid, to_uid),
+  KEY idx_to (to_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS blocks (
+  uid VARCHAR(64) NOT NULL,
+  peer_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (uid, peer_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS friend_remarks (
+  uid VARCHAR(64) NOT NULL,
+  peer_uid VARCHAR(64) NOT NULL,
+  remark VARCHAR(64) NOT NULL,
+  PRIMARY KEY (uid, peer_uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

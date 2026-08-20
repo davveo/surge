@@ -236,6 +236,179 @@ func TestQuoteMentionsAndMute(t *testing.T) {
 	}
 }
 
+func TestFriendRequestBlockAndHide(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	stt, err := srv.RequestFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"})
+	if err != nil || stt.Status != "pending" {
+		t.Fatalf("request %+v %v", stt, err)
+	}
+	in, out, err := st.ListFriendRequests(ctx, "u2")
+	if err != nil || len(in) != 1 || in[0][0] != "u1" || len(out) != 0 {
+		t.Fatalf("incoming %+v outgoing %+v %v", in, out, err)
+	}
+	if _, err := srv.DeclineFriend(ctx, &imv1.AddFriendRequest{Uid: "u2", PeerUid: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ := st.AreFriends(ctx, "u1", "u2")
+	if ok {
+		t.Fatal("decline should not add friends")
+	}
+	if _, err := srv.RequestFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.AcceptFriend(ctx, &imv1.AddFriendRequest{Uid: "u2", PeerUid: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ = st.AreFriends(ctx, "u1", "u2")
+	if !ok {
+		t.Fatal("expected friends after accept")
+	}
+	if _, err := srv.SetRemark(ctx, &imv1.SetRemarkRequest{Uid: "u1", PeerUid: "u2", Remark: "小二"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.GetRemark(ctx, "u1", "u2"); got != "小二" {
+		t.Fatalf("remark %q", got)
+	}
+	if _, err := srv.BlockUser(ctx, &imv1.BlockUserRequest{Uid: "u2", PeerUid: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "b1", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "nope"},
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("want blocked, got %v", err)
+	}
+	blocks, err := st.ListBlocks(ctx, "u2")
+	if err != nil || len(blocks) != 1 || blocks[0] != "u1" {
+		t.Fatalf("blocks %+v %v", blocks, err)
+	}
+	if _, err := srv.UnblockUser(ctx, &imv1.BlockUserRequest{Uid: "u2", PeerUid: "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.AddFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "b2", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "ok"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.HideConversation(ctx, "u1", sent.GetAck().GetCid()); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := st.ListConversations(ctx, "u1")
+	if len(list) != 0 {
+		t.Fatalf("hidden still listed %+v", list)
+	}
+	if _, err := srv.RemoveFriend(ctx, &imv1.RemoveFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ = st.AreFriends(ctx, "u1", "u2")
+	if ok {
+		t.Fatal("expected unfriended")
+	}
+}
+
+func TestLeaveAndPin(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddFriend(ctx, "u1", "u3"); err != nil {
+		t.Fatal(err)
+	}
+	g, err := st.CreateGroup(ctx, "u1", "g", []string{"u2", "u3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LeaveGroup(ctx, "u1", g.CID); err == nil {
+		t.Fatal("owner must transfer before leave")
+	}
+	if err := st.DissolveGroup(ctx, "u2", g.CID); err == nil {
+		t.Fatal("only owner can dissolve")
+	}
+	if _, err := st.LeaveGroup(ctx, "u2", g.CID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPin(ctx, "u1", g.CID, true); err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListConversations(ctx, "u1")
+	if err != nil || len(list) == 0 || !list[0].Pinned {
+		t.Fatalf("pin %+v %v", list, err)
+	}
+	sent, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "r1", Cid: g.CID,
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "hi"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq := sent.GetAck().GetConvSeq()
+	n, members, readers, err := st.GetReadState(ctx, "u1", g.CID, seq)
+	if err != nil || n != 0 || members != 2 {
+		t.Fatalf("read before peer %+v n=%d members=%d %v", readers, n, members, err)
+	}
+	if err := st.MarkRead(ctx, "u3", g.CID, seq); err != nil {
+		t.Fatal(err)
+	}
+	n, members, readers, err = st.GetReadState(ctx, "u1", g.CID, seq)
+	if err != nil || n != 1 || members != 2 || (len(readers) != 1 || readers[0] != "u3") {
+		t.Fatalf("read after peer n=%d members=%d readers=%+v %v", n, members, readers, err)
+	}
+	if _, err := st.TransferOwner(ctx, "u1", g.CID, "u3"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LeaveGroup(ctx, "u1", g.CID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.HideConversation(ctx, "u3", g.CID); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u3")
+	if len(list) != 0 {
+		t.Fatalf("hidden still listed %+v", list)
+	}
+	if err := st.DissolveGroup(ctx, "u3", g.CID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTimelineQuerySearchAndPage(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	var last uint64
+	for i := 0; i < 5; i++ {
+		res, err := st.Send(ctx, "u1", "m"+string(rune('a'+i)), "", "u2", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "msg-" + string(rune('a'+i))}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = res.ack.ConvSeq
+	}
+	cid, msgs, hasMore, err := st.TimelineQuery(ctx, "u1", "p2p:u1:u2", 0, 0, 3, "")
+	if err != nil || cid == "" || !hasMore || len(msgs) != 3 || msgs[len(msgs)-1].ConvSeq != last {
+		t.Fatalf("latest page %+v hasMore=%v %v", msgs, hasMore, err)
+	}
+	_, older, olderMore, err := st.TimelineQuery(ctx, "u1", "p2p:u1:u2", 0, msgs[0].ConvSeq, 10, "")
+	if err != nil || len(older) != 2 || olderMore {
+		t.Fatalf("older %+v more=%v %v", older, olderMore, err)
+	}
+	_, hit, _, err := st.TimelineQuery(ctx, "u1", "p2p:u1:u2", 0, 0, 10, "msg-c")
+	if err != nil || len(hit) != 1 || hit[0].Payload.GetText() != "msg-c" {
+		t.Fatalf("search %+v %v", hit, err)
+	}
+}
+
 func TestUpdateGroupOwnerOnly(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
 	ctx := context.Background()

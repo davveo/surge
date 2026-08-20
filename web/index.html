@@ -4,101 +4,150 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Surge IM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            wechat: "#07c160",
+            bubble: "#95ec69",
+            rail: "#2e2e2e",
+            mid: "#eaeaea",
+            chat: "#f5f5f5",
+          },
+          fontFamily: {
+            sans: ["-apple-system", "BlinkMacSystemFont", "PingFang SC", "Noto Sans SC", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
   <link rel="stylesheet" href="/app.css" />
 </head>
-<body>
-  <div id="login" class="login">
-    <div class="login-card">
-      <h1>Surge</h1>
-      <p>Web 三栏 · 单聊 / 群聊</p>
-      <input id="login-uid" placeholder="uid / 邮箱 / 手机号" autofocus />
-      <input id="login-pass" type="password" placeholder="密码（可空则走开发登录）" />
-      <button id="login-btn" type="button">登录</button>
-      <button id="register-btn" type="button" class="ghost">注册</button>
-      <div class="qr-box">
-        <img id="qr-img" alt="登录二维码" />
-        <p id="qr-hint" class="hint">已登录窗口打开本页扫码，或点确认登录</p>
+<body class="h-full m-0 bg-zinc-300 text-zinc-900 font-sans">
+  <div id="login" class="min-h-full grid place-items-center bg-rail">
+    <div class="w-[360px] rounded-lg bg-white px-7 py-8 shadow-lg">
+      <h1 class="m-0 mb-2 text-[28px] font-semibold">Surge</h1>
+      <p class="mb-4 text-[13px] text-zinc-500">Web 三栏 · 单聊 / 群聊</p>
+      <input id="login-uid" class="mb-3 h-10 w-full rounded border border-zinc-300 px-3 text-sm outline-none focus:border-wechat" placeholder="uid / 邮箱 / 手机号" autofocus />
+      <input id="login-pass" type="password" class="mb-3 h-10 w-full rounded border border-zinc-300 px-3 text-sm outline-none focus:border-wechat" placeholder="密码（可空则走开发登录）" />
+      <button id="login-btn" type="button" class="h-10 w-full rounded bg-wechat text-sm text-white hover:bg-[#06ad56]">登录</button>
+      <button id="register-btn" type="button" class="mt-2 h-10 w-full rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">注册</button>
+      <div class="my-4 text-center">
+        <img id="qr-img" class="mx-auto h-[180px] w-[180px] bg-zinc-100" alt="登录二维码" />
+        <p id="qr-hint" class="mt-3 text-[13px] leading-relaxed text-zinc-500">已登录窗口打开本页扫码，或点确认登录</p>
       </div>
-      <p class="hint">两个窗口分别登录 u1 / u2，先加好友再发消息；通讯录可建群。图片走 MinIO 预签名直传。</p>
+      <p class="text-[13px] leading-relaxed text-zinc-500">两个窗口分别登录 u1 / u2，先加好友再发消息；通讯录可建群。图片走 MinIO 预签名直传。</p>
     </div>
   </div>
 
-  <div id="confirm-qr" class="login hidden">
-    <div class="login-card">
-      <h1>确认登录</h1>
-      <p>网页版正在请求登录，是否允许？</p>
-      <button id="qr-approve" type="button">确认登录</button>
-      <button id="qr-deny" type="button" class="ghost">取消</button>
+  <div id="confirm-qr" class="hidden min-h-full grid place-items-center bg-rail">
+    <div class="w-[360px] rounded-lg bg-white px-7 py-8 shadow-lg">
+      <h1 class="m-0 mb-2 text-[28px] font-semibold">确认登录</h1>
+      <p class="mb-4 text-[13px] text-zinc-500">网页版正在请求登录，是否允许？</p>
+      <button id="qr-approve" type="button" class="h-10 w-full rounded bg-wechat text-sm text-white hover:bg-[#06ad56]">确认登录</button>
+      <button id="qr-deny" type="button" class="mt-2 h-10 w-full rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">取消</button>
     </div>
   </div>
 
-  <div id="app" class="app hidden">
-    <aside class="rail">
-      <button class="rail-btn active" data-tab="chats" title="会话">会话</button>
-      <button class="rail-btn" data-tab="contacts" title="通讯录">通讯录</button>
-      <div class="rail-spacer"></div>
-      <div id="me" class="me"></div>
-      <button id="logout" type="button" class="rail-btn">退出</button>
+  <div id="app" class="hidden mx-auto h-full max-w-[1280px] grid grid-cols-[72px_280px_1fr] bg-white shadow-[0_0_24px_rgba(0,0,0,.12)]">
+    <aside class="flex flex-col items-center gap-2 bg-rail py-4 text-zinc-400">
+      <button class="rail-btn h-10 w-14 rounded text-xs text-white bg-white/10" data-tab="chats" title="会话">会话</button>
+      <button class="rail-btn h-10 w-14 rounded text-xs hover:text-white" data-tab="contacts" title="通讯录">通讯录</button>
+      <div class="flex-1"></div>
+      <div id="me" class="cursor-pointer px-2 text-center text-xs text-wechat break-all"></div>
+      <button id="logout" type="button" class="h-10 w-14 rounded text-xs hover:text-white">退出</button>
     </aside>
 
-    <section class="mid">
-      <div id="pane-chats">
-        <header class="mid-head">会话</header>
-        <div id="conv-list" class="list"></div>
+    <section class="flex min-w-0 flex-col border-r border-zinc-300 bg-mid">
+      <div id="pane-chats" class="flex min-h-0 flex-1 flex-col">
+        <header class="border-b border-zinc-300 px-4 py-4 font-semibold">会话</header>
+        <div id="conv-list" class="flex-1 overflow-auto"></div>
       </div>
-      <div id="pane-contacts" class="hidden">
-        <header class="mid-head">通讯录</header>
-        <form id="add-form" class="add-form">
-          <input id="add-uid" placeholder="搜索 / 添加 uid" autocomplete="off" />
-          <button type="submit">添加</button>
+      <div id="pane-contacts" class="hidden min-h-0 flex-1 flex-col">
+        <header class="border-b border-zinc-300 px-4 py-4 font-semibold">通讯录</header>
+        <form id="add-form" class="flex gap-1.5 px-3 py-2">
+          <input id="add-uid" class="h-8 flex-1 rounded border border-zinc-300 px-2 text-sm outline-none focus:border-wechat" placeholder="搜索 / 添加 uid" autocomplete="off" />
+          <button type="submit" class="h-8 shrink-0 rounded bg-wechat px-2.5 text-sm text-white">添加</button>
         </form>
-        <div id="search-hits" class="list search-hits"></div>
-        <form id="group-form" class="add-form col">
-          <input id="group-name" placeholder="群名" />
-          <input id="group-members" placeholder="成员 uid，逗号分隔" />
-          <button type="submit">建群</button>
+        <div id="search-hits" class="max-h-44 overflow-auto"></div>
+        <div id="req-wrap" class="border-b border-zinc-300">
+          <div class="px-4 py-2 text-xs text-zinc-500">好友申请</div>
+          <div id="req-list" class="max-h-40 overflow-auto"></div>
+        </div>
+        <form id="group-form" class="flex flex-wrap gap-1.5 px-3 py-2">
+          <input id="group-name" class="h-8 min-w-[120px] flex-1 rounded border border-zinc-300 px-2 text-sm outline-none focus:border-wechat" placeholder="群名" />
+          <input id="group-members" class="h-8 min-w-[120px] flex-1 rounded border border-zinc-300 px-2 text-sm outline-none focus:border-wechat" placeholder="成员 uid，逗号分隔" />
+          <button type="submit" class="h-8 shrink-0 rounded bg-wechat px-2.5 text-sm text-white">建群</button>
         </form>
-        <div id="friend-list" class="list"></div>
+        <div id="friend-list" class="flex-1 overflow-auto"></div>
+        <div id="block-wrap" class="border-t border-zinc-300">
+          <div class="px-4 py-2 text-xs text-zinc-500">黑名单</div>
+          <div id="block-list" class="max-h-36 overflow-auto"></div>
+        </div>
       </div>
     </section>
 
-    <section class="chat">
-      <header class="chat-head">
-        <div>
-          <div id="chat-title" class="chat-title">选择一个会话</div>
-          <div id="chat-sub" class="chat-sub"></div>
+    <section class="relative flex min-w-0 flex-col bg-chat">
+      <header class="flex h-14 shrink-0 items-center justify-between border-b border-zinc-300 bg-[#f7f7f7] px-4">
+        <div class="min-w-0 pr-3">
+          <div id="chat-title" class="truncate font-semibold">选择一个会话</div>
+          <div id="chat-sub" class="truncate text-xs text-zinc-500"></div>
         </div>
-        <div class="head-right">
-          <button id="pin-btn" type="button" class="ghost-btn hidden">置顶</button>
-          <button id="mute-btn" type="button" class="ghost-btn hidden">免打扰</button>
-          <div id="conn-state" class="conn">未连接</div>
+        <div class="flex shrink-0 items-center gap-2">
+          <button id="pin-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">置顶</button>
+          <button id="mute-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">免打扰</button>
+          <button id="hide-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">隐藏</button>
+          <button id="remark-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">备注</button>
+          <button id="block-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">拉黑</button>
+          <div id="conn-state" class="text-xs text-zinc-500">未连接</div>
         </div>
       </header>
-      <div id="group-bar" class="group-bar hidden">
-        <input id="invite-uid" placeholder="拉好友进群" />
-        <button id="invite-btn" type="button">邀请</button>
-        <input id="group-rename" placeholder="改群名" />
-        <button id="rename-btn" type="button">改名</button>
-        <button id="group-avatar-btn" type="button">群头像</button>
+      <div id="group-bar" class="hidden flex-wrap items-center gap-2 border-b border-zinc-300 bg-zinc-50 px-4 py-2">
+        <input id="invite-uid" class="h-7 rounded border border-zinc-300 px-2 text-sm" placeholder="拉好友进群" />
+        <button id="invite-btn" type="button" class="h-7 rounded bg-wechat px-2.5 text-sm text-white">邀请</button>
+        <input id="group-rename" class="h-7 rounded border border-zinc-300 px-2 text-sm" placeholder="改群名" />
+        <button id="rename-btn" type="button" class="h-7 rounded bg-wechat px-2.5 text-sm text-white">改名</button>
+        <button id="group-avatar-btn" type="button" class="h-7 rounded bg-wechat px-2.5 text-sm text-white">群头像</button>
         <input id="group-avatar-file" type="file" accept="image/*" class="hidden" />
-        <div id="member-chips" class="chips"></div>
+        <button id="leave-btn" type="button" class="h-7 rounded border border-zinc-300 bg-white px-2.5 text-sm text-zinc-700">退群</button>
+        <button id="transfer-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2.5 text-sm text-zinc-700">转让群主</button>
+        <button id="dissolve-btn" type="button" class="hidden h-7 rounded border border-red-200 bg-white px-2.5 text-sm text-red-600">解散群</button>
+        <div id="member-chips" class="flex flex-wrap gap-1.5"></div>
       </div>
-      <div id="msgs" class="msgs"></div>
-      <div id="typing" class="typing hidden">对方正在输入…</div>
-      <div id="quote-bar" class="quote-bar hidden">
-        <span id="quote-text"></span>
-        <button id="quote-clear" type="button">×</button>
+      <div id="chat-search-bar" class="hidden shrink-0 border-b border-zinc-300 bg-white px-4 py-1.5">
+        <input id="chat-search" class="h-7 w-full rounded border border-zinc-300 px-2 text-sm outline-none focus:border-wechat" placeholder="搜索聊天记录" />
       </div>
-      <div id="upload-progress" class="progress hidden"><div id="upload-bar"></div></div>
-      <div id="mention-box" class="mention-box hidden"></div>
-      <form id="send-form" class="composer">
-        <button id="attach-btn" type="button" class="attach" disabled>+</button>
-        <input id="file" type="file" class="hidden" />
-        <textarea id="draft" rows="3" placeholder="发消息…" disabled></textarea>
-        <button type="submit" disabled>发送</button>
+      <div id="msgs" class="min-h-0 flex-1 overflow-auto p-4"></div>
+      <div id="typing" class="hidden px-4 pb-2 text-xs text-zinc-500">对方正在输入…</div>
+      <div id="quote-bar" class="hidden items-center justify-between gap-2 bg-zinc-200 px-4 py-1.5 text-xs text-zinc-500">
+        <span id="quote-text" class="truncate"></span>
+        <button id="quote-clear" type="button" class="shrink-0 text-base leading-none">×</button>
+      </div>
+      <div id="upload-progress" class="hidden h-[3px] bg-zinc-300"><div id="upload-bar" class="h-[3px] w-0 bg-wechat"></div></div>
+      <form id="send-form" class="relative flex shrink-0 items-end gap-2 border-t border-zinc-300 bg-[#f7f7f7] px-3 py-2">
+        <div id="mention-box" class="absolute bottom-full left-12 right-3 mb-1 hidden max-h-40 overflow-auto rounded-md border border-zinc-200 bg-white shadow"></div>
+        <button id="emoji-btn" type="button" class="h-9 w-9 shrink-0 rounded border border-zinc-300 bg-white text-base leading-none disabled:cursor-default disabled:opacity-40" disabled>😊</button>
+        <div id="emoji-box" class="absolute bottom-full left-3 mb-1 hidden w-[280px] rounded-md border border-zinc-200 bg-white p-2 shadow"></div>
+        <button id="attach-btn" type="button" class="h-9 w-9 shrink-0 rounded border border-dashed border-zinc-300 bg-white text-xl leading-none text-zinc-600 disabled:cursor-default disabled:opacity-40" disabled>+</button>
+        <input id="file" type="file" accept="image/*,audio/*,*/*" class="hidden" />
+        <textarea id="draft" rows="1" placeholder="发消息…" disabled class="h-9 max-h-[72px] min-h-[36px] flex-1 resize-none overflow-y-auto rounded border border-zinc-300 bg-white px-2.5 py-1.5 text-sm leading-5 outline-none focus:border-wechat disabled:bg-zinc-50"></textarea>
+        <button id="send-btn" type="submit" disabled class="h-9 w-[72px] shrink-0 rounded bg-wechat text-sm text-white hover:bg-[#06ad56] disabled:cursor-default disabled:bg-[#b5e6c8]">发送</button>
       </form>
     </section>
   </div>
+  <div id="lightbox" class="hidden">
+    <img id="lightbox-img" alt="" />
+  </div>
+  <div id="forward-box" class="hidden">
+    <div class="forward-panel">
+      <header>转发到</header>
+      <div id="forward-list"></div>
+      <button id="forward-cancel" type="button">取消</button>
+    </div>
+  </div>
+  <div id="toast" class="hidden"></div>
   <script src="/app.js"></script>
 </body>
 </html>

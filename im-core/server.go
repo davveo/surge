@@ -57,6 +57,13 @@ func (s *server) Send(ctx context.Context, req *imv1.SendMessageRequest) (*imv1.
 	defer unlock()
 
 	if !conv.IsGroup(canonical) {
+		blocked, err := s.store.IsBlocked(ctx, req.GetFromUid(), peer)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		if blocked {
+			return nil, mapErr(fmt.Errorf("%w: user blocked", errBlocked))
+		}
 		ok, err := s.store.AreFriends(ctx, req.GetFromUid(), peer)
 		if err != nil {
 			return nil, mapErr(err)
@@ -126,15 +133,37 @@ func (s *server) ListConversations(ctx context.Context, req *imv1.ListConversati
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	var uids []string
+	for _, c := range list {
+		if c.PeerUid != "" {
+			uids = append(uids, c.PeerUid)
+		}
+	}
+	profiles, _ := s.store.GetProfiles(ctx, uids)
+	by := map[string]*imv1.UserProfile{}
+	for _, p := range profiles {
+		by[p.Uid] = p
+	}
+	for _, c := range list {
+		if p := by[c.PeerUid]; p != nil {
+			if remark, _ := s.store.GetRemark(ctx, req.GetUid(), c.PeerUid); remark != "" {
+				cp := *p
+				cp.DisplayName = remark
+				c.PeerProfile = &cp
+			} else {
+				c.PeerProfile = p
+			}
+		}
+	}
 	return &imv1.ListConversationsResponse{Conversations: list}, nil
 }
 
 func (s *server) GetTimeline(ctx context.Context, req *imv1.GetTimelineRequest) (*imv1.GetTimelineResponse, error) {
-	cid, msgs, err := s.store.Timeline(ctx, req.GetUid(), req.GetCid(), req.GetAfterConvSeq(), int(req.GetLimit()))
+	cid, msgs, hasMore, err := s.store.TimelineQuery(ctx, req.GetUid(), req.GetCid(), req.GetAfterConvSeq(), req.GetBeforeConvSeq(), int(req.GetLimit()), req.GetQuery())
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	return &imv1.GetTimelineResponse{Cid: cid, Messages: msgs}, nil
+	return &imv1.GetTimelineResponse{Cid: cid, Messages: msgs, HasMore: hasMore}, nil
 }
 
 func (s *server) AddFriend(ctx context.Context, req *imv1.AddFriendRequest) (*imv1.AddFriendResponse, error) {
@@ -153,8 +182,22 @@ func (s *server) ListFriends(ctx context.Context, req *imv1.ListFriendsRequest) 
 		return nil, mapErr(err)
 	}
 	out := make([]*imv1.Friend, 0, len(ids))
+	profiles, _ := s.store.GetProfiles(ctx, ids)
+	by := map[string]*imv1.UserProfile{}
+	for _, p := range profiles {
+		by[p.Uid] = p
+	}
 	for _, id := range ids {
-		out = append(out, &imv1.Friend{Uid: id})
+		f := &imv1.Friend{Uid: id, DisplayName: id}
+		if p := by[id]; p != nil {
+			f.DisplayName = p.DisplayName
+			f.AvatarUrl = p.AvatarUrl
+		}
+		if remark, _ := s.store.GetRemark(ctx, req.GetUid(), id); remark != "" {
+			f.Remark = remark
+			f.DisplayName = remark
+		}
+		out = append(out, f)
 	}
 	return &imv1.ListFriendsResponse{Friends: out}, nil
 }
@@ -393,6 +436,9 @@ func mapErr(err error) error {
 	}
 	if errors.Is(err, errAuth) {
 		return status.Error(codes.Unauthenticated, err.Error())
+	}
+	if errors.Is(err, errBlocked) {
+		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	return status.Error(codes.Internal, err.Error())
 }

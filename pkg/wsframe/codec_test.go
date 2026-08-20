@@ -28,6 +28,33 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestJSONLoneSurrogateBeforeMentionUids(t *testing.T) {
+	// Browser JSON.stringify of a lone UTF-16 high surrogate, the exact
+	// failure: protojson reads \ud83d then sees ","mentionUids".
+	raw := []byte(`{"send":{"clientMsgId":"m1","cid":"p2p:u1:u2","payload":{"type":"TEXT","text":"\ud83d","mentionUids":["u2"]}}}`)
+	got, err := Decode(false, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetSend().GetPayload().GetText() != "\uFFFD" {
+		t.Fatalf("text %q", got.GetSend().GetPayload().GetText())
+	}
+	if len(got.GetSend().GetPayload().GetMentionUids()) != 1 {
+		t.Fatalf("mentions %v", got.GetSend().GetPayload().GetMentionUids())
+	}
+}
+
+func TestJSONPairedEmojiSurrogate(t *testing.T) {
+	raw := []byte(`{"send":{"clientMsgId":"m1","payload":{"type":"TEXT","text":"\ud83d\ude00"}}}`)
+	got, err := Decode(false, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetSend().GetPayload().GetText() != "😀" {
+		t.Fatalf("text %q", got.GetSend().GetPayload().GetText())
+	}
+}
+
 func TestBinaryRoundTrip(t *testing.T) {
 	env := &imv1.Envelope{Body: &imv1.Envelope_Heartbeat{Heartbeat: &imv1.Heartbeat{TsMs: 7}}}
 	raw, err := Encode(true, env)

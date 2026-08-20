@@ -50,6 +50,10 @@ func (a *httpAPI) register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if a.tooMany(r, "rl:login:"+clientIP(r), 30, time.Minute) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
 	var body struct {
 		UID      string `json:"uid"`
 		Password string `json:"password"`
@@ -74,6 +78,10 @@ func (a *httpAPI) register(w http.ResponseWriter, r *http.Request) {
 func (a *httpAPI) login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if a.tooMany(r, "rl:login:"+clientIP(r), 30, time.Minute) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 	var body struct {

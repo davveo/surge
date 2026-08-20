@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -51,6 +52,17 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/group-update", a.groupUpdate)
 	mux.HandleFunc("/v1/group", a.groupGet)
 	mux.HandleFunc("/v1/mute", a.mute)
+	mux.HandleFunc("/v1/pin", a.pin)
+	mux.HandleFunc("/v1/presence", a.presence)
+	mux.HandleFunc("/v1/profiles", a.profiles)
+	mux.HandleFunc("/v1/friend-requests", a.friendRequests)
+	mux.HandleFunc("/v1/blocks", a.blocks)
+	mux.HandleFunc("/v1/remark", a.remark)
+	mux.HandleFunc("/v1/group-leave", a.groupLeave)
+	mux.HandleFunc("/v1/group-dissolve", a.groupDissolve)
+	mux.HandleFunc("/v1/group-transfer", a.groupTransfer)
+	mux.HandleFunc("/v1/conversation-hide", a.hideConv)
+	mux.HandleFunc("/v1/read-state", a.readState)
 	mux.HandleFunc("/v1/link-preview", a.linkPreview)
 	mux.HandleFunc("/v1/media/presign", a.mediaPresign)
 	mux.HandleFunc("/v1/media/complete", a.mediaComplete)
@@ -74,6 +86,10 @@ func (a *httpAPI) devLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.UID) == "" {
 		http.Error(w, `{"error":"uid required"}`, http.StatusBadRequest)
+		return
+	}
+	if a.tooMany(r, "rl:login:"+clientIP(r), 30, time.Minute) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 	sess, err := a.issueSession(r.Context(), body.UID, body.DeviceID, devAccessTTL)
@@ -108,12 +124,15 @@ func (a *httpAPI) timeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	after, _ := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
+	before, _ := strconv.ParseUint(r.URL.Query().Get("before"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	resp, err := a.core.GetTimeline(r.Context(), &imv1.GetTimelineRequest{
-		Uid:          uid,
-		Cid:          cid,
-		AfterConvSeq: after,
-		Limit:        uint32(limit),
+		Uid:           uid,
+		Cid:           cid,
+		AfterConvSeq:  after,
+		BeforeConvSeq: before,
+		Limit:         uint32(limit),
+		Query:         strings.TrimSpace(r.URL.Query().Get("q")),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -144,6 +163,20 @@ func (a *httpAPI) friends(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resp, err := a.core.AddFriend(r.Context(), &imv1.AddFriendRequest{Uid: uid, PeerUid: body.PeerUID})
+		if err != nil {
+			writeRPCError(w, err)
+			return
+		}
+		writeProtoJSON(w, resp)
+	case http.MethodDelete:
+		var body struct {
+			PeerUID string `json:"peer_uid"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.PeerUID) == "" {
+			http.Error(w, `{"error":"peer_uid required"}`, http.StatusBadRequest)
+			return
+		}
+		resp, err := a.core.RemoveFriend(r.Context(), &imv1.RemoveFriendRequest{Uid: uid, PeerUid: body.PeerUID})
 		if err != nil {
 			writeRPCError(w, err)
 			return
@@ -386,7 +419,7 @@ func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

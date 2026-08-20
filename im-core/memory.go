@@ -21,6 +21,7 @@ var errNotMember = errors.New("not a group member")
 var errNotOwner = errors.New("not group owner")
 var errTooLarge = errors.New("group too large")
 var errAuth = errors.New("unauthorized")
+var errBlocked = errors.New("blocked")
 
 const maxGroupMembers = 200
 const recallWindowMS int64 = 2 * 60 * 1000
@@ -87,6 +88,25 @@ type Store interface {
 	UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL string) (*groupInfo, error)
 	SetMute(ctx context.Context, uid, cid string, muted bool) error
 	ListMutes(ctx context.Context, uid string) ([]string, error)
+	GetProfiles(ctx context.Context, uids []string) ([]*imv1.UserProfile, error)
+	RemoveFriend(ctx context.Context, uid, peerUID string) error
+	RequestFriend(ctx context.Context, fromUID, toUID string) (string, error)
+	AcceptFriend(ctx context.Context, fromUID, toUID string) error
+	DeclineFriend(ctx context.Context, fromUID, toUID string) error
+	ListFriendRequests(ctx context.Context, uid string) (incoming, outgoing [][2]string, err error)
+	BlockUser(ctx context.Context, uid, peerUID string) error
+	UnblockUser(ctx context.Context, uid, peerUID string) error
+	ListBlocks(ctx context.Context, uid string) ([]string, error)
+	IsBlocked(ctx context.Context, uid, peerUID string) (bool, error)
+	SetRemark(ctx context.Context, uid, peerUID, remark string) error
+	GetRemark(ctx context.Context, uid, peerUID string) (string, error)
+	LeaveGroup(ctx context.Context, uid, cid string) (*groupInfo, error)
+	DissolveGroup(ctx context.Context, uid, cid string) error
+	TransferOwner(ctx context.Context, operatorUID, cid, memberUID string) (*groupInfo, error)
+	HideConversation(ctx context.Context, uid, cid string) error
+	SetPin(ctx context.Context, uid, cid string, pinned bool) error
+	TimelineQuery(ctx context.Context, uid, cid string, afterSeq, beforeSeq uint64, limit int, query string) (string, []*imv1.TimelineMessage, bool, error)
+	GetReadState(ctx context.Context, uid, cid string, convSeq uint64) (readCount, memberCount int, readers []string, err error)
 }
 
 func clipText(s string, max int) string {
@@ -114,8 +134,13 @@ type memoryStore struct {
 	friends map[string]map[string]struct{}
 	groups  map[string]*groupInfo
 	reads   map[string]map[string]uint64
-	users   map[string]*userRec
-	mutes   map[string]map[string]bool
+	users    map[string]*userRec
+	mutes    map[string]map[string]bool
+	hidden   map[string]map[string]bool
+	pins     map[string]map[string]bool
+	blocks   map[string]map[string]struct{}
+	requests map[string]map[string]struct{} // toUID -> fromUID
+	remarks  map[string]map[string]string
 }
 
 func newMemoryStore(seq Seq) *memoryStore {
@@ -132,8 +157,13 @@ func newMemoryStore(seq Seq) *memoryStore {
 		friends: map[string]map[string]struct{}{},
 		groups:  map[string]*groupInfo{},
 		reads:   map[string]map[string]uint64{},
-		users:   map[string]*userRec{},
-		mutes:   map[string]map[string]bool{},
+		users:    map[string]*userRec{},
+		mutes:    map[string]map[string]bool{},
+		hidden:   map[string]map[string]bool{},
+		pins:     map[string]map[string]bool{},
+		blocks:   map[string]map[string]struct{}{},
+		requests: map[string]map[string]struct{}{},
+		remarks:  map[string]map[string]string{},
 	}
 }
 
@@ -296,6 +326,9 @@ func (s *memoryStore) upsertConv(uid, cid, peer, title, kind string, row *timeli
 	if incoming {
 		unread++
 	}
+	if s.hidden[uid] != nil {
+		delete(s.hidden[uid], cid)
+	}
 	if preview == "" && row.payload != nil {
 		preview = clipText(row.payload.GetText(), 128)
 	}
@@ -356,13 +389,24 @@ func (s *memoryStore) ListConversations(_ context.Context, uid string) ([]*imv1.
 	m := s.convs[uid]
 	out := make([]*imv1.Conversation, 0, len(m))
 	for _, c := range m {
+		if s.hidden[uid][c.Cid] {
+			continue
+		}
 		cp := *c
 		cp.Muted = s.mutes[uid][c.Cid]
+		cp.Pinned = s.pins[uid][c.Cid]
 		out = append(out, &cp)
 	}
 	for i := 0; i < len(out); i++ {
 		for j := i + 1; j < len(out); j++ {
-			if out[j].UpdatedAtMs > out[i].UpdatedAtMs {
+			pi, pj := 0, 0
+			if out[i].Pinned {
+				pi = 1
+			}
+			if out[j].Pinned {
+				pj = 1
+			}
+			if pj > pi || (pj == pi && out[j].UpdatedAtMs > out[i].UpdatedAtMs) {
 				out[i], out[j] = out[j], out[i]
 			}
 		}

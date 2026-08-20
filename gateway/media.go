@@ -36,12 +36,30 @@ type mediaStore struct {
 	initErr    error
 }
 
+// refuseTransport is used by the public-host signer so PresignedPutObject never
+// dials the browser-facing address (127.0.0.1 from inside Docker is the container itself).
+type refuseTransport struct{}
+
+func (refuseTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("minio signer must not dial %s", r.URL.Host)
+}
+
+func minioOpts(creds *credentials.Credentials, secure bool, transport http.RoundTripper) *minio.Options {
+	return &minio.Options{
+		Creds:        creds,
+		Secure:       secure,
+		Region:       "us-east-1", // skip GetBucketLocation HTTP round-trip
+		BucketLookup: minio.BucketLookupPath,
+		Transport:    transport,
+	}
+}
+
 func newMediaStore(cfg config) (*mediaStore, error) {
 	if strings.TrimSpace(cfg.MinioEndpoint) == "" {
 		return nil, nil
 	}
 	creds := credentials.NewStaticV4(cfg.MinioAccess, cfg.MinioSecret, "")
-	cli, err := minio.New(cfg.MinioEndpoint, &minio.Options{Creds: creds, Secure: cfg.MinioSecure})
+	cli, err := minio.New(cfg.MinioEndpoint, minioOpts(creds, cfg.MinioSecure, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +70,7 @@ func newMediaStore(cfg config) (*mediaStore, error) {
 	publicBase := strings.TrimRight(cfg.MinioPublicURL, "/")
 	signer := cli
 	if pub, err := url.Parse(publicBase); err == nil && pub.Host != "" && pub.Host != cfg.MinioEndpoint {
-		s, err := minio.New(pub.Host, &minio.Options{Creds: creds, Secure: pub.Scheme == "https"})
+		s, err := minio.New(pub.Host, minioOpts(creds, pub.Scheme == "https", refuseTransport{}))
 		if err != nil {
 			return nil, err
 		}
