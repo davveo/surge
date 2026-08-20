@@ -114,7 +114,7 @@ func (s *server) publish(ctx context.Context, uid string, gp *imv1.GatewayPush) 
 		rt := rts[i]
 		msg := *gp
 		msg.Uid = uid
-		msg.ConnId = rt.ConnID
+		msg.ConnId = ""
 		if err := s.router.Publish(ctx, rt.GatewayID, &msg); err != nil {
 			log.Printf("publish %s: %v", uid, err)
 			continue

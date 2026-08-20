@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,8 +87,12 @@ func (h *Hub) push(gp *imv1.GatewayPush) {
 	if gp.ConnId != "" {
 		if c := h.byConn[gp.ConnId]; c != nil && (gp.Uid == "" || c.uid == gp.Uid) {
 			targets = append(targets, c)
+		} else if gp.Uid != "" {
+			for _, c := range h.byUID[gp.Uid] {
+				targets = append(targets, c)
+			}
 		}
-	} else {
+	} else if gp.Uid != "" {
 		for _, c := range h.byUID[gp.Uid] {
 			targets = append(targets, c)
 		}
@@ -113,6 +118,30 @@ func (c *Conn) enqueue(env *imv1.Envelope) {
 	default:
 		log.Printf("conn %s send queue full, drop %T", c.id, env.Body)
 	}
+}
+
+func (h *Hub) pushRoster(toUID, fromUID, kind, extra string) {
+	toUID = strings.TrimSpace(toUID)
+	fromUID = strings.TrimSpace(fromUID)
+	if toUID == "" || toUID == fromUID {
+		return
+	}
+	text := strings.TrimSpace(kind)
+	if extra = strings.TrimSpace(extra); extra != "" {
+		text += " " + extra
+	}
+	if text == "" {
+		return
+	}
+	h.push(&imv1.GatewayPush{
+		Uid: toUID,
+		Push: &imv1.Push{
+			Cid:         "sys:roster",
+			FromUid:     fromUID,
+			Payload:     &imv1.Payload{Type: imv1.Payload_SYSTEM, Text: text},
+			CreatedAtMs: time.Now().UnixMilli(),
+		},
+	})
 }
 
 func (h *Hub) registerRoute(ctx context.Context, c *Conn) error {

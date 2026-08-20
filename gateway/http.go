@@ -178,6 +178,7 @@ func (a *httpAPI) friends(w http.ResponseWriter, r *http.Request) {
 			writeRPCError(w, err)
 			return
 		}
+		a.pushRoster(body.PeerUID, uid, "friend_accept", "")
 		writeProtoJSON(w, resp)
 	case http.MethodDelete:
 		var body struct {
@@ -192,6 +193,7 @@ func (a *httpAPI) friends(w http.ResponseWriter, r *http.Request) {
 			writeRPCError(w, err)
 			return
 		}
+		a.pushRoster(body.PeerUID, uid, "friend_remove", "")
 		writeProtoJSON(w, resp)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -249,6 +251,9 @@ func (a *httpAPI) groups(w http.ResponseWriter, r *http.Request) {
 		writeRPCError(w, err)
 		return
 	}
+	for _, peer := range body.Members {
+		a.pushRoster(peer, uid, "group_invite", resp.GetCid())
+	}
 	writeProtoJSON(w, resp)
 }
 
@@ -275,6 +280,9 @@ func (a *httpAPI) groupInvite(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeRPCError(w, err)
 		return
+	}
+	for _, peer := range body.Members {
+		a.pushRoster(peer, uid, "group_invite", body.CID)
 	}
 	writeProtoJSON(w, resp)
 }
@@ -413,6 +421,13 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (a *httpAPI) pushRoster(toUID, fromUID, kind, extra string) {
+	if a.ws == nil || a.ws.hub == nil {
+		return
+	}
+	a.ws.hub.pushRoster(toUID, fromUID, kind, extra)
 }
 
 func writeProtoJSON(w http.ResponseWriter, m proto.Message) {

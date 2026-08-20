@@ -63,6 +63,7 @@ func (a *httpAPI) friendRequests(w http.ResponseWriter, r *http.Request) {
 				writeRPCError(w, err)
 				return
 			}
+			a.pushRoster(body.PeerUID, uid, "friend_accept", "")
 			writeProtoJSON(w, resp)
 		case "decline":
 			resp, err := a.core.DeclineFriend(r.Context(), &imv1.AddFriendRequest{Uid: uid, PeerUid: body.PeerUID})
@@ -70,12 +71,18 @@ func (a *httpAPI) friendRequests(w http.ResponseWriter, r *http.Request) {
 				writeRPCError(w, err)
 				return
 			}
+			a.pushRoster(body.PeerUID, uid, "friend_decline", "")
 			writeProtoJSON(w, resp)
 		default:
 			resp, err := a.core.RequestFriend(r.Context(), &imv1.AddFriendRequest{Uid: uid, PeerUid: body.PeerUID})
 			if err != nil {
 				writeRPCError(w, err)
 				return
+			}
+			if resp.GetStatus() == "pending" {
+				a.pushRoster(body.PeerUID, uid, "friend_request", "")
+			} else if resp.GetStatus() == "friends" {
+				a.pushRoster(body.PeerUID, uid, "friend_accept", "")
 			}
 			writeProtoJSON(w, resp)
 		}

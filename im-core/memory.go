@@ -637,7 +637,8 @@ func (s *memoryStore) InviteGroup(_ context.Context, operatorUID, cid string, me
 			return nil, errTooLarge
 		}
 		g.Members = append(g.Members, groupMember{UID: uid, Role: "member"})
-		s.seedGroupConv(uid, g, now)
+		row := &timelineRow{msgID: "", convSeq: 0, createdAt: now, payload: &imv1.Payload{Text: "加入群聊"}}
+		s.upsertConv(uid, g.CID, "", g.Name, conv.KindGroup, row, "加入群聊", true)
 	}
 	return g, nil
 }

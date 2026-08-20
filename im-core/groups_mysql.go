@@ -145,7 +145,7 @@ func (s *mysqlStore) InviteGroup(ctx context.Context, operatorUID, cid string, m
 			cid, uid, now); err != nil {
 			return nil, err
 		}
-		if err := upsertConv(ctx, tx, uid, cid, "", g.Name, conv.KindGroup, "", 0, "加入群聊", now, false); err != nil {
+		if err := upsertConv(ctx, tx, uid, cid, "", g.Name, conv.KindGroup, "", 0, "加入群聊", now, true); err != nil {
 			return nil, err
 		}
 		existing[uid] = struct{}{}

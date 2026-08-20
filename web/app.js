@@ -1415,6 +1415,16 @@
     const extra = i < 0 ? "" : raw.slice(i + 1);
     const from = field(ev, "fromUid", "from_uid");
     const name = nickOf(from) || from;
+    const key = kind + ":" + from + ":" + extra;
+    const now = Date.now();
+    if (state.rosterSeen && state.rosterSeen[key] && now - state.rosterSeen[key] < 2500) {
+      loadFriends();
+      loadRequests();
+      loadConvs();
+      return;
+    }
+    state.rosterSeen = state.rosterSeen || {};
+    state.rosterSeen[key] = now;
     loadFriends();
     loadRequests();
     loadConvs();
@@ -1527,12 +1537,21 @@
       sendFrame({ auth: { accessToken: state.token, deviceId: deviceId() } });
     };
     ws.onmessage = (e) => {
-      try {
-        const env = JSON.parse(e.data);
-        onFrame(env);
-        broadcastFrame(env);
-      } catch (err) {
-        console.error(err);
+      const handle = (text) => {
+        try {
+          const env = JSON.parse(text);
+          onFrame(env);
+          broadcastFrame(env);
+        } catch (err) {
+          console.error(err);
+        }
+      };
+      if (typeof e.data === "string") {
+        handle(e.data);
+        return;
+      }
+      if (e.data && typeof e.data.text === "function") {
+        e.data.text().then(handle).catch(() => {});
       }
     };
     ws.onclose = () => {
