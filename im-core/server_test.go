@@ -308,6 +308,13 @@ func TestFriendRequestBlockAndHide(t *testing.T) {
 	if len(list) != 0 {
 		t.Fatalf("hidden still listed %+v", list)
 	}
+	if _, err := srv.GetTimeline(ctx, &imv1.GetTimelineRequest{Uid: "u1", Cid: sent.GetAck().GetCid(), Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u1")
+	if len(list) != 1 {
+		t.Fatalf("opening chat should unhide %+v", list)
+	}
 	if _, err := srv.RemoveFriend(ctx, &imv1.RemoveFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
 		t.Fatal(err)
 	}
@@ -384,6 +391,61 @@ func TestLeaveAndPin(t *testing.T) {
 	}
 }
 
+func TestHideUnhideSearchAndNewMessage(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRemark(ctx, "u1", "u2", "小二"); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "h1", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "keep-me"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid := sent.GetAck().GetCid()
+	if err := st.HideConversation(ctx, "u1", cid); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := st.ListConversations(ctx, "u1")
+	if len(list) != 0 {
+		t.Fatalf("hidden still listed %+v", list)
+	}
+	hits, err := st.SearchMessages(ctx, "u1", "keep-me", 10)
+	if err != nil || len(hits) == 0 || hits[0].GetCid() != cid {
+		t.Fatalf("hidden chat should stay searchable %+v %v", hits, err)
+	}
+	hits, err = st.SearchMessages(ctx, "u1", "小二", 10)
+	if err != nil || len(hits) == 0 || hits[0].GetCid() != cid {
+		t.Fatalf("hidden chat should match title %+v %v", hits, err)
+	}
+	if _, err := srv.GetTimeline(ctx, &imv1.GetTimelineRequest{Uid: "u1", Cid: cid, Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u1")
+	if len(list) != 1 {
+		t.Fatalf("opening should unhide %+v", list)
+	}
+	if err := st.HideConversation(ctx, "u1", cid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u2", ClientMsgId: "h2", PeerUid: "u1",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "ping"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u1")
+	if len(list) != 1 {
+		t.Fatalf("new message should unhide %+v", list)
+	}
+}
+
 func TestTimelineQuerySearchAndPage(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
 	ctx := context.Background()
@@ -425,9 +487,118 @@ func TestUpdateGroupOwnerOnly(t *testing.T) {
 	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "new", "", "", false, nil); err == nil {
 		t.Fatal("member should not rename")
 	}
+	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "", "", "nope", true, nil); err == nil {
+		t.Fatal("member should not set announcement")
+	}
+	if _, err := st.SetMember(ctx, "u1", g.CID, "u2", "", "admin", false, false, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "", "http://x/b.png", "", false, nil); err == nil {
+		t.Fatal("admin should not set avatar")
+	}
+	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "", "", "admin note", true, nil); err == nil {
+		t.Fatal("admin should not set announcement")
+	}
 	out, err := st.UpdateGroup(ctx, "u1", g.CID, "new", "http://x/a.png", "", false, nil)
 	if err != nil || out.Name != "new" || out.AvatarURL == "" {
 		t.Fatalf("update %+v %v", out, err)
+	}
+	ann, err := st.UpdateGroup(ctx, "u1", g.CID, "", "", "hello\nworld", true, nil)
+	if err != nil || ann.Announcement != "hello\nworld" {
+		t.Fatalf("set announcement %+v %v", ann, err)
+	}
+	cleared, err := st.UpdateGroup(ctx, "u1", g.CID, "", "", "", true, nil)
+	if err != nil || cleared.Announcement != "" {
+		t.Fatalf("clear announcement %+v %v", cleared, err)
+	}
+	list, err := st.ListConversations(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *imv1.Conversation
+	for _, c := range list {
+		if c.Cid == g.CID {
+			found = c
+			break
+		}
+	}
+	if found == nil || found.GetPeerProfile() == nil || found.GetPeerProfile().GetAvatarUrl() != "http://x/a.png" {
+		t.Fatalf("group conv avatar %+v", found)
+	}
+}
+
+func TestUpdateGroupSystemStaysInGroup(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	p2p, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "p1", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "hello-p2p"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2pCID := p2p.GetAck().GetCid()
+	g, err := srv.CreateGroup(ctx, &imv1.CreateGroupRequest{OwnerUid: "u1", Name: "old", MemberUids: []string{"u2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.UpdateGroup(ctx, &imv1.UpdateGroupRequest{OperatorUid: "u1", Cid: g.Cid, Name: "多人群"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "u1 将群名改为「多人群」"
+	_, groupMsgs, err := st.Timeline(ctx, "u1", g.Cid, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundSys := false
+	for _, m := range groupMsgs {
+		if m.GetPayload().GetType() == imv1.Payload_SYSTEM && m.GetPayload().GetText() == want {
+			foundSys = true
+		}
+	}
+	if !foundSys {
+		t.Fatalf("group timeline missing system notice: %+v", groupMsgs)
+	}
+	_, p2pMsgs, err := st.Timeline(ctx, "u1", p2pCID, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range p2pMsgs {
+		if strings.Contains(m.GetPayload().GetText(), "将群名改为") {
+			t.Fatalf("p2p timeline polluted: %+v", m)
+		}
+	}
+	list, err := st.ListConversations(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groupConv, p2pConv *imv1.Conversation
+	for _, c := range list {
+		switch c.Cid {
+		case g.Cid:
+			groupConv = c
+		case p2pCID:
+			p2pConv = c
+		}
+	}
+	if groupConv == nil || groupConv.Kind != "group" || groupConv.Title != "多人群" || groupConv.LastText != want {
+		t.Fatalf("group conv %+v", groupConv)
+	}
+	if p2pConv == nil || p2pConv.Kind != "p2p" || p2pConv.LastText != "hello-p2p" {
+		t.Fatalf("p2p conv polluted %+v", p2pConv)
+	}
+	sync, err := st.Sync(ctx, "u2", 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range sync.Events {
+		if ev.GetPayload().GetType() == imv1.Payload_SYSTEM && strings.Contains(ev.GetPayload().GetText(), "将群名改为") && ev.GetCid() != g.Cid {
+			t.Fatalf("rename system pushed on non-group cid %s", ev.GetCid())
+		}
 	}
 }
 

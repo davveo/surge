@@ -251,6 +251,15 @@ func (s *memoryStore) HideConversation(_ context.Context, uid, cid string) error
 	return nil
 }
 
+func (s *memoryStore) UnhideConversation(_ context.Context, uid, cid string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hidden[uid] != nil {
+		delete(s.hidden[uid], cid)
+	}
+	return nil
+}
+
 func (s *memoryStore) SetPin(_ context.Context, uid, cid string, pinned bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

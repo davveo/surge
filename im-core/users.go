@@ -176,6 +176,9 @@ func (s *memoryStore) UpdateGroup(_ context.Context, operatorUID, cid, name, ava
 	if g == nil {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
+	if a := strings.TrimSpace(avatarURL); a != "" && !isOwner(g, operatorUID) {
+		return nil, errNotOwner
+	}
 	if !isManager(g, operatorUID) {
 		return nil, errNotAdmin
 	}
@@ -191,6 +194,9 @@ func (s *memoryStore) UpdateGroup(_ context.Context, operatorUID, cid, name, ava
 		g.AvatarURL = clipText(a, 512)
 	}
 	if setAnnouncement {
+		if !isOwner(g, operatorUID) {
+			return nil, errNotOwner
+		}
 		g.Announcement = clipText(announcement, 2000)
 	}
 	if joinApproval != nil {

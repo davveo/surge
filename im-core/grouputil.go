@@ -27,6 +27,10 @@ func memberOf(g *groupInfo, uid string) *groupMember {
 	return nil
 }
 
+func isOwner(g *groupInfo, uid string) bool {
+	return g != nil && g.OwnerUID == uid
+}
+
 func isManager(g *groupInfo, uid string) bool {
 	m := memberOf(g, uid)
 	return m != nil && roleRank(m.Role) >= 2
@@ -43,7 +47,10 @@ func canSpeak(g *groupInfo, uid string) error {
 	if m.Role == "owner" {
 		return nil
 	}
-	if g.MutedAll || m.Muted {
+	if m.Muted {
+		return errMutedAll
+	}
+	if g.MutedAll && m.Role != "admin" {
 		return errMutedAll
 	}
 	return nil

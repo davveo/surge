@@ -313,9 +313,10 @@ func (s *mysqlStore) Watermark(ctx context.Context, uid string) (uint64, error) 
 func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.cid, c.peer_uid, c.last_msg_id, c.last_conv_seq, c.unread, c.updated_at_ms, c.last_text, c.title, c.kind,
-			IFNULL(m.muted, 0), IFNULL(c.pinned, 0)
+			IFNULL(m.muted, 0), IFNULL(c.pinned, 0), IFNULL(g.avatar_url, '')
 		FROM conversations c
 		LEFT JOIN conv_mutes m ON m.uid = c.uid AND m.cid = c.cid
+		LEFT JOIN im_groups g ON g.cid = c.cid
 		WHERE c.uid = ? AND IFNULL(c.hidden, 0) = 0
 		ORDER BY c.pinned DESC, c.updated_at_ms DESC`, uid)
 	if err != nil {
@@ -326,11 +327,15 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 	for rows.Next() {
 		c := &imv1.Conversation{}
 		var muted, pinned int
-		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned); err != nil {
+		var groupAvatar string
+		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned, &groupAvatar); err != nil {
 			return nil, err
 		}
 		c.Muted = muted != 0
 		c.Pinned = pinned != 0
+		if conv.IsGroup(c.Cid) && groupAvatar != "" {
+			c.PeerProfile = &imv1.UserProfile{AvatarUrl: groupAvatar}
+		}
 		out = append(out, c)
 	}
 	return out, rows.Err()

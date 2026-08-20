@@ -27,6 +27,33 @@ func TestHubPushFallsBackToUID(t *testing.T) {
 	}
 }
 
+func TestHubListDevicesMarksSelf(t *testing.T) {
+	h := newHub(nil, "gw")
+	mine := &Conn{id: "c1", uid: "u1", deviceID: "web-a", hub: h}
+	other := &Conn{id: "c2", uid: "u1", deviceID: "web-b", hub: h}
+	h.byConn[mine.id] = mine
+	h.byConn[other.id] = other
+	h.byUID["u1"] = map[string]*Conn{mine.id: mine, other.id: other}
+
+	list := h.listDevices("u1", "web-a")
+	if len(list) != 2 {
+		t.Fatalf("len=%d", len(list))
+	}
+	got := map[string]string{}
+	for _, d := range list {
+		got[d["device_id"]] = d["self"]
+	}
+	if got["web-a"] != "1" || got["web-b"] != "0" {
+		t.Fatalf("self flags %+v", got)
+	}
+	if !h.isSelfDevice("c1", "web-a") {
+		t.Fatal("c1 should be current device")
+	}
+	if h.isSelfDevice("c2", "web-a") {
+		t.Fatal("c2 should not be current device")
+	}
+}
+
 func TestHubPushRosterSkipsSelf(t *testing.T) {
 	h := newHub(nil, "gw")
 	c := &Conn{id: "me", uid: "u1", send: make(chan *imv1.Envelope, 1), hub: h}

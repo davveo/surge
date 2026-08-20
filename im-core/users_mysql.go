@@ -167,11 +167,14 @@ func (s *mysqlStore) UpdateGroup(ctx context.Context, operatorUID, cid, name, av
 	if err != nil {
 		return nil, err
 	}
+	name = strings.TrimSpace(name)
+	avatarURL = strings.TrimSpace(avatarURL)
+	if avatarURL != "" && !isOwner(g, operatorUID) {
+		return nil, errNotOwner
+	}
 	if !isManager(g, operatorUID) {
 		return nil, errNotAdmin
 	}
-	name = strings.TrimSpace(name)
-	avatarURL = strings.TrimSpace(avatarURL)
 	if name != "" {
 		g.Name = clipText(name, 128)
 	}
@@ -179,6 +182,9 @@ func (s *mysqlStore) UpdateGroup(ctx context.Context, operatorUID, cid, name, av
 		g.AvatarURL = clipText(avatarURL, 512)
 	}
 	if setAnnouncement {
+		if !isOwner(g, operatorUID) {
+			return nil, errNotOwner
+		}
 		g.Announcement = clipText(announcement, 2000)
 	}
 	if joinApproval != nil {

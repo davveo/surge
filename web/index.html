@@ -67,6 +67,7 @@
         </button>
       </nav>
       <div class="rail-spacer"></div>
+      <div id="conn-state" class="rail-conn">未连接</div>
       <button id="logout" type="button" class="rail-btn" title="退出">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v2h-1.6v-2a.9.9 0 0 0-.9-.9h-11a.9.9 0 0 0-.9.9v11a.9.9 0 0 0 .9.9h11a.9.9 0 0 0 .9-.9v-2H20v2a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm12.2 8.2-1.1-1.1 1.6-1.6H10v-1.6h6.7l-1.6-1.6 1.1-1.1 3.5 3.5-3.5 3.5Z"/></svg>
       </button>
@@ -113,8 +114,11 @@
       <div class="chat-main">
       <header class="chat-head">
         <div class="chat-head-main">
-          <div id="chat-title">选择一个会话</div>
-          <div id="chat-sub"></div>
+          <div id="chat-head-avatar" class="hidden"></div>
+          <div class="chat-head-titles">
+            <div id="chat-title">选择一个会话</div>
+            <div id="chat-sub"></div>
+          </div>
         </div>
         <div class="chat-head-actions">
           <button id="chat-menu-btn" type="button" title="聊天信息">
@@ -122,6 +126,11 @@
           </button>
         </div>
       </header>
+      <div id="announce-pin" class="hidden">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 10.2v3.6h3.1L14 17.6V6.4l-5.7 3.8H5.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M17 9.1a3.6 3.6 0 0 1 0 5.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span id="announce-pin-text"></span>
+        <button type="button" id="announce-pin-dismiss" title="关闭置顶" aria-label="关闭置顶">×</button>
+      </div>
       <div id="chat-search-bar" class="hidden">
         <input id="chat-search" placeholder="搜索聊天记录" />
       </div>
@@ -137,7 +146,7 @@
         <button id="quote-clear" type="button">×</button>
       </div>
       <div id="upload-progress" class="hidden"><div id="upload-bar"></div></div>
-      <form id="send-form">
+      <form id="send-form" class="composer-locked">
         <div id="mention-box" class="hidden"></div>
         <div class="composer-tools">
           <button id="emoji-btn" type="button" disabled title="表情">
@@ -178,11 +187,11 @@
             <button id="invite-btn" type="button">添加</button>
           </div>
           <div class="side-list">
-            <button type="button" class="side-row" id="rename-row">
+            <button type="button" class="side-row hidden" id="rename-row">
               <span>群聊名称</span>
               <span class="side-val" id="side-group-name"></span>
             </button>
-            <button type="button" class="side-row" id="announce-row">
+            <button type="button" class="side-row hidden" id="announce-row">
               <span>群公告</span>
               <span class="side-val" id="side-announce"></span>
             </button>
@@ -239,11 +248,11 @@
               <div class="mid-label">入群申请</div>
               <div id="join-req-list"></div>
             </div>
+            <button id="admins-btn" type="button" class="side-row hidden">设置管理员</button>
             <button id="transfer-btn" type="button" class="side-row hidden">转让群主</button>
             <button id="leave-btn" type="button" class="side-row danger">退出群聊</button>
             <button id="dissolve-btn" type="button" class="side-row danger hidden">解散群聊</button>
           </div>
-          <div id="conn-state" class="side-conn">未连接</div>
         </div>
       </aside>
     </section>
@@ -260,8 +269,11 @@
   </div>
   <div id="qr-card-box" class="overlay hidden">
     <div class="modal-card">
-      <div class="modal-title">扫一扫加我为好友</div>
-      <div class="modal-body" style="text-align:center"><img id="qr-card-img" alt="" /></div>
+      <div class="modal-title">名片二维码</div>
+      <div class="modal-body" style="text-align:center">
+        <img id="qr-card-img" alt="名片二维码" />
+        <div id="qr-card-hint">扫码加我为好友</div>
+      </div>
       <div class="modal-actions">
         <button id="qr-card-close" type="button" class="btn-ghost">关闭</button>
       </div>
@@ -273,6 +285,15 @@
       <div id="devices-list" class="modal-body"></div>
       <div class="modal-actions">
         <button id="devices-ok" type="button" class="btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="admins-box" class="overlay hidden">
+    <div class="modal-card">
+      <div class="modal-title">设置管理员</div>
+      <div id="admins-list" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="admins-ok" type="button" class="btn-ghost">关闭</button>
       </div>
     </div>
   </div>
@@ -293,6 +314,7 @@
       <div id="modal-title" class="modal-title"></div>
       <div id="modal-body" class="modal-body"></div>
       <input id="modal-input" class="modal-input hidden" autocomplete="off" />
+      <textarea id="modal-textarea" class="modal-input modal-textarea hidden" rows="6" maxlength="2000"></textarea>
       <div class="modal-actions">
         <button id="modal-cancel" type="button" class="btn-ghost">取消</button>
         <button id="modal-ok" type="button" class="btn-primary">确定</button>

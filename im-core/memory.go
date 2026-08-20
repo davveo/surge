@@ -116,6 +116,7 @@ type Store interface {
 	DissolveGroup(ctx context.Context, uid, cid string) error
 	TransferOwner(ctx context.Context, operatorUID, cid, memberUID string) (*groupInfo, error)
 	HideConversation(ctx context.Context, uid, cid string) error
+	UnhideConversation(ctx context.Context, uid, cid string) error
 	SetPin(ctx context.Context, uid, cid string, pinned bool) error
 	TimelineQuery(ctx context.Context, uid, cid string, afterSeq, beforeSeq uint64, limit int, query string) (string, []*imv1.TimelineMessage, bool, error)
 	GetReadState(ctx context.Context, uid, cid string, convSeq uint64) (readCount, memberCount int, readers []string, err error)
@@ -438,6 +439,11 @@ func (s *memoryStore) ListConversations(_ context.Context, uid string) ([]*imv1.
 		cp := *c
 		cp.Muted = s.mutes[uid][c.Cid]
 		cp.Pinned = s.pins[uid][c.Cid]
+		if conv.IsGroup(cp.Cid) {
+			if g := s.groups[cp.Cid]; g != nil && g.AvatarURL != "" {
+				cp.PeerProfile = &imv1.UserProfile{AvatarUrl: g.AvatarURL}
+			}
+		}
 		out = append(out, &cp)
 	}
 	for i := 0; i < len(out); i++ {

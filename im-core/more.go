@@ -91,6 +91,31 @@ func (s *memoryStore) SetPublicKey(_ context.Context, uid, publicKey string) err
 	return nil
 }
 
+func convDisplayTitleLocked(s *memoryStore, uid string, c *imv1.Conversation) string {
+	if c == nil {
+		return ""
+	}
+	if conv.IsGroup(c.Cid) {
+		if c.Title != "" {
+			return c.Title
+		}
+		if g := s.groups[c.Cid]; g != nil && g.Name != "" {
+			return g.Name
+		}
+		return "群聊"
+	}
+	if remark := s.remarks[uid][c.PeerUid]; remark != "" {
+		return remark
+	}
+	if u := s.users[c.PeerUid]; u != nil && u.DisplayName != "" {
+		return u.DisplayName
+	}
+	if c.Title != "" {
+		return c.Title
+	}
+	return c.PeerUid
+}
+
 func (s *memoryStore) SearchMessages(_ context.Context, uid, query string, limit int) ([]*imv1.SearchHit, error) {
 	query = strings.TrimSpace(query)
 	if uid == "" || query == "" {
@@ -102,16 +127,36 @@ func (s *memoryStore) SearchMessages(_ context.Context, uid, query string, limit
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	q := strings.ToLower(query)
+	seenConv := map[string]bool{}
 	var hits []*imv1.SearchHit
 	for cid, convRow := range s.convs[uid] {
+		title := convDisplayTitleLocked(s, uid, convRow)
+		if convMatchesQuery(title, convRow.PeerUid, q) {
+			hits = append(hits, &imv1.SearchHit{
+				Cid:   cid,
+				Title: title,
+				Message: &imv1.TimelineMessage{
+					Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: convRow.LastText},
+				},
+			})
+			seenConv[cid] = true
+			if len(hits) >= limit {
+				return hits, nil
+			}
+		}
+	}
+	for cid, convRow := range s.convs[uid] {
 		rows := s.byCID[cid]
-		title := convRow.Title
+		title := convDisplayTitleLocked(s, uid, convRow)
 		for i := len(rows) - 1; i >= 0 && len(hits) < limit; i-- {
 			row := rows[i]
 			if row.recalled || row.payload == nil || row.payload.E2Ee {
 				continue
 			}
 			if !strings.Contains(strings.ToLower(row.payload.GetText()), q) {
+				continue
+			}
+			if seenConv[cid] && row.payload.GetText() == convRow.LastText {
 				continue
 			}
 			hits = append(hits, &imv1.SearchHit{
@@ -128,6 +173,15 @@ func (s *memoryStore) SearchMessages(_ context.Context, uid, query string, limit
 		}
 	}
 	return hits, nil
+}
+
+func convMatchesQuery(title, peer, q string) bool {
+	for _, s := range []string{title, peer} {
+		if s != "" && strings.Contains(strings.ToLower(s), q) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *memoryStore) SetGroupMuteAll(_ context.Context, operatorUID, cid string, muted bool) (*groupInfo, error) {

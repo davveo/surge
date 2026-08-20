@@ -6,10 +6,20 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/davveo/surge/pkg/auth"
 	"github.com/davveo/surge/pkg/route"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 	"github.com/skip2/go-qrcode"
 )
+
+func deviceIDFromRequest(secret string, r *http.Request) string {
+	raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	claims, err := auth.Parse(secret, strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return claims.DeviceID
+}
 
 func (a *httpAPI) messageDelete(w http.ResponseWriter, r *http.Request) {
 	uid, ok := a.uidFromAuth(w, r)
@@ -70,8 +80,8 @@ func (a *httpAPI) groupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CID      string `json:"cid"`
-		UID      string `json:"uid"`
+		CID      string  `json:"cid"`
+		UID      string  `json:"uid"`
 		Nickname *string `json:"nickname"`
 		Role     *string `json:"role"`
 		Muted    *bool   `json:"muted"`
@@ -175,11 +185,12 @@ func (a *httpAPI) devices(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	selfDevice := deviceIDFromRequest(a.secret, r)
 	switch r.Method {
 	case http.MethodGet:
 		list := []map[string]string{}
 		if a.ws != nil && a.ws.hub != nil {
-			list = a.ws.hub.listDevices(uid)
+			list = a.ws.hub.listDevices(uid, selfDevice)
 		}
 		if a.rdb != nil {
 			raw, err := a.rdb.Get(r.Context(), route.Key(uid)).Bytes()
@@ -193,8 +204,12 @@ func (a *httpAPI) devices(w http.ResponseWriter, r *http.Request) {
 					if seen[rec.ConnID] {
 						continue
 					}
+					self := "0"
+					if selfDevice != "" && rec.DeviceID == selfDevice {
+						self = "1"
+					}
 					list = append(list, map[string]string{
-						"conn_id": rec.ConnID, "device_id": rec.DeviceID, "gateway_id": rec.GatewayID, "self": "0",
+						"conn_id": rec.ConnID, "device_id": rec.DeviceID, "gateway_id": rec.GatewayID, "self": self,
 					})
 				}
 			}
@@ -209,6 +224,10 @@ func (a *httpAPI) devices(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if a.ws != nil && a.ws.hub != nil {
+			if selfDevice != "" && a.ws.hub.isSelfDevice(body.ConnID, selfDevice) {
+				http.Error(w, "cannot kick current device", http.StatusBadRequest)
+				return
+			}
 			a.ws.hub.kick(r.Context(), uid, body.ConnID)
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "1"})
@@ -241,16 +260,30 @@ func (a *httpAPI) meQRPNG(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(png)
 }
 
-func (h *Hub) listDevices(uid string) []map[string]string {
+func (h *Hub) listDevices(uid, selfDeviceID string) []map[string]string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	var out []map[string]string
+	out := make([]map[string]string, 0)
 	for _, c := range h.byUID[uid] {
+		self := "0"
+		if selfDeviceID != "" && c.deviceID == selfDeviceID {
+			self = "1"
+		}
 		out = append(out, map[string]string{
-			"conn_id": c.id, "device_id": c.deviceID, "gateway_id": h.gwID, "self": "1",
+			"conn_id": c.id, "device_id": c.deviceID, "gateway_id": h.gwID, "self": self,
 		})
 	}
 	return out
+}
+
+func (h *Hub) isSelfDevice(connID, selfDeviceID string) bool {
+	if connID == "" || selfDeviceID == "" {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	c := h.byConn[connID]
+	return c != nil && c.deviceID == selfDeviceID
 }
 
 func (h *Hub) kick(ctx context.Context, uid, connID string) {

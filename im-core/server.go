@@ -177,6 +177,7 @@ func (s *server) GetTimeline(ctx context.Context, req *imv1.GetTimelineRequest) 
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	_ = s.store.UnhideConversation(ctx, req.GetUid(), req.GetCid())
 	return &imv1.GetTimelineResponse{Cid: cid, Messages: msgs, HasMore: hasMore}, nil
 }
 
@@ -482,31 +483,10 @@ func (s *server) MarkRead(ctx context.Context, req *imv1.MarkReadRequest) (*imv1
 func (s *server) FanoutTyping(ctx context.Context, req *imv1.Typing) (*imv1.Typing, error) {
 	cid := req.GetCid()
 	from := req.GetFromUid()
-	if cid == "" || from == "" {
+	if cid == "" || from == "" || conv.IsGroup(cid) {
 		return req, nil
 	}
-	if conv.IsGroup(cid) {
-		members, err := s.store.GroupMembers(ctx, cid)
-		if err != nil {
-			return nil, mapErr(err)
-		}
-		ok := false
-		for _, uid := range members {
-			if uid == from {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			return nil, mapErr(errNotMember)
-		}
-		for _, uid := range members {
-			if uid == from {
-				continue
-			}
-			s.publish(ctx, uid, &imv1.GatewayPush{Uid: uid, Typing: req})
-		}
-	} else if peer, err := conv.PeerUID(cid, from); err == nil {
+	if peer, err := conv.PeerUID(cid, from); err == nil {
 		s.publish(ctx, peer, &imv1.GatewayPush{Uid: peer, Typing: req})
 	}
 	return req, nil

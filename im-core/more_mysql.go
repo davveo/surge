@@ -93,6 +93,11 @@ func (s *mysqlStore) SetPublicKey(ctx context.Context, uid, publicKey string) er
 	return err
 }
 
+func sqlContains(q string) string {
+	q = strings.NewReplacer("%", "", "_", "").Replace(strings.TrimSpace(q))
+	return "%" + q + "%"
+}
+
 func (s *mysqlStore) SearchMessages(ctx context.Context, uid, query string, limit int) ([]*imv1.SearchHit, error) {
 	query = strings.TrimSpace(query)
 	if uid == "" || query == "" {
@@ -101,25 +106,62 @@ func (s *mysqlStore) SearchMessages(ctx context.Context, uid, query string, limi
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
+	like := sqlContains(query)
+	titleExpr := `COALESCE(NULLIF(r.remark,''), NULLIF(u.display_name,''), NULLIF(c.title,''), c.peer_uid)`
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.msg_id, m.cid, m.conv_seq, m.from_uid, m.payload_type, m.payload_text, m.payload_media, m.created_at_ms, m.recalled, c.title
-		FROM messages m
-		JOIN conversations c ON c.cid = m.cid AND c.uid = ?
-		WHERE c.uid = ? AND m.recalled = 0 AND m.payload_text LIKE ?
-		ORDER BY m.created_at_ms DESC
-		LIMIT ?`, uid, uid, "%"+query+"%", limit)
+		SELECT c.cid, `+titleExpr+`, c.last_text
+		FROM conversations c
+		LEFT JOIN friend_remarks r ON r.uid = c.uid AND r.peer_uid = c.peer_uid
+		LEFT JOIN users u ON u.uid = c.peer_uid
+		WHERE c.uid = ? AND (`+titleExpr+` LIKE ? OR c.peer_uid LIKE ?)
+		ORDER BY c.updated_at_ms DESC
+		LIMIT ?`, uid, like, like, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var hits []*imv1.SearchHit
 	for rows.Next() {
+		var cid, title, last string
+		if err := rows.Scan(&cid, &title, &last); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		hits = append(hits, &imv1.SearchHit{
+			Cid:   cid,
+			Title: title,
+			Message: &imv1.TimelineMessage{
+				Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: last},
+			},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	if len(hits) >= limit {
+		return hits, nil
+	}
+	msgRows, err := s.db.QueryContext(ctx, `
+		SELECT m.msg_id, m.cid, m.conv_seq, m.from_uid, m.payload_type, m.payload_text, m.payload_media, m.created_at_ms, m.recalled, `+titleExpr+`
+		FROM messages m
+		JOIN conversations c ON c.cid = m.cid AND c.uid = ?
+		LEFT JOIN friend_remarks r ON r.uid = c.uid AND r.peer_uid = c.peer_uid
+		LEFT JOIN users u ON u.uid = c.peer_uid
+		WHERE c.uid = ? AND m.recalled = 0 AND m.payload_text LIKE ?
+		ORDER BY m.created_at_ms DESC
+		LIMIT ?`, uid, uid, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer msgRows.Close()
+	for msgRows.Next() {
 		var msgID, cid, from, text, media, title string
 		var ptype int32
 		var seq uint64
 		var created int64
 		var recalled int
-		if err := rows.Scan(&msgID, &cid, &seq, &from, &ptype, &text, &media, &created, &recalled, &title); err != nil {
+		if err := msgRows.Scan(&msgID, &cid, &seq, &from, &ptype, &text, &media, &created, &recalled, &title); err != nil {
 			return nil, err
 		}
 		p := payloadFromCols(ptype, text, media, recalled != 0)
@@ -133,8 +175,11 @@ func (s *mysqlStore) SearchMessages(ctx context.Context, uid, query string, limi
 				MsgId: msgID, ConvSeq: seq, FromUid: from, Payload: p, CreatedAtMs: created,
 			},
 		})
+		if len(hits) >= limit {
+			break
+		}
 	}
-	return hits, rows.Err()
+	return hits, msgRows.Err()
 }
 
 func (s *mysqlStore) SetGroupMuteAll(ctx context.Context, operatorUID, cid string, muted bool) (*groupInfo, error) {

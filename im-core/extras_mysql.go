@@ -284,6 +284,11 @@ func (s *mysqlStore) HideConversation(ctx context.Context, uid, cid string) erro
 	return err
 }
 
+func (s *mysqlStore) UnhideConversation(ctx context.Context, uid, cid string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE conversations SET hidden = 0 WHERE uid = ? AND cid = ?`, uid, cid)
+	return err
+}
+
 func (s *mysqlStore) SetPin(ctx context.Context, uid, cid string, pinned bool) error {
 	v := 0
 	if pinned {

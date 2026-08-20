@@ -15,8 +15,6 @@
     side.classList.toggle("hidden", !open);
     const btn = $("chat-menu-btn");
     if (btn) btn.classList.toggle("on", !!open);
-    const app = $("app");
-    if (app) app.classList.toggle("side-open", !!open);
   }
   function syncSideSwitches() {
     setSwitch("mute-switch", isMuted(state.activeCid));
@@ -51,6 +49,7 @@
     reqId: 1,
     lastSyncSeq: 0,
     convs: [],
+    hiddenConvs: [],
     friends: [],
     activePeer: "",
     activeCid: "",
@@ -58,6 +57,7 @@
     outbox: [],
     hb: null,
     group: null,
+    groupCache: {},
     peerReadSeq: 0,
     lastTypingAt: 0,
     typingTimer: null,
@@ -89,6 +89,9 @@
     selected: {},
     highlightId: "",
     addPeer: "",
+    ensuringChat: false,
+    openingChat: false,
+    showHidden: false,
   };
 
   const dbp = new Promise((resolve, reject) => {
@@ -204,7 +207,10 @@
   function friendlyHttp(status, text) {
     const t = String(text || "");
     if (status === 429 || /too many/i.test(t)) return "操作过于频繁，请稍后再试";
+    if (/not group owner/i.test(t)) return "仅群主可设置";
+    if (/not group admin/i.test(t)) return "仅群主或管理员可操作";
     if (/blocked/i.test(t)) return "已拉黑，无法发送";
+    if (/cannot kick current device/i.test(t)) return "不能下线当前设备";
     return t || "请求失败";
   }
 
@@ -215,6 +221,9 @@
     if (/add friend first/i.test(t)) return "请先加好友再发消息";
     if (/not friends/i.test(t)) return "请先加好友再发消息";
     if (/user blocked|blocked/i.test(t)) return "已拉黑，无法发送";
+    if (/group muted/i.test(t)) return "全员禁言中，无法发送";
+    if (/not group owner/i.test(t)) return "仅群主可设置";
+    if (/not group admin/i.test(t)) return "仅群主或管理员可操作";
     if (/peer_uid does not match cid/i.test(t)) return "会话对象不匹配，请重新打开聊天后再发";
     return t.replace(/^rpc error: code = \w+ desc = (invalid argument: )?/i, "") || "发送失败";
   }
@@ -231,7 +240,12 @@
     state.toastTimer = setTimeout(() => el.classList.add("hidden"), 2600);
   }
 
-  const modalState = { resolve: null, mode: "alert" };
+  const modalState = { resolve: null, mode: "alert", multiline: false };
+  function promptValue() {
+    if (!modalState.multiline) return $("modal-input").value;
+    const ta = $("modal-textarea");
+    return ta ? ta.value : "";
+  }
   function closeDialog(result) {
     const box = $("modal");
     if (box) box.classList.add("hidden");
@@ -244,28 +258,49 @@
       if (modalState.resolve) closeDialog(modalState.mode === "confirm" ? false : null);
       modalState.resolve = resolve;
       modalState.mode = opts.mode || "alert";
+      modalState.multiline = !!(opts.multiline && modalState.mode === "prompt");
       const title = $("modal-title");
       const body = $("modal-body");
       const input = $("modal-input");
+      const ta = $("modal-textarea");
       const cancel = $("modal-cancel");
       const ok = $("modal-ok");
+      const card = $("modal") && $("modal").querySelector(".modal-card");
       title.textContent = opts.title || (modalState.mode === "prompt" ? "请输入" : modalState.mode === "confirm" ? "确认" : "提示");
       body.textContent = opts.message || "";
       body.classList.toggle("hidden", !opts.message);
-      if (modalState.mode === "prompt") {
+      if (card) card.classList.toggle("modal-wide", modalState.multiline);
+      if (modalState.mode === "prompt" && modalState.multiline && ta) {
+        input.classList.add("hidden");
+        input.value = "";
+        ta.classList.remove("hidden");
+        ta.value = opts.value == null ? "" : String(opts.value);
+        ta.placeholder = opts.placeholder || "";
+      } else if (modalState.mode === "prompt") {
+        if (ta) {
+          ta.classList.add("hidden");
+          ta.value = "";
+        }
         input.classList.remove("hidden");
         input.value = opts.value == null ? "" : String(opts.value);
         input.placeholder = opts.placeholder || "";
       } else {
         input.classList.add("hidden");
         input.value = "";
+        if (ta) {
+          ta.classList.add("hidden");
+          ta.value = "";
+        }
       }
       cancel.classList.toggle("hidden", modalState.mode === "alert");
       ok.textContent = opts.ok || (modalState.mode === "alert" ? "知道了" : "确定");
       ok.className = opts.danger ? "btn-danger" : "btn-primary";
       $("modal").classList.remove("hidden");
       setTimeout(() => {
-        if (modalState.mode === "prompt") input.focus();
+        if (modalState.mode === "prompt" && modalState.multiline && ta) {
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        } else if (modalState.mode === "prompt") input.focus();
         else ok.focus();
       }, 30);
     });
@@ -279,9 +314,19 @@
   function dlgPrompt(message, value, title) {
     return dlgOpen({ mode: "prompt", message, value, title });
   }
+  function dlgPromptArea(message, value, title) {
+    return dlgOpen({
+      mode: "prompt",
+      message,
+      value,
+      title,
+      multiline: true,
+      placeholder: "输入群公告，留空可清空",
+    });
+  }
   $("modal-ok").onclick = () => {
     if (modalState.mode === "confirm") closeDialog(true);
-    else if (modalState.mode === "prompt") closeDialog($("modal-input").value);
+    else if (modalState.mode === "prompt") closeDialog(promptValue());
     else closeDialog(true);
   };
   $("modal-cancel").onclick = () => closeDialog(modalState.mode === "confirm" ? false : null);
@@ -293,6 +338,14 @@
     if (e.key === "Enter") $("modal-ok").click();
     if (e.key === "Escape") $("modal-cancel").click();
   });
+  if ($("modal-textarea")) {
+    $("modal-textarea").addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        $("modal-ok").click();
+      }
+    });
+  }
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if ($("modal") && !$("modal").classList.contains("hidden")) {
@@ -309,13 +362,18 @@
     if (!c) return "";
     if (c.kind === "group" || isGroup(c.cid)) return c.title || "群聊";
     const p = peerProfile(c);
-    return field(p, "displayName", "display_name") || field(c, "peerUid", "peer_uid") || c.cid;
+    return field(p, "displayName", "display_name") || field(c, "peerUid", "peer_uid") || c.title || c.cid;
   }
 
   function convAvatar(c) {
     if (!c) return "";
-    const p = peerProfile(c);
-    return field(p, "avatarUrl", "avatar_url") || "";
+    const fromConv = field(c, "avatarUrl", "avatar_url") || "";
+    const fromPeer = field(peerProfile(c), "avatarUrl", "avatar_url") || "";
+    if (!isGroup(c.cid)) return fromConv || fromPeer || "";
+    const cached = (state.groupCache && state.groupCache[c.cid]) ||
+      (state.group && state.group.cid === c.cid ? state.group : null);
+    const fromGroup = cached ? (field(cached, "avatarUrl", "avatar_url") || "") : "";
+    return fromConv || fromPeer || fromGroup || "";
   }
 
   function friendUid(f) {
@@ -400,10 +458,18 @@
     return (m && (m.nickname || m.Nickname)) || nickOf(uid) || uid;
   }
 
-  function isGroupManager() {
+  function isGroupOwner() {
     const g = state.group;
     if (!g) return false;
     if ((g.ownerUid || g.owner_uid) === state.uid) return true;
+    const me = (g.members || []).find((m) => uidOf(m) === state.uid);
+    return !!(me && (me.role === "owner" || me.Role === "owner"));
+  }
+
+  function isGroupManager() {
+    const g = state.group;
+    if (!g) return false;
+    if (isGroupOwner()) return true;
     const me = (g.members || []).find((m) => uidOf(m) === state.uid);
     return !!(me && me.role === "admin");
   }
@@ -469,9 +535,10 @@
 
   function setConn(text, on) {
     const el = $("conn-state");
+    if (!el) return;
     el.textContent = text;
-    el.classList.toggle("text-wechat", !!on);
-    el.classList.toggle("text-zinc-500", !on);
+    el.title = text;
+    el.classList.toggle("on", !!on);
   }
 
   function setComposerEnabled(on) {
@@ -481,6 +548,9 @@
     if ($("emoji-btn")) $("emoji-btn").disabled = !on;
     if ($("shot-btn")) $("shot-btn").disabled = !on;
     if ($("rec-btn")) $("rec-btn").disabled = !on;
+    if ($("burn-toggle")) $("burn-toggle").disabled = !on;
+    const form = $("send-form");
+    if (form) form.classList.toggle("composer-locked", !on);
     if (on) {
       fitDraft();
       syncBurnUI();
@@ -498,7 +568,7 @@
     const on = !!(box && box.checked);
     if (lab) lab.classList.toggle("burn-on", on);
     const draft = $("draft");
-    if (draft) draft.placeholder = on ? "阅后即焚消息…" : "";
+    if (draft && !speakBlockedReason()) draft.placeholder = on ? "阅后即焚消息…" : "";
   }
 
   function fitDraft() {
@@ -507,14 +577,60 @@
     el.style.height = "";
   }
 
-  function renderLists() {
-    const convEl = $("conv-list");
-    const sorted = state.convs.slice().sort((a, b) => {
+  function hiddenKey() {
+    return "surge:hidden:" + state.uid;
+  }
+  function loadHiddenConvs() {
+    if (!state.uid) {
+      state.hiddenConvs = [];
+      return;
+    }
+    try {
+      state.hiddenConvs = JSON.parse(localStorage.getItem(hiddenKey()) || "[]") || [];
+    } catch (_) {
+      state.hiddenConvs = [];
+    }
+  }
+  function saveHiddenConvs() {
+    if (!state.uid) return;
+    localStorage.setItem(hiddenKey(), JSON.stringify(state.hiddenConvs || []));
+  }
+  function rememberHidden(conv) {
+    if (!conv || !conv.cid) return;
+    const rest = (state.hiddenConvs || []).filter((h) => h.cid !== conv.cid);
+    state.hiddenConvs = [conv].concat(rest);
+    saveHiddenConvs();
+  }
+  function forgetHidden(cid) {
+    const next = (state.hiddenConvs || []).filter((h) => h.cid !== cid);
+    if (next.length === (state.hiddenConvs || []).length) return;
+    state.hiddenConvs = next;
+    saveHiddenConvs();
+  }
+  function pruneHiddenConvs() {
+    const visible = {};
+    (state.convs || []).forEach((c) => {
+      if (c && c.cid) visible[c.cid] = true;
+    });
+    const next = (state.hiddenConvs || []).filter((h) => h && h.cid && !visible[h.cid]);
+    if (next.length !== (state.hiddenConvs || []).length) {
+      state.hiddenConvs = next;
+      saveHiddenConvs();
+    }
+  }
+
+  function sortedConvs() {
+    return state.convs.slice().sort((a, b) => {
       const pa = isPinned(a.cid) ? 1 : 0;
       const pb = isPinned(b.cid) ? 1 : 0;
       if (pa !== pb) return pb - pa;
       return Number(b.updatedAtMs || b.updated_at_ms || 0) - Number(a.updatedAtMs || a.updated_at_ms || 0);
     });
+  }
+
+  function renderLists() {
+    const convEl = $("conv-list");
+    const sorted = sortedConvs();
     convEl.innerHTML = sorted
       .map((c) => {
         const active = c.cid === state.activeCid ? " active" : "";
@@ -535,7 +651,38 @@
         </div>`;
       })
       .join("");
+    pruneHiddenConvs();
+    const hidden = state.hiddenConvs || [];
+    let hiddenHTML = "";
+    if (hidden.length) {
+      hiddenHTML =
+        `<div class="row hidden-toggle" data-act="toggle-hidden">
+          <div class="row-main"><div class="row-title">隐藏的会话</div><div class="row-sub">${hidden.length} 个 · ${state.showHidden ? "点击收起" : "点击查看并恢复"}</div></div>
+        </div>`;
+      if (state.showHidden) {
+        hiddenHTML += hidden
+          .map((c) => {
+            const peer = field(c, "peerUid", "peer_uid") || "";
+            const title = convTitle(c) || c.title || peer || "会话";
+            const uid = isGroup(c.cid) ? "" : peer;
+            return `<div class="row dim" data-peer="${escapeHtml(peer)}" data-cid="${escapeHtml(c.cid)}">
+          ${avatarHTML(convAvatar(c), title, uid)}
+          <div class="row-main"><div class="row-head"><div class="row-title">${escapeHtml(title)}</div></div><div class="row-sub">点击恢复显示</div></div>
+        </div>`;
+          })
+          .join("");
+      }
+    }
+    convEl.innerHTML = convEl.innerHTML + hiddenHTML;
     convEl.querySelectorAll(".row").forEach((row) => {
+      if (row.dataset.act === "toggle-hidden") {
+        row.onclick = (e) => {
+          e.stopPropagation();
+          state.showHidden = !state.showHidden;
+          renderLists();
+        };
+        return;
+      }
       row.onclick = () => openChat(row.dataset.peer, row.dataset.cid);
     });
 
@@ -1088,8 +1235,25 @@
       if (c.muted) state.muted[c.cid] = true;
       if (c.pinned) state.pins[c.cid] = true;
     });
+    pruneHiddenConvs();
     renderLists();
     await catchUpActiveChat();
+    await ensureActiveChat();
+  }
+
+  async function ensureActiveChat() {
+    if (state.ensuringChat || state.openingChat) return;
+    const list = sortedConvs();
+    if (state.activeCid && list.some((c) => c.cid === state.activeCid)) return;
+    if (!list.length) return;
+    const first = list[0];
+    const peer = field(first, "peerUid", "peer_uid") || "";
+    state.ensuringChat = true;
+    try {
+      await openChat(peer, first.cid);
+    } finally {
+      state.ensuringChat = false;
+    }
   }
 
   async function catchUpActiveChat() {
@@ -1290,16 +1454,154 @@
     state.presenceTimer = setInterval(refreshPresence, 15000);
   }
 
+  function rememberGroup(g) {
+    if (!g) return;
+    const cid = g.cid || "";
+    if (cid) {
+      state.groupCache = state.groupCache || {};
+      state.groupCache[cid] = g;
+    }
+    if (!cid || cid === state.activeCid) state.group = g;
+  }
+
+  function activeGroup() {
+    if (!isGroup(state.activeCid)) return null;
+    const g = state.group;
+    if (g && (!g.cid || g.cid === state.activeCid)) return g;
+    return (state.groupCache && state.groupCache[state.activeCid]) || null;
+  }
+
+  function speakBlockedReason() {
+    if (!state.activeCid) return "idle";
+    if (!isGroup(state.activeCid)) {
+      return isBlocked(state.activePeer) ? "blocked" : "";
+    }
+    const g = activeGroup();
+    if (!g) return "";
+    const me = (g.members || []).find((m) => uidOf(m) === state.uid) || {};
+    const role = me.role || "";
+    if (role === "owner") return "";
+    if (me.muted || me.Muted) return "muted_me";
+    if ((g.mutedAll || g.muted_all) && role !== "admin") return "muted_all";
+    return "";
+  }
+
   function lockComposer() {
+    const reason = speakBlockedReason();
+    const on = !!state.activeCid && !reason;
+    setComposerEnabled(on);
+    const draft = $("draft");
+    const sub = $("chat-sub");
+    if (reason === "blocked") {
+      if (draft) draft.placeholder = "已拉黑，无法发送";
+      if (sub) sub.textContent = "已拉黑，无法发送";
+    } else if (reason === "muted_all") {
+      if (draft) draft.placeholder = "全员禁言中";
+      if (sub) sub.textContent = "全员禁言中";
+    } else if (reason === "muted_me") {
+      if (draft) draft.placeholder = "你已被禁言";
+      if (sub) sub.textContent = "你已被禁言";
+    } else if (on) {
+      syncBurnUI();
+      if (sub && isGroup(state.activeCid)) sub.textContent = "";
+    } else if (draft) {
+      draft.placeholder = "";
+    }
+  }
+
+  function applyGroupAvatarToConv(cid, g) {
+    if (!cid || !g) return;
+    const url = field(g, "avatarUrl", "avatar_url") || "";
+    const patch = (c) => {
+      if (!c || c.cid !== cid) return;
+      if (g.name) c.title = g.name;
+      c.avatarUrl = url;
+      c.avatar_url = url;
+      const p = Object.assign({}, peerProfile(c));
+      p.avatarUrl = url;
+      p.avatar_url = url;
+      c.peerProfile = p;
+      c.peer_profile = p;
+    };
+    (state.convs || []).forEach(patch);
+    (state.hiddenConvs || []).forEach(patch);
+  }
+
+  function renderChatHeadAvatar() {
+    const el = $("chat-head-avatar");
+    if (!el) return;
     if (!state.activeCid) {
-      setComposerEnabled(false);
+      el.innerHTML = "";
+      el.classList.add("hidden");
       return;
     }
-    const blocked = !isGroup(state.activeCid) && isBlocked(state.activePeer);
-    setComposerEnabled(!blocked);
+    let url = "";
+    let name = "";
+    let uid = "";
+    if (isGroup(state.activeCid)) {
+      const g = activeGroup();
+      const conv = (state.convs || []).find((c) => c.cid === state.activeCid) ||
+        (state.hiddenConvs || []).find((c) => c.cid === state.activeCid);
+      url = (g && (field(g, "avatarUrl", "avatar_url") || "")) || convAvatar(conv) || "";
+      name = (g && g.name) || (conv && convTitle(conv)) || "群聊";
+      uid = state.activeCid;
+    } else {
+      uid = state.activePeer || "";
+      name = nickOf(uid) || uid;
+      url = avatarOf(uid);
+    }
+    el.innerHTML = avatarHTML(url, name, uid);
+    el.classList.remove("hidden");
+  }
+
+  function announcePinSig(text) {
+    const raw = String(text || "");
+    let h = 5381;
+    for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) >>> 0;
+    return h.toString(16) + ":" + raw.length;
+  }
+  function announcePinDismissKey(cid, text) {
+    return "surge:announce-pin:" + state.uid + ":" + cid + ":" + announcePinSig(text);
+  }
+  function isAnnouncePinDismissed(cid, text) {
+    if (!state.uid || !cid) return false;
+    try {
+      return localStorage.getItem(announcePinDismissKey(cid, text)) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+  function dismissAnnouncePin() {
+    if (!state.uid || !state.activeCid) return;
+    const g = isGroup(state.activeCid) ? activeGroup() : null;
+    const raw = g ? String(field(g, "announcement") || "").trim() : "";
+    if (!raw) return;
+    try {
+      localStorage.setItem(announcePinDismissKey(state.activeCid, raw), "1");
+    } catch (_) {}
+    syncAnnouncePin();
+  }
+
+  function syncAnnouncePin() {
+    const el = $("announce-pin");
+    const text = $("announce-pin-text");
+    if (!el) return;
+    const g = isGroup(state.activeCid) ? activeGroup() : null;
+    const raw = g ? String(field(g, "announcement") || "").trim() : "";
+    if (!raw || isAnnouncePinDismissed(state.activeCid, raw)) {
+      el.classList.add("hidden");
+      if (text) text.textContent = "";
+      el.title = "";
+      return;
+    }
+    const preview = raw.replace(/\s+/g, " ");
+    if (text) text.textContent = preview;
+    el.title = raw;
+    el.classList.remove("hidden");
   }
 
   function updateChatHeader() {
+    renderChatHeadAvatar();
     if (!state.activeCid) return;
     if (isGroup(state.activeCid)) return;
     const on = state.online[state.activePeer];
@@ -1343,27 +1645,46 @@
       state.group = null;
       $("member-chips").innerHTML = "";
       renderSidePeer();
+      lockComposer();
+      renderChatHeadAvatar();
+      syncAnnouncePin();
+      closeAdminsBox();
       return;
     }
     bar.classList.remove("hidden");
     toggleHidden("side-direct", true);
     toggleHidden("side-group-admin", false);
+    toggleHidden("rename-row", !isGroupManager());
+    toggleHidden("announce-row", !isGroupManager());
+    toggleHidden("admins-btn", !isGroupOwner());
     try {
       const g = await api("/v1/group?cid=" + encodeURIComponent(state.activeCid));
-      state.group = g;
+      rememberGroup(g);
       const members = g.members || [];
       $("chat-title").textContent = (g.name || "群聊") + " (" + members.length + ")";
-      $("chat-sub").textContent = "";
       if ($("side-group-name")) $("side-group-name").textContent = g.name || "";
       const avEl = $("side-group-avatar");
       if (avEl) {
         const url = field(g, "avatarUrl", "avatar_url") || "";
-        avEl.innerHTML = url ? `<img class="avatar" src="${escapeHtml(url)}" alt="" />` : "";
+        avEl.innerHTML = avatarHTML(url, g.name || "群聊", g.cid || state.activeCid);
       }
+      applyGroupAvatarToConv(state.activeCid, g);
+      renderChatHeadAvatar();
+      syncAnnouncePin();
+      renderLists();
       const owner = g.ownerUid || g.owner_uid;
       const isOwner = owner === state.uid;
+      if ($("group-avatar-btn")) $("group-avatar-btn").classList.toggle("readonly", !isOwner);
       const manager = isGroupManager();
-      if ($("side-announce")) $("side-announce").textContent = g.announcement || "未设置";
+      toggleHidden("rename-row", !manager);
+      toggleHidden("announce-row", !manager);
+      toggleHidden("admins-btn", !isOwner);
+      if ($("side-announce")) {
+        const raw = String(field(g, "announcement") || "");
+        const preview = raw.replace(/\s+/g, " ").trim();
+        $("side-announce").textContent = preview || "未设置";
+        $("side-announce").title = raw;
+      }
       const me = members.find((m) => uidOf(m) === state.uid) || {};
       if ($("side-my-nick")) $("side-my-nick").textContent = me.nickname || me.Nickname || nickOf(state.uid) || state.uid;
       setSwitch("join-approval-switch", !!(g.joinApproval || g.join_approval));
@@ -1411,8 +1732,16 @@
       if ($("member-search") && $("member-search").value) {
         $("member-search").dispatchEvent(new Event("input"));
       }
+      lockComposer();
+      if ($("admins-box") && !$("admins-box").classList.contains("hidden")) {
+        if (isOwner) renderAdminRows();
+        else closeAdminsBox();
+      }
     } catch (err) {
       $("chat-sub").textContent = err.message;
+      lockComposer();
+      renderChatHeadAvatar();
+      syncAnnouncePin();
     }
   }
 
@@ -1456,6 +1785,49 @@
     }
   }
 
+  async function setGroupMemberRole(uid, role) {
+    await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, role }) });
+    await refreshGroup();
+  }
+
+  function closeAdminsBox() {
+    toggleHidden("admins-box", true);
+  }
+
+  function renderAdminRows() {
+    const listEl = $("admins-list");
+    if (!listEl) return;
+    const members = (state.group && state.group.members) || [];
+    if (!members.length) {
+      listEl.innerHTML = `<div class="devices-empty">暂无成员</div>`;
+      return;
+    }
+    listEl.innerHTML = members
+      .map((m) => {
+        const id = uidOf(m);
+        if (!id) return "";
+        const role = m.role || m.Role || "member";
+        const label = (m.nickname || m.Nickname) || nickOf(id) || id;
+        const badge = role === "owner" ? "群主" : role === "admin" ? "管理员" : "成员";
+        let act = "";
+        if (role !== "owner") {
+          const next = role === "admin" ? "member" : "admin";
+          const text = next === "admin" ? "设为管理员" : "取消管理员";
+          act = `<div class="row-actions"><button type="button" data-uid="${escapeHtml(id)}" data-role="${escapeHtml(next)}">${text}</button></div>`;
+        }
+        return `<div class="row">${avatarHTML(avatarOf(id), label, id)}<div class="row-main"><div class="row-title">${escapeHtml(label)}</div><div class="row-sub">${escapeHtml(badge)}</div></div>${act}</div>`;
+      })
+      .join("");
+  }
+
+  function openAdminsBox() {
+    if (!isGroupOwner() || !state.group) return;
+    const box = $("admins-box");
+    if (!box) return;
+    renderAdminRows();
+    box.classList.remove("hidden");
+  }
+
   async function onMemberClick(uid, role) {
     if (!uid) return;
     if (uid === state.uid) {
@@ -1470,14 +1842,17 @@
     const items = [];
     items.push([muted ? "解除禁言" : "禁言", async () => {
       await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, muted: !muted }) });
+      const mem = ((state.group && state.group.members) || []).find((x) => uidOf(x) === uid);
+      if (mem) {
+        mem.muted = !muted;
+        mem.Muted = !muted;
+      }
+      lockComposer();
       await refreshGroup();
     }]);
     if (isOwner && role !== "owner") {
       const next = role === "admin" ? "member" : "admin";
-      items.push([next === "admin" ? "设为管理员" : "取消管理员", async () => {
-        await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, role: next }) });
-        await refreshGroup();
-      }]);
+      items.push([next === "admin" ? "设为管理员" : "取消管理员", () => setGroupMemberRole(uid, next)]);
     }
     if (role !== "owner") {
       items.push(["移出本群", async () => {
@@ -1505,6 +1880,8 @@
   }
 
   async function openChat(peer, cid) {
+    state.openingChat = true;
+    try {
     if (state.activeCid && state.activeCid !== cid) saveDraft();
     if (!isGroup(cid)) {
       const derived = peerFromCid(cid, state.uid);
@@ -1519,13 +1896,21 @@
     }
     state.activePeer = peer || "";
     state.activeCid = cid;
+    forgetHidden(cid);
+    if (isGroup(cid)) {
+      if (!(state.group && state.group.cid === cid)) {
+        state.group = (state.groupCache && state.groupCache[cid]) || null;
+      }
+    } else {
+      state.group = null;
+    }
     state.peerReadSeq = 0;
     state.hasMore = false;
     state.searchQ = "";
     state.readCursors = {};
     if ($("chat-search")) $("chat-search").value = "";
     $("chat-search-bar").classList.add("hidden");
-    const conv = state.convs.find((c) => c.cid === cid);
+    const conv = state.convs.find((c) => c.cid === cid) || (state.hiddenConvs || []).find((c) => c.cid === cid);
     if (isGroup(cid)) {
       $("chat-title").textContent = (conv && conv.title) || "群聊";
       $("chat-sub").textContent = "";
@@ -1533,6 +1918,8 @@
       $("chat-title").textContent = (conv && convTitle(conv)) || peer;
       updateChatHeader();
     }
+    renderChatHeadAvatar();
+    syncAnnouncePin();
     toggleHidden("side-shared", false);
     toggleHidden("chat-search-toggle", false);
     toggleHidden("mute-btn", false);
@@ -1546,6 +1933,10 @@
     toggleHidden("e2ee-fp", isGroup(cid) || !state.e2eeOn);
     toggleHidden("side-direct", isGroup(cid));
     toggleHidden("side-group-admin", !isGroup(cid));
+    if (isGroup(cid)) {
+      $("typing").classList.add("hidden");
+      clearTimeout(state.typingTimer);
+    }
     if (!isGroup(cid)) renderSidePeer();
     syncSideSwitches();
     if (!isGroup(cid) && state.e2eeOn) refreshE2eeFp();
@@ -1558,6 +1949,9 @@
     await loadConvs();
     refreshPresence();
     refreshGroupRead();
+    } finally {
+      state.openingChat = false;
+    }
   }
 
   async function reloadTimeline() {
@@ -1746,8 +2140,12 @@
 
   function showTyping(from) {
     if (from === state.uid) return;
+    if (isGroup(state.activeCid)) {
+      $("typing").classList.add("hidden");
+      return;
+    }
     const el = $("typing");
-    el.textContent = isGroup(state.activeCid) ? from + " 正在输入…" : "对方正在输入…";
+    el.textContent = "对方正在输入…";
     el.classList.remove("hidden");
     clearTimeout(state.typingTimer);
     state.typingTimer = setTimeout(() => el.classList.add("hidden"), 3000);
@@ -1807,6 +2205,7 @@
       return;
     }
     if (env.typing) {
+      if (isGroup(env.typing.cid)) return;
       if (env.typing.cid === state.activeCid) showTyping(senderOf(env.typing));
       return;
     }
@@ -1920,7 +2319,10 @@
         state.messages = [];
         $("chat-title").textContent = "选择一个会话";
         $("chat-sub").textContent = "";
+        renderChatHeadAvatar();
+        syncAnnouncePin();
         renderMsgs();
+        loadConvs();
       }
       setTab("chats");
       return;
@@ -1933,7 +2335,10 @@
         state.messages = [];
         $("chat-title").textContent = "选择一个会话";
         $("chat-sub").textContent = "";
+        renderChatHeadAvatar();
+        syncAnnouncePin();
         renderMsgs();
+        loadConvs();
       }
       setTab("chats");
     }
@@ -1970,6 +2375,10 @@
         refreshGroupRead();
       }
       markRead();
+      const sysText = String((ev.payload && ev.payload.text) || "");
+      if (isSystemMsg(ev) && /禁言|群公告/.test(sysText)) {
+        refreshGroup();
+      }
     }
     notifyIncoming(ev);
     loadConvs();
@@ -2056,6 +2465,7 @@
     await loadMe();
     loadMuted();
     loadPins();
+    loadHiddenConvs();
     $("login").classList.add("hidden");
     $("confirm-qr").classList.add("hidden");
     $("app").classList.remove("hidden");
@@ -2248,6 +2658,12 @@
     const peerUid = isGroup(cid) ? "" : peerFromCid(cid, state.uid) || fallback || "";
     if (!isGroup(cid) && isBlocked(peerUid || state.activePeer)) {
       toast("已拉黑，无法发送");
+      return;
+    }
+    if (!(dest && dest.forward) && cid === state.activeCid && speakBlockedReason()) {
+      const r = speakBlockedReason();
+      toast(r === "muted_all" ? "全员禁言中" : r === "muted_me" ? "你已被禁言" : "无法发送");
+      lockComposer();
       return;
     }
     if (typeof payload.text === "string") payload.text = wellFormed(payload.text);
@@ -2544,6 +2960,7 @@
     }
   };
   onClick("rename-row", async () => {
+    if (!isGroupManager()) return;
     const cur = ($("side-group-name") && $("side-group-name").textContent) || "";
     const name = await dlgPrompt("修改群聊名称", cur, "群聊名称");
     if (name == null || !String(name).trim()) return;
@@ -2572,11 +2989,15 @@
     });
     const url = done.get_url || done.thumb_url;
     if (forGroup) {
+      if (!isGroupOwner()) {
+        throw new Error("仅群主可设置群头像");
+      }
       await api("/v1/group-update", {
         method: "POST",
         body: JSON.stringify({ cid: state.activeCid, avatar_url: url }),
       });
       await refreshGroup();
+      await loadConvs();
     } else {
       await api("/v1/me", { method: "POST", body: JSON.stringify({ avatar_url: url }) });
       await loadMe();
@@ -2584,11 +3005,14 @@
     }
   }
 
-  $("group-avatar-btn").onclick = () => $("group-avatar-file").click();
+  $("group-avatar-btn").onclick = () => {
+    if (!isGroupOwner()) return;
+    $("group-avatar-file").click();
+  };
   $("group-avatar-file").onchange = () => {
     const f = $("group-avatar-file").files && $("group-avatar-file").files[0];
     $("group-avatar-file").value = "";
-    if (!f) return;
+    if (!f || !isGroupOwner()) return;
     uploadAvatar(f, true).catch((err) => dlgAlert(err.message));
   };
 
@@ -2606,8 +3030,16 @@
 
   $("send-form").onsubmit = async (e) => {
     e.preventDefault();
+    const reason = speakBlockedReason();
+    if (!state.activeCid || reason) {
+      if (reason && reason !== "idle") {
+        toast(reason === "muted_all" ? "全员禁言中" : reason === "muted_me" ? "你已被禁言" : reason === "blocked" ? "已拉黑，无法发送" : "无法发送");
+        lockComposer();
+      }
+      return;
+    }
     const text = $("draft").value.trim();
-    if (!text || !state.activeCid) return;
+    if (!text) return;
     $("draft").value = "";
     localStorage.removeItem(draftKey());
     fitDraft();
@@ -2626,8 +3058,9 @@
           method: "POST",
           body: JSON.stringify({ cid: state.activeCid, muted: !cur }),
         });
-        state.group = g;
+        rememberGroup(g);
         $("mute-all-btn").textContent = g.mutedAll || g.muted_all ? "解除禁言" : "全员禁言";
+        lockComposer();
       } catch (err) {
         dlgAlert(err.message);
       }
@@ -2720,22 +3153,73 @@
           return;
         }
         try {
+          const qq = q.toLowerCase();
+          const seen = {};
+          const local = [];
+          const pushLocal = (cid, peer, title, sub) => {
+            if (!cid || seen[cid]) return;
+            seen[cid] = true;
+            local.push({ cid, peer: peer || "", title: title || cid, sub: sub || "" });
+          };
+          (state.convs || []).concat(state.hiddenConvs || []).forEach((c) => {
+            const title = convTitle(c) || c.title || "";
+            const peer = field(c, "peerUid", "peer_uid") || "";
+            const last = c.lastText || c.last_text || "";
+            if (
+              (title && title.toLowerCase().includes(qq)) ||
+              (peer && peer.toLowerCase().includes(qq)) ||
+              (last && last.toLowerCase().includes(qq))
+            ) {
+              pushLocal(c.cid, peer, title, last || (isGroup(c.cid) ? "群聊" : peer));
+            }
+          });
+          (state.friends || []).forEach((f) => {
+            const uid = friendUid(f);
+            const name = friendName(f);
+            if ((name && name.toLowerCase().includes(qq)) || (uid && uid.toLowerCase().includes(qq))) {
+              pushLocal(cidOf(state.uid, uid), uid, name, uid);
+            }
+          });
           const data = await api("/v1/search?q=" + encodeURIComponent(q));
           const hits = data.hits || [];
-          box.classList.remove("hidden");
-          box.innerHTML = hits.length
-            ? hits
+          hits.forEach((h) => {
+            const msg = h.message || {};
+            if (field(msg, "msgId", "msg_id")) return;
+            pushLocal(h.cid, peerFromCid(h.cid, state.uid), h.title || h.cid, (msg.payload && msg.payload.text) || "");
+          });
+          const localHTML = local.length
+            ? `<div class="mid-label">联系人 / 会话</div>` +
+              local
+                .map((h) => `<div class="row" data-cid="${escapeHtml(h.cid)}" data-peer="${escapeHtml(h.peer)}"><div class="row-main"><div class="row-title">${escapeHtml(h.title)}</div><div class="row-sub">${escapeHtml(h.sub || "会话")}</div></div></div>`)
+                .join("")
+            : "";
+          const msgHits = hits.filter((h) => field((h.message || {}), "msgId", "msg_id"));
+          const msgHTML = msgHits.length
+            ? `<div class="mid-label">聊天记录</div>` +
+              msgHits
                 .map((h) => {
                   const msg = h.message || {};
                   const text = (msg.payload && msg.payload.text) || "";
-                  return `<div class="row" data-cid="${h.cid}" data-mid="${escapeHtml(field(msg, "msgId", "msg_id") || "")}" data-seq="${escapeHtml(String(field(msg, "convSeq", "conv_seq") || 0))}"><div class="row-main"><div class="row-title">${escapeHtml(h.title || h.cid)}</div><div class="row-sub">${escapeHtml(text)}</div></div></div>`;
+                  return `<div class="row" data-cid="${escapeHtml(h.cid)}" data-mid="${escapeHtml(field(msg, "msgId", "msg_id") || "")}" data-seq="${escapeHtml(String(field(msg, "convSeq", "conv_seq") || 0))}"><div class="row-main"><div class="row-title">${escapeHtml(h.title || h.cid)}</div><div class="row-sub">${escapeHtml(text)}</div></div></div>`;
                 })
                 .join("")
-            : `<div class="row"><div class="row-sub">没有匹配的聊天记录</div></div>`;
+            : "";
+          box.classList.remove("hidden");
+          if (!localHTML && !msgHTML) {
+            box.innerHTML = `<div class="row"><div class="row-sub">没有匹配的会话或聊天记录</div></div>`;
+          } else {
+            box.innerHTML = localHTML + msgHTML;
+          }
           box.querySelectorAll(".row[data-cid]").forEach((row) => {
             row.onclick = () => {
-              const c = state.convs.find((x) => x.cid === row.dataset.cid);
-              jumpToMessage(row.dataset.cid, row.dataset.mid, row.dataset.seq, (c && (c.peerUid || c.peer_uid)) || "");
+              const cid = row.dataset.cid;
+              const peer = row.dataset.peer || peerFromCid(cid, state.uid) || "";
+              const mid = row.dataset.mid;
+              $("global-search").value = "";
+              box.classList.add("hidden");
+              box.innerHTML = "";
+              if (mid) jumpToMessage(cid, mid, row.dataset.seq, peer);
+              else openChat(peer, cid);
             };
           });
         } catch (err) {
@@ -2801,20 +3285,39 @@
       toggleHidden("e2ee-fp", true);
     }
   }
-  onClick("announce-row", async () => {
-    const cur = (state.group && state.group.announcement) || "";
-    if (!isGroupManager()) {
-      dlgAlert(cur || "未设置", "群公告");
+  async function openGroupAnnounce() {
+    if (!isGroup(state.activeCid) || !state.group) return;
+    const cur = String(field(state.group, "announcement") || "");
+    if (!isGroupOwner()) {
+      await dlgAlert(cur || "未设置", "群公告");
       return;
     }
-    const next = await dlgPrompt("群公告", cur, "编辑群公告");
-    if (next === null) return;
+    const next = await dlgPromptArea("所有群成员可见。留空并确定可清空公告。", cur, "编辑群公告");
+    if (next === null || next === cur) return;
     try {
-      await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, announcement: next }) });
+      await api("/v1/group-update", {
+        method: "POST",
+        body: JSON.stringify({ cid: state.activeCid, announcement: next }),
+      });
       await refreshGroup();
+      await reloadTimeline();
     } catch (err) {
-      dlgAlert(err.message);
+      dlgAlert(err.message || "保存失败", "群公告");
     }
+  }
+  onClick("announce-pin-dismiss", (e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    dismissAnnouncePin();
+  });
+  onClick("announce-pin", (e) => {
+    if (e && e.target && e.target.closest && e.target.closest("#announce-pin-dismiss")) return;
+    openGroupAnnounce();
+  });
+  onClick("announce-row", () => {
+    openGroupAnnounce();
   });
   onClick("mynick-row", async () => {
     const cur = ($("side-my-nick") && $("side-my-nick").textContent) || "";
@@ -2849,38 +3352,137 @@
       dlgAlert(err.message);
     }
   });
-  onClick("qr-card-btn", () => {
-    $("qr-card-img").src = "/v1/me/qr.png?t=" + Date.now();
-    $("qr-card-box").classList.remove("hidden");
-  });
-  onClick("qr-card-close", () => $("qr-card-box").classList.add("hidden"));
+  let qrCardUrl = "";
+  function closeQrCard() {
+    const box = $("qr-card-box");
+    if (box) box.classList.add("hidden");
+    const img = $("qr-card-img");
+    if (img) {
+      img.removeAttribute("src");
+      img.alt = "名片二维码";
+    }
+    if (qrCardUrl) {
+      URL.revokeObjectURL(qrCardUrl);
+      qrCardUrl = "";
+    }
+  }
+  async function loadQrCard(retry) {
+    const box = $("qr-card-box");
+    const img = $("qr-card-img");
+    if (!box || !img) {
+      dlgAlert("二维码界面未就绪", "名片二维码");
+      return;
+    }
+    if (!state.token) {
+      dlgAlert("请先登录后再查看名片二维码", "名片二维码");
+      return;
+    }
+    img.removeAttribute("src");
+    img.alt = "加载中";
+    box.classList.remove("hidden");
+    try {
+      const r = await fetch("/v1/me/qr.png?t=" + Date.now(), {
+        headers: { Authorization: "Bearer " + state.token },
+      });
+      if (r.status === 401 && retry !== false && state.refresh) {
+        await refreshTokens();
+        return loadQrCard(false);
+      }
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(friendlyHttp(r.status, text) || "无法加载二维码");
+      }
+      const blob = await r.blob();
+      if (qrCardUrl) URL.revokeObjectURL(qrCardUrl);
+      qrCardUrl = URL.createObjectURL(blob);
+      img.src = qrCardUrl;
+      img.alt = "名片二维码";
+    } catch (err) {
+      closeQrCard();
+      dlgAlert((err && err.message) || "无法加载二维码", "名片二维码");
+    }
+  }
+  onClick("qr-card-btn", () => { loadQrCard(); });
+  onClick("qr-card-close", closeQrCard);
+  if ($("qr-card-box")) {
+    $("qr-card-box").addEventListener("click", (e) => {
+      if (e.target === $("qr-card-box")) closeQrCard();
+    });
+  }
   onClick("readers-ok", () => $("readers-box").classList.add("hidden"));
-  onClick("devices-ok", () => $("devices-box").classList.add("hidden"));
-  onClick("devices-btn", async () => {
+  function closeDevices() {
+    const box = $("devices-box");
+    if (box) box.classList.add("hidden");
+  }
+  function isSelfDevice(d, mine) {
+    const did = String((d && d.device_id) || "");
+    if (mine && did) return did === mine;
+    return !did && d && d.self === "1";
+  }
+  function renderDeviceRows(list) {
+    const mine = deviceId();
+    const items = Array.isArray(list) ? list : [];
+    if (!items.length) {
+      return `<div class="devices-empty">当前没有在线设备。请确认本窗口已连接后再试。</div>`;
+    }
+    return items
+      .map((d) => {
+        const connId = String(d.conn_id || "");
+        const did = String(d.device_id || "");
+        const self = isSelfDevice(d, mine);
+        const short = (did || connId).slice(0, 8);
+        const sub = self ? "本机" : short ? "在线 · " + short : "在线";
+        const kick = self || !connId
+          ? ""
+          : `<div class="row-actions"><button type="button" class="danger" data-id="${escapeHtml(connId)}">下线</button></div>`;
+        return `<div class="row"><div class="row-main"><div class="row-title">网页版</div><div class="row-sub">${escapeHtml(sub)}</div></div>${kick}</div>`;
+      })
+      .join("");
+  }
+  async function loadDevices() {
+    const box = $("devices-box");
+    const listEl = $("devices-list");
+    if (!box || !listEl) {
+      dlgAlert("设备列表界面未就绪", "登录设备");
+      return;
+    }
+    listEl.innerHTML = `<div class="devices-empty">加载中…</div>`;
+    box.classList.remove("hidden");
     try {
       const data = await api("/v1/devices");
-      const list = data.devices || [];
-      $("devices-list").innerHTML = list.length
-        ? list
-            .map((d) => `<div class="row"><div class="row-main"><div class="row-title">${escapeHtml(d.device_id || d.conn_id)}</div><div class="row-sub">${d.self === "1" ? "本机" : d.gateway_id || ""}</div></div>${d.self === "1" ? "" : `<div class="row-actions"><button type="button" class="danger" data-id="${escapeHtml(d.conn_id)}">下线</button></div>`}</div>`)
-            .join("")
-        : `<div class="row-sub">暂无其他设备</div>`;
-      $("devices-list").querySelectorAll("button[data-id]").forEach((btn) => {
-        btn.onclick = async () => {
-          try {
-            await api("/v1/devices", { method: "POST", body: JSON.stringify({ conn_id: btn.dataset.id }) });
-            toast("已踢下线");
-            $("devices-btn").click();
-          } catch (err) {
-            dlgAlert(err.message);
-          }
-        };
-      });
-      $("devices-box").classList.remove("hidden");
+      listEl.innerHTML = renderDeviceRows(data.devices || []);
     } catch (err) {
-      dlgAlert(err.message);
+      listEl.innerHTML = `<div class="devices-empty">无法加载登录设备</div>`;
+      dlgAlert(err.message || "无法获取登录设备", "登录设备");
     }
+  }
+  async function kickDevice(connId) {
+    if (!connId) return;
+    if (!(await dlgConfirm("将该设备踢下线后需重新登录。", "下线设备", true))) return;
+    try {
+      await api("/v1/devices", { method: "POST", body: JSON.stringify({ conn_id: connId }) });
+      toast("已踢下线");
+      await loadDevices();
+    } catch (err) {
+      dlgAlert(err.message || "下线失败", "登录设备");
+    }
+  }
+  onClick("devices-ok", closeDevices);
+  onClick("devices-btn", () => {
+    loadDevices();
   });
+  if ($("devices-box")) {
+    $("devices-box").addEventListener("click", (e) => {
+      if (e.target === $("devices-box")) closeDevices();
+    });
+  }
+  if ($("devices-list")) {
+    $("devices-list").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-id]");
+      if (!btn) return;
+      kickDevice(btn.dataset.id);
+    });
+  }
   onClick("select-cancel", () => exitSelect());
   onClick("select-fwd", () => {
     const ids = Object.keys(state.selected);
@@ -2915,13 +3517,28 @@
   };
   $("hide-btn").onclick = async () => {
     if (!state.activeCid) return;
+    const cid = state.activeCid;
+    const conv = state.convs.find((c) => c.cid === cid) || {};
+    const snap = {
+      cid,
+      peer_uid: field(conv, "peerUid", "peer_uid") || state.activePeer || "",
+      peerUid: field(conv, "peerUid", "peer_uid") || state.activePeer || "",
+      title: convTitle(conv) || ($("chat-title") && $("chat-title").textContent) || "",
+      kind: conv.kind || (isGroup(cid) ? "group" : "p2p"),
+      last_text: conv.lastText || conv.last_text || "",
+      peer_profile: peerProfile(conv),
+    };
     try {
-      await api("/v1/conversation-hide", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
+      await api("/v1/conversation-hide", { method: "POST", body: JSON.stringify({ cid }) });
+      rememberHidden(snap);
+      state.showHidden = false;
       state.activeCid = "";
       state.activePeer = "";
       state.messages = [];
       $("chat-title").textContent = "选择一个会话";
       $("chat-sub").textContent = "";
+      renderChatHeadAvatar();
+      syncAnnouncePin();
       $("chat-search-bar").classList.add("hidden");
       $("group-bar").classList.add("hidden");
       toggleHidden("side-shared", true);
@@ -2938,6 +3555,7 @@
       toggleHidden("block-btn", true);
       setComposerEnabled(false);
       renderMsgs();
+      toast("已隐藏，可在会话列表底部找回");
       await loadConvs();
     } catch (err) {
       dlgAlert(err.message);
@@ -2986,6 +3604,8 @@
       state.messages = [];
       $("chat-title").textContent = "选择一个会话";
       $("chat-sub").textContent = "";
+      renderChatHeadAvatar();
+      syncAnnouncePin();
       setChatSide(false);
       setComposerEnabled(false);
       renderMsgs();
@@ -2994,6 +3614,28 @@
       dlgAlert(err.message);
     }
   };
+  onClick("admins-btn", () => {
+    openAdminsBox();
+  });
+  onClick("admins-ok", closeAdminsBox);
+  if ($("admins-box")) {
+    $("admins-box").addEventListener("click", (e) => {
+      if (e.target === $("admins-box")) closeAdminsBox();
+    });
+  }
+  if ($("admins-list")) {
+    $("admins-list").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-uid][data-role]");
+      if (!btn) return;
+      if (!isGroupOwner()) return;
+      try {
+        await setGroupMemberRole(btn.dataset.uid, btn.dataset.role);
+        renderAdminRows();
+      } catch (err) {
+        dlgAlert(err.message);
+      }
+    });
+  }
   $("transfer-btn").onclick = async () => {
     if (!state.activeCid || !state.group) return;
     const members = (state.group.members || []).filter((m) => m.uid !== state.uid).map((m) => m.uid);
@@ -3018,6 +3660,8 @@
       state.messages = [];
       $("chat-title").textContent = "选择一个会话";
       $("chat-sub").textContent = "";
+      renderChatHeadAvatar();
+      syncAnnouncePin();
       setChatSide(false);
       setComposerEnabled(false);
       renderMsgs();
@@ -3271,7 +3915,7 @@
     saveDraft();
     if (!state.activeCid) return;
     const now = Date.now();
-    if (now - state.lastTypingAt >= 2000) {
+    if (!isGroup(state.activeCid) && now - state.lastTypingAt >= 2000) {
       state.lastTypingAt = now;
       try {
         sendFrame({ typing: { cid: state.activeCid } });
@@ -3350,6 +3994,7 @@
     showMe();
     loadMuted();
     loadPins();
+    loadHiddenConvs();
     $("login").classList.add("hidden");
     $("app").classList.remove("hidden");
     if (window.Notification && Notification.permission === "default") {
