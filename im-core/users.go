@@ -169,15 +169,15 @@ func (s *memoryStore) SearchUsers(_ context.Context, query string, limit int) ([
 	return out, nil
 }
 
-func (s *memoryStore) UpdateGroup(_ context.Context, operatorUID, cid, name, avatarURL string) (*groupInfo, error) {
+func (s *memoryStore) UpdateGroup(_ context.Context, operatorUID, cid, name, avatarURL, announcement string, setAnnouncement bool, joinApproval *bool) (*groupInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := s.groups[cid]
 	if g == nil {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
-	if g.OwnerUID != operatorUID {
-		return nil, errNotOwner
+	if !isManager(g, operatorUID) {
+		return nil, errNotAdmin
 	}
 	if n := strings.TrimSpace(name); n != "" {
 		g.Name = clipText(n, 128)
@@ -189,6 +189,15 @@ func (s *memoryStore) UpdateGroup(_ context.Context, operatorUID, cid, name, ava
 	}
 	if a := strings.TrimSpace(avatarURL); a != "" {
 		g.AvatarURL = clipText(a, 512)
+	}
+	if setAnnouncement {
+		g.Announcement = clipText(announcement, 2000)
+	}
+	if joinApproval != nil {
+		if g.OwnerUID != operatorUID {
+			return nil, errNotOwner
+		}
+		g.JoinApproval = *joinApproval
 	}
 	cp := *g
 	cp.Members = append([]groupMember{}, g.Members...)

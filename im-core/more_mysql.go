@@ -142,8 +142,8 @@ func (s *mysqlStore) SetGroupMuteAll(ctx context.Context, operatorUID, cid strin
 	if err != nil {
 		return nil, err
 	}
-	if g.OwnerUID != operatorUID {
-		return nil, errNotOwner
+	if !isManager(g, operatorUID) {
+		return nil, errNotAdmin
 	}
 	v := 0
 	if muted {

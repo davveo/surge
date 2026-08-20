@@ -84,6 +84,11 @@
     forwarding: null,
     profiles: {},
     me: null,
+    tagGroups: [],
+    selecting: false,
+    selected: {},
+    highlightId: "",
+    addPeer: "",
   };
 
   const dbp = new Promise((resolve, reject) => {
@@ -390,6 +395,19 @@
     return field(p, "displayName", "display_name") || uid;
   }
 
+  function memberNick(uid) {
+    const m = ((state.group && state.group.members) || []).find((x) => uidOf(x) === uid);
+    return (m && (m.nickname || m.Nickname)) || nickOf(uid) || uid;
+  }
+
+  function isGroupManager() {
+    const g = state.group;
+    if (!g) return false;
+    if ((g.ownerUid || g.owner_uid) === state.uid) return true;
+    const me = (g.members || []).find((m) => uidOf(m) === state.uid);
+    return !!(me && me.role === "admin");
+  }
+
   function avatarOf(uid) {
     return field(profileOf(uid), "avatarUrl", "avatar_url") || "";
   }
@@ -546,6 +564,33 @@
     });
     renderRequests();
     renderBlocks();
+    renderTagGroups();
+  }
+
+  function renderTagGroups() {
+    const el = $("tag-groups");
+    if (!el) return;
+    const groups = state.tagGroups || [];
+    if (!groups.length) {
+      el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = groups
+      .map((g) => {
+        const uids = g.uids || [];
+        const rows = uids
+          .map((uid) => {
+            const f = state.friends.find((x) => friendUid(x) === uid);
+            const name = f ? friendName(f) : nickOf(uid) || uid;
+            return `<div class="row" data-peer="${escapeHtml(uid)}">${avatarHTML(avatarOf(uid), name, uid)}<div class="row-main"><div class="row-title">${escapeHtml(name)}</div></div></div>`;
+          })
+          .join("");
+        return `<div class="tag-head">${escapeHtml(g.name || "")} · ${uids.length}</div>${rows}`;
+      })
+      .join("");
+    el.querySelectorAll(".row[data-peer]").forEach((row) => {
+      row.onclick = () => openChat(row.dataset.peer, cidOf(state.uid, row.dataset.peer));
+    });
   }
 
   function canRecall(m) {
@@ -700,14 +745,15 @@
 
   function linkify(s) {
     const html = escapeHtml(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-    return html.replace(/@([A-Za-z0-9._@+-]{1,64})/g, '<span class="mention">@$1</span>');
+    return html.replace(/@所有人/g, '<span class="mention">@所有人</span>').replace(/@([A-Za-z0-9._@+-]{1,64})/g, '<span class="mention">@$1</span>');
   }
 
   function quoteBlock(m) {
     const qtext = (m.payload && (m.payload.quoteText || m.payload.quote_text)) || "";
     const qid = field(m, "quoteMsgId", "quote_msg_id");
     if (!qtext && !qid) return "";
-    return `<div class="quote-card">${escapeHtml(qtext || "引用消息")}</div>`;
+    if (!qtext && !qid) return "";
+    return `<div class="quote-card" data-qid="${escapeHtml(qid || "")}">${escapeHtml(qtext || "引用消息")}</div>`;
   }
 
   function linkCard(m) {
@@ -802,7 +848,7 @@
         const id = field(m, "msgId", "msg_id") || "";
         const from = senderOf(m);
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
-        const nick = nickOf(from) || from;
+        const nick = memberNick(from) || from;
         const who = `<div class="msg-nick" title="${escapeHtml(from)}">${escapeHtml(nick)}${
           group && from && nick !== from ? `<span class="msg-uid">${escapeHtml(from)}</span>` : ""
         }</div>`;
@@ -819,13 +865,11 @@
             }</div>`
           : "";
         const body = recalled ? (burned ? "已销毁" : "已撤回一条消息") : renderBody(m) + (recalled ? "" : linkCard(m));
-        const recallBtn = canRecall(m)
-          ? `<button type="button" class="recall-btn ok" data-id="${id}">撤回</button>`
+        const hl = state.highlightId && id && state.highlightId === id ? " hl" : "";
+        const failDot = m.status === "fail" ? `<button type="button" class="fail-dot" data-cid="${escapeHtml(m.clientMsgId || "")}">!</button>` : "";
+        const check = state.selecting && id
+          ? `<input type="checkbox" class="msg-check" data-id="${id}" ${state.selected[id] ? "checked" : ""} />`
           : "";
-        const fwdBtn =
-          !recalled && id
-            ? `<button type="button" class="act-btn" data-act="fwd" data-id="${id}">转发</button>`
-            : "";
         const read =
           mine &&
           !group &&
@@ -841,40 +885,191 @@
           seq
             ? (function () {
                 const n = groupReadCount(seq);
-                return n > 0 ? `<div class="read-mark">${n} 人已读</div>` : "";
+                return n > 0 ? `<div class="read-mark" data-seq="${seq}">${n} 人已读</div>` : "";
               })()
             : "";
-        return `<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}">${mine ? "" : face}<div class="msg-col">${who}<div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}" data-id="${id}">${quote}${recalled ? escapeHtml(body) : body}${burnHint}${fwdBtn}${recallBtn}${read}${gRead}</div></div>${mine ? face : ""}</div>`;
+        return `<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}">${check}${mine ? "" : face}<div class="msg-col">${who}<div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}${hl}" data-id="${id}" data-seq="${seq}">${failDot}${quote}${recalled ? escapeHtml(body) : body}${burnHint}${read}${gRead}</div></div>${mine ? face : ""}</div>`;
       })
       .join("");
-    box.querySelectorAll(".recall-btn").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        recall(btn.dataset.id);
-      };
-    });
-    box.querySelectorAll("[data-act=fwd]").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        openForward(btn.dataset.id);
-      };
-    });
     box.querySelectorAll("img.thumb").forEach((img) => {
       img.onclick = (e) => {
         e.stopPropagation();
         openLightbox(img.dataset.full || img.src);
       };
     });
+    box.querySelectorAll(".quote-card").forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const id = el.dataset.qid;
+        if (id) jumpToMessage(state.activeCid, id, 0, state.activePeer);
+      };
+    });
+    box.querySelectorAll(".fail-dot").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        retryOrDrop(btn.dataset.cid);
+      };
+    });
+    box.querySelectorAll(".read-mark[data-seq]").forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        showReaders(Number(el.dataset.seq));
+      };
+    });
+    box.querySelectorAll(".msg-check").forEach((el) => {
+      el.onclick = (e) => e.stopPropagation();
+      el.onchange = () => {
+        if (el.checked) state.selected[el.dataset.id] = true;
+        else delete state.selected[el.dataset.id];
+        if ($("select-count")) $("select-count").textContent = "已选 " + Object.keys(state.selected).length;
+      };
+    });
     box.querySelectorAll(".bubble:not(.system)").forEach((el) => {
-      el.ondblclick = () => {
-        if (!el.dataset.id) return;
-        state.quote = { id: el.dataset.id, preview: el.textContent.slice(0, 80) };
-        $("quote-text").textContent = "引用：" + state.quote.preview;
-        $("quote-bar").classList.remove("hidden");
+      el.ondblclick = () => quoteMsg(el.dataset.id);
+      el.oncontextmenu = (e) => {
+        e.preventDefault();
+        showMsgMenu(e.clientX, e.clientY, el.dataset.id);
       };
     });
     if (stick) box.scrollTop = box.scrollHeight;
     else box.scrollTop = box.scrollHeight - prevH + prevTop;
+  }
+
+  function quoteMsg(id) {
+    if (!id) return;
+    const m = state.messages.find((x) => field(x, "msgId", "msg_id") === id);
+    const preview = ((m && m.payload && m.payload.text) || "消息").slice(0, 80);
+    state.quote = { id, preview };
+    $("quote-text").textContent = "引用：" + preview;
+    $("quote-bar").classList.remove("hidden");
+  }
+
+  function hideMsgMenu() {
+    const el = $("msg-menu");
+    if (el) el.classList.add("hidden");
+  }
+
+  function showMsgMenu(x, y, msgId) {
+    const m = state.messages.find((x) => field(x, "msgId", "msg_id") === msgId);
+    if (!m) return;
+    const recalled = m.recalled;
+    const items = [];
+    const text = (m.payload && m.payload.text) || "";
+    if (text) items.push(["复制", () => navigator.clipboard.writeText(text).then(() => toast("已复制")).catch(() => {})]);
+    if (!recalled) items.push(["引用", () => quoteMsg(msgId)]);
+    if (!recalled) items.push(["转发", () => openForward(msgId)]);
+    if (!recalled) items.push(["多选", () => enterSelect(msgId)]);
+    if (canRecall(m)) items.push(["撤回", () => recall(msgId)]);
+    items.push(["删除", () => deleteForMe(msgId)]);
+    const menu = $("msg-menu");
+    if (!menu) return;
+    menu.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}">${it[0]}</button>`).join("");
+    menu.querySelectorAll("button").forEach((btn) => {
+      btn.onclick = () => {
+        hideMsgMenu();
+        items[Number(btn.dataset.i)][1]();
+      };
+    });
+    menu.classList.remove("hidden");
+    const w = menu.offsetWidth || 132;
+    const h = menu.offsetHeight || 120;
+    menu.style.left = Math.min(x, window.innerWidth - w - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - h - 8) + "px";
+  }
+
+  function enterSelect(msgId) {
+    state.selecting = true;
+    state.selected = {};
+    if (msgId) state.selected[msgId] = true;
+    toggleHidden("select-bar", false);
+    if ($("select-count")) $("select-count").textContent = "已选 " + Object.keys(state.selected).length;
+    renderMsgs({ stick: false });
+  }
+
+  function exitSelect() {
+    state.selecting = false;
+    state.selected = {};
+    toggleHidden("select-bar", true);
+    renderMsgs({ stick: false });
+  }
+
+  async function deleteForMe(msgId) {
+    if (!msgId || !state.activeCid) return;
+    try {
+      await api("/v1/message-delete", { method: "POST", body: JSON.stringify({ cid: state.activeCid, msg_id: msgId }) });
+      state.messages = state.messages.filter((m) => field(m, "msgId", "msg_id") !== msgId);
+      renderMsgs({ stick: false });
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  }
+
+  async function retryOrDrop(clientMsgId) {
+    const item = state.outbox.find((m) => m.clientMsgId === clientMsgId);
+    if (!item) return;
+    if (!(await dlgConfirm("重新发送这条消息？", "发送失败"))) return;
+    item.status = "pending";
+    item.dead = false;
+    const msg = state.messages.find((m) => m.clientMsgId === clientMsgId);
+    if (msg) msg.status = "pending";
+    renderMsgs({ stick: false });
+    try {
+      await flushOutbox();
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  }
+
+  function highlightMsg(msgId) {
+    state.highlightId = msgId;
+    renderMsgs({ stick: false });
+    const el = document.querySelector(`.bubble[data-id="${CSS.escape ? CSS.escape(msgId) : msgId}"]`);
+    if (el) el.scrollIntoView({ block: "center" });
+    setTimeout(() => {
+      if (state.highlightId === msgId) {
+        state.highlightId = "";
+        renderMsgs({ stick: false });
+      }
+    }, 1600);
+  }
+
+  async function jumpToMessage(cid, msgId, convSeq, peer) {
+    if (!cid) return;
+    if (state.activeCid !== cid) await openChat(peer || "", cid);
+    convSeq = Number(convSeq || 0);
+    const has = () => state.messages.some((m) => field(m, "msgId", "msg_id") === msgId);
+    let guard = 0;
+    while (!has() && state.hasMore && guard++ < 24) {
+      await loadOlder();
+    }
+    if (!has() && convSeq) {
+      try {
+        const after = convSeq > 1 ? convSeq - 1 : 0;
+        const data = await api("/v1/timeline?cid=" + encodeURIComponent(cid) + "&after=" + after + "&limit=40");
+        const extra = data.messages || [];
+        extra.forEach((m) => {
+          const id = field(m, "msgId", "msg_id");
+          if (id && !state.messages.some((x) => field(x, "msgId", "msg_id") === id)) state.messages.push(m);
+        });
+        state.messages.sort((a, b) => Number(field(a, "convSeq", "conv_seq") || 0) - Number(field(b, "convSeq", "conv_seq") || 0));
+      } catch (_) {}
+    }
+    if (has()) highlightMsg(msgId);
+    else toast("找不到这条消息");
+  }
+
+  async function showReaders(seq) {
+    try {
+      const data = await api("/v1/read-state?cid=" + encodeURIComponent(state.activeCid) + "&seq=" + seq);
+      const uids = data.readerUids || data.reader_uids || [];
+      const box = $("readers-list");
+      box.innerHTML = uids.length
+        ? uids.map((u) => `<div class="row">${avatarHTML(avatarOf(u), memberNick(u), u)}<div class="row-main"><div class="row-title">${escapeHtml(memberNick(u))}</div></div></div>`).join("")
+        : `<div class="row-sub">暂无已读</div>`;
+      $("readers-box").classList.remove("hidden");
+    } catch (err) {
+      toast(err.message);
+    }
   }
 
   function escapeHtml(s) {
@@ -924,7 +1119,17 @@
     const data = await api("/v1/friends");
     state.friends = data.friends || [];
     rememberProfiles(state.friends.filter((f) => typeof f === "object"));
+    await loadTagGroups();
     renderLists();
+  }
+
+  async function loadTagGroups() {
+    try {
+      const data = await api("/v1/friend-tags");
+      state.tagGroups = data.tags || [];
+    } catch (_) {
+      state.tagGroups = [];
+    }
   }
 
   async function loadRequests() {
@@ -1157,13 +1362,20 @@
       }
       const owner = g.ownerUid || g.owner_uid;
       const isOwner = owner === state.uid;
+      const manager = isGroupManager();
+      if ($("side-announce")) $("side-announce").textContent = g.announcement || "未设置";
+      const me = members.find((m) => uidOf(m) === state.uid) || {};
+      if ($("side-my-nick")) $("side-my-nick").textContent = me.nickname || me.Nickname || nickOf(state.uid) || state.uid;
+      setSwitch("join-approval-switch", !!(g.joinApproval || g.join_approval));
+      toggleHidden("join-approval-btn", !isOwner);
       toggleHidden("transfer-btn", !isOwner);
       toggleHidden("dissolve-btn", !isOwner);
       if ($("mute-all-btn")) {
-        $("mute-all-btn").classList.toggle("hidden", !isOwner);
+        $("mute-all-btn").classList.toggle("hidden", !manager);
         const mutedAll = !!(g.mutedAll || g.muted_all);
         $("mute-all-btn").textContent = mutedAll ? "解除禁言" : "全员禁言";
       }
+      await renderJoinReqs(manager);
       let names = {};
       try {
         const pr = await api("/v1/profiles?uids=" + encodeURIComponent(members.map((m) => uidOf(m)).filter(Boolean).join(",")));
@@ -1177,25 +1389,14 @@
       $("member-chips").innerHTML = members
         .map((m) => {
           const id = uidOf(m);
-          const kick = isOwner && id && id !== state.uid ? " kick" : "";
-          const label = names[id] || nickOf(id) || id;
-          return `<div class="side-member${kick}" data-uid="${escapeHtml(id)}" data-name="${escapeHtml(label)}">${avatarHTML(avatarOf(id), label, id)}<span class="side-member-name">${escapeHtml(label)}</span></div>`;
+          const kick = manager && id && id !== state.uid && (m.role !== "owner") ? " kick" : "";
+          const label = (m.nickname || m.Nickname) || names[id] || nickOf(id) || id;
+          const badge = m.role === "owner" ? " ·群主" : m.role === "admin" ? " ·管理" : "";
+          return `<div class="side-member${kick}" data-uid="${escapeHtml(id)}" data-name="${escapeHtml(label)}" data-role="${escapeHtml(m.role || "")}">${avatarHTML(avatarOf(id), label, id)}<span class="side-member-name">${escapeHtml(label)}${badge}</span></div>`;
         })
         .join("") + addTile;
-      $("member-chips").querySelectorAll(".side-member.kick").forEach((el) => {
-        el.onclick = async () => {
-          if (!(await dlgConfirm("将把该成员移出本群。", "移出 " + (nickOf(el.dataset.uid) || el.dataset.uid) + "？", true))) return;
-          try {
-            await api("/v1/group-kick", {
-              method: "POST",
-              body: JSON.stringify({ cid: state.activeCid, uid: el.dataset.uid }),
-            });
-            await refreshGroup();
-            await loadConvs();
-          } catch (err) {
-            dlgAlert(err.message);
-          }
-        };
+      $("member-chips").querySelectorAll(".side-member:not(.add)").forEach((el) => {
+        el.onclick = () => onMemberClick(el.dataset.uid, el.dataset.role);
       });
       const addBtn = $("side-add-btn");
       if (addBtn) {
@@ -1213,6 +1414,94 @@
     } catch (err) {
       $("chat-sub").textContent = err.message;
     }
+  }
+
+  async function renderJoinReqs(manager) {
+    const wrap = $("join-req-wrap");
+    const list = $("join-req-list");
+    if (!wrap || !list) return;
+    if (!manager) {
+      wrap.classList.add("hidden");
+      return;
+    }
+    try {
+      const data = await api("/v1/group-join-requests?cid=" + encodeURIComponent(state.activeCid));
+      const reqs = data.requests || [];
+      wrap.classList.toggle("hidden", !reqs.length);
+      list.innerHTML = reqs
+        .map((r) => {
+          const uid = r.uid;
+          return `<div class="row" data-uid="${escapeHtml(uid)}">${avatarHTML(avatarOf(uid), nickOf(uid), uid)}<div class="row-main"><div class="row-title">${escapeHtml(nickOf(uid) || uid)}</div></div><div class="row-actions"><button type="button" data-act="ok">通过</button><button type="button" class="danger" data-act="no">拒绝</button></div></div>`;
+        })
+        .join("");
+      list.querySelectorAll(".row").forEach((row) => {
+        row.querySelectorAll("button").forEach((btn) => {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            try {
+              await api("/v1/group-join-requests", {
+                method: "POST",
+                body: JSON.stringify({ cid: state.activeCid, uid: row.dataset.uid, accept: btn.dataset.act === "ok" }),
+              });
+              await refreshGroup();
+              await loadConvs();
+            } catch (err) {
+              dlgAlert(err.message);
+            }
+          };
+        });
+      });
+    } catch (_) {
+      wrap.classList.add("hidden");
+    }
+  }
+
+  async function onMemberClick(uid, role) {
+    if (!uid) return;
+    if (uid === state.uid) {
+      if ($("mynick-row")) $("mynick-row").click();
+      return;
+    }
+    if (!isGroupManager()) return;
+    const owner = state.group && (state.group.ownerUid || state.group.owner_uid);
+    const isOwner = owner === state.uid;
+    const m = (state.group.members || []).find((x) => uidOf(x) === uid) || {};
+    const muted = !!(m.muted || m.Muted);
+    const items = [];
+    items.push([muted ? "解除禁言" : "禁言", async () => {
+      await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, muted: !muted }) });
+      await refreshGroup();
+    }]);
+    if (isOwner && role !== "owner") {
+      const next = role === "admin" ? "member" : "admin";
+      items.push([next === "admin" ? "设为管理员" : "取消管理员", async () => {
+        await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, role: next }) });
+        await refreshGroup();
+      }]);
+    }
+    if (role !== "owner") {
+      items.push(["移出本群", async () => {
+        if (!(await dlgConfirm("将把该成员移出本群。", "移出 " + memberNick(uid), true))) return;
+        await api("/v1/group-kick", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid }) });
+        await refreshGroup();
+        await loadConvs();
+      }]);
+    }
+    const menu = $("msg-menu");
+    menu.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}">${it[0]}</button>`).join("");
+    menu.querySelectorAll("button").forEach((btn) => {
+      btn.onclick = async () => {
+        hideMsgMenu();
+        try {
+          await items[Number(btn.dataset.i)][1]();
+        } catch (err) {
+          dlgAlert(err.message);
+        }
+      };
+    });
+    menu.classList.remove("hidden");
+    menu.style.left = "60%";
+    menu.style.top = "120px";
   }
 
   async function openChat(peer, cid) {
@@ -1253,10 +1542,13 @@
     toggleHidden("tag-btn", isGroup(cid));
     toggleHidden("e2ee-btn", isGroup(cid));
     toggleHidden("block-btn", isGroup(cid));
+    toggleHidden("qr-card-btn", isGroup(cid));
+    toggleHidden("e2ee-fp", isGroup(cid) || !state.e2eeOn);
     toggleHidden("side-direct", isGroup(cid));
     toggleHidden("side-group-admin", !isGroup(cid));
     if (!isGroup(cid)) renderSidePeer();
     syncSideSwitches();
+    if (!isGroup(cid) && state.e2eeOn) refreshE2eeFp();
     lockComposer();
     loadDraft(cid);
     await reloadTimeline();
@@ -1615,6 +1907,11 @@
       setTab("chats");
       return;
     }
+    if (kind === "group_join_request") {
+      toast(name + " 申请加入群聊");
+      if (state.activeCid) refreshGroup();
+      return;
+    }
     if (kind === "group_kick") {
       toast("你已被移出群聊");
       if (extra && extra === state.activeCid) {
@@ -1766,7 +2063,7 @@
       Notification.requestPermission().catch(() => {});
     }
     state.lastSyncSeq = Number((await kvGet(state.uid + ":seq")) || 0);
-    state.outbox = ((await kvGet(state.uid + ":outbox")) || []).filter((m) => m.status !== "fail" && !m.dead);
+    state.outbox = ((await kvGet(state.uid + ":outbox")) || []).filter((m) => !m.dead);
     await loadFriends();
     await loadRequests();
     await loadBlocks();
@@ -1775,6 +2072,20 @@
     startWSElection();
     maybeApproveTicket();
     e2eePair().catch(() => {});
+    maybeAddFriendFromURL();
+  }
+
+  function maybeAddFriendFromURL() {
+    const add = state.addPeer || new URLSearchParams(location.search).get("add") || "";
+    if (!add || add === state.uid || !state.token) return;
+    state.addPeer = "";
+    history.replaceState({}, "", "/");
+    api("/v1/friend-requests", { method: "POST", body: JSON.stringify({ peer_uid: add }) })
+      .then(() => {
+        toast("已发送好友申请：" + add);
+        return loadRequests();
+      })
+      .catch((err) => toast(err.message || "加好友失败"));
   }
 
   function maybeApproveTicket() {
@@ -1810,6 +2121,12 @@
 
   function mentionUidsOf(text) {
     const out = [];
+    if (/@所有人\b/.test(text || "") && isGroup(state.activeCid) && state.group) {
+      (state.group.members || []).forEach((m) => {
+        const id = uidOf(m);
+        if (id && id !== state.uid) out.push(id);
+      });
+    }
     const re = /@([A-Za-z0-9._@+-]{1,64})/g;
     let m;
     while ((m = re.exec(text || ""))) {
@@ -2343,7 +2660,9 @@
         await e2eePair();
         state.e2eeOn = !state.e2eeOn;
         setSwitch("e2ee-switch", state.e2eeOn);
-        toast(state.e2eeOn ? "本会话已开启端到端加密" : "已关闭加密");
+        toggleHidden("e2ee-fp", !state.e2eeOn);
+        if (state.e2eeOn) refreshE2eeFp();
+        toast(state.e2eeOn ? "本会话已开启端到端加密（仅文本）" : "已关闭加密");
       } catch (err) {
         dlgAlert(err.message);
       }
@@ -2409,14 +2728,14 @@
                 .map((h) => {
                   const msg = h.message || {};
                   const text = (msg.payload && msg.payload.text) || "";
-                  return `<div class="row" data-cid="${h.cid}"><div class="row-main"><div class="row-title">${escapeHtml(h.title || h.cid)}</div><div class="row-sub">${escapeHtml(text)}</div></div></div>`;
+                  return `<div class="row" data-cid="${h.cid}" data-mid="${escapeHtml(field(msg, "msgId", "msg_id") || "")}" data-seq="${escapeHtml(String(field(msg, "convSeq", "conv_seq") || 0))}"><div class="row-main"><div class="row-title">${escapeHtml(h.title || h.cid)}</div><div class="row-sub">${escapeHtml(text)}</div></div></div>`;
                 })
                 .join("")
             : `<div class="row"><div class="row-sub">没有匹配的聊天记录</div></div>`;
           box.querySelectorAll(".row[data-cid]").forEach((row) => {
             row.onclick = () => {
               const c = state.convs.find((x) => x.cid === row.dataset.cid);
-              openChat((c && (c.peerUid || c.peer_uid)) || "", row.dataset.cid);
+              jumpToMessage(row.dataset.cid, row.dataset.mid, row.dataset.seq, (c && (c.peerUid || c.peer_uid)) || "");
             };
           });
         } catch (err) {
@@ -2434,6 +2753,140 @@
       dlgAlert(err.message);
     });
   };
+  function takeImageFile(dt) {
+    if (!dt || !dt.files) return null;
+    for (let i = 0; i < dt.files.length; i++) {
+      if ((dt.files[i].type || "").indexOf("image/") === 0) return dt.files[i];
+    }
+    return dt.files[0] || null;
+  }
+  document.addEventListener("paste", (e) => {
+    if (!state.activeCid || $("draft").disabled) return;
+    const f = takeImageFile(e.clipboardData);
+    if (!f) return;
+    e.preventDefault();
+    uploadFile(f).catch((err) => dlgAlert(err.message));
+  });
+  const dropTarget = document.querySelector(".chat-main") || $("msgs");
+  if (dropTarget) {
+    dropTarget.addEventListener("dragover", (e) => {
+      e.preventDefault();
+    });
+    dropTarget.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (!state.activeCid || $("draft").disabled) return;
+      const f = takeImageFile(e.dataTransfer);
+      if (f) uploadFile(f).catch((err) => dlgAlert(err.message));
+    });
+  }
+  async function refreshE2eeFp() {
+    const el = $("e2ee-fp");
+    if (!el || isGroup(state.activeCid) || !state.e2eeOn || !state.activePeer) {
+      toggleHidden("e2ee-fp", true);
+      return;
+    }
+    try {
+      const mine = await e2eePair();
+      const peer = await api("/v1/e2ee/keys?uids=" + encodeURIComponent(state.activePeer));
+      const p = (peer.users || [])[0] || {};
+      const raw = [mine.pub || "", p.publicKey || p.public_key || ""].sort().join("|");
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+      const hex = Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("")
+        .slice(0, 32);
+      el.textContent = "密钥指纹 " + hex.replace(/(.{4})/g, "$1 ").trim();
+      toggleHidden("e2ee-fp", false);
+    } catch (_) {
+      toggleHidden("e2ee-fp", true);
+    }
+  }
+  onClick("announce-row", async () => {
+    const cur = (state.group && state.group.announcement) || "";
+    if (!isGroupManager()) {
+      dlgAlert(cur || "未设置", "群公告");
+      return;
+    }
+    const next = await dlgPrompt("群公告", cur, "编辑群公告");
+    if (next === null) return;
+    try {
+      await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, announcement: next }) });
+      await refreshGroup();
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  });
+  onClick("mynick-row", async () => {
+    const cur = ($("side-my-nick") && $("side-my-nick").textContent) || "";
+    const next = await dlgPrompt("我在本群的昵称", cur, "群昵称");
+    if (next === null) return;
+    try {
+      await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid: state.uid, nickname: next }) });
+      await refreshGroup();
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  });
+  onClick("join-approval-btn", async () => {
+    if (!state.group) return;
+    const next = !(state.group.joinApproval || state.group.join_approval);
+    try {
+      await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, join_approval: next }) });
+      await refreshGroup();
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  });
+  onClick("clear-btn", async () => {
+    if (!state.activeCid) return;
+    if (!(await dlgConfirm("清空后可从云端再拉历史。确定清空？", "清空聊天记录", true))) return;
+    try {
+      await api("/v1/conversation-clear", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
+      state.messages = [];
+      renderMsgs();
+      toast("已清空");
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  });
+  onClick("qr-card-btn", () => {
+    $("qr-card-img").src = "/v1/me/qr.png?t=" + Date.now();
+    $("qr-card-box").classList.remove("hidden");
+  });
+  onClick("qr-card-close", () => $("qr-card-box").classList.add("hidden"));
+  onClick("readers-ok", () => $("readers-box").classList.add("hidden"));
+  onClick("devices-ok", () => $("devices-box").classList.add("hidden"));
+  onClick("devices-btn", async () => {
+    try {
+      const data = await api("/v1/devices");
+      const list = data.devices || [];
+      $("devices-list").innerHTML = list.length
+        ? list
+            .map((d) => `<div class="row"><div class="row-main"><div class="row-title">${escapeHtml(d.device_id || d.conn_id)}</div><div class="row-sub">${d.self === "1" ? "本机" : d.gateway_id || ""}</div></div>${d.self === "1" ? "" : `<div class="row-actions"><button type="button" class="danger" data-id="${escapeHtml(d.conn_id)}">下线</button></div>`}</div>`)
+            .join("")
+        : `<div class="row-sub">暂无其他设备</div>`;
+      $("devices-list").querySelectorAll("button[data-id]").forEach((btn) => {
+        btn.onclick = async () => {
+          try {
+            await api("/v1/devices", { method: "POST", body: JSON.stringify({ conn_id: btn.dataset.id }) });
+            toast("已踢下线");
+            $("devices-btn").click();
+          } catch (err) {
+            dlgAlert(err.message);
+          }
+        };
+      });
+      $("devices-box").classList.remove("hidden");
+    } catch (err) {
+      dlgAlert(err.message);
+    }
+  });
+  onClick("select-cancel", () => exitSelect());
+  onClick("select-fwd", () => {
+    const ids = Object.keys(state.selected);
+    if (!ids.length) return;
+    openForward(ids);
+  });
       $("mute-btn").onclick = async () => {
     if (!state.activeCid) return;
     const next = !isMuted(state.activeCid);
@@ -2680,7 +3133,32 @@
         const add = document.createElement("button");
         add.type = "button";
         add.textContent = "+";
-        add.onclick = () => $("file").click();
+        add.onclick = () => {
+          const inp = document.createElement("input");
+          inp.type = "file";
+          inp.accept = "image/*";
+          inp.onchange = async () => {
+            const f = inp.files && inp.files[0];
+            if (!f) return;
+            try {
+              const presign = await api("/v1/media/presign", {
+                method: "POST",
+                body: JSON.stringify({ filename: f.name, content_type: f.type, size: f.size }),
+              });
+              await fetch(presign.put_url, { method: "PUT", body: f });
+              const done = await api("/v1/media/complete", {
+                method: "POST",
+                body: JSON.stringify({ object_key: presign.object_key, filename: f.name }),
+              });
+              await api("/v1/stickers", { method: "POST", body: JSON.stringify({ url: done.get_url || done.thumb_url, pack: "mine" }) });
+              fillEmojiPack(box, 2);
+              toast("已收藏贴纸");
+            } catch (err) {
+              dlgAlert(err.message);
+            }
+          };
+          inp.click();
+        };
         inner.appendChild(add);
       })
       .catch(() => {});
@@ -2692,9 +3170,11 @@
   };
   document.addEventListener("click", (e) => {
     const box = $("emoji-box");
-    if (!box || box.classList.contains("hidden")) return;
-    if (e.target.closest("#emoji-btn") || box.contains(e.target)) return;
-    box.classList.add("hidden");
+    if (box && !box.classList.contains("hidden") && !e.target.closest("#emoji-btn") && !box.contains(e.target)) {
+      box.classList.add("hidden");
+    }
+    const menu = $("msg-menu");
+    if (menu && !menu.classList.contains("hidden") && !menu.contains(e.target)) hideMsgMenu();
   });
 
   function openLightbox(src) {
@@ -2704,10 +3184,11 @@
   }
   $("lightbox").onclick = () => $("lightbox").classList.add("hidden");
 
-  function openForward(msgId) {
-    const src = state.messages.find((m) => field(m, "msgId", "msg_id") === msgId);
-    if (!src || !src.payload) return;
-    state.forwarding = src;
+  function openForward(msgIdOrIds) {
+    const ids = Array.isArray(msgIdOrIds) ? msgIdOrIds : [msgIdOrIds];
+    const srcs = ids.map((id) => state.messages.find((m) => field(m, "msgId", "msg_id") === id)).filter((m) => m && m.payload);
+    if (!srcs.length) return;
+    state.forwarding = srcs;
     const list = $("forward-list");
     list.innerHTML = state.convs
       .filter((c) => c.cid !== state.activeCid)
@@ -2719,11 +3200,14 @@
     if (!list.innerHTML) list.innerHTML = `<div class="row"><div class="row-sub">没有可转发的会话</div></div>`;
     list.querySelectorAll(".row[data-cid]").forEach((row) => {
       row.onclick = async () => {
-        const payload = JSON.parse(JSON.stringify(src.payload));
         $("forward-box").classList.add("hidden");
         try {
-          await sendPayload(payload, { cid: row.dataset.cid, peerUid: row.dataset.peer, forward: true });
+          for (const src of srcs) {
+            const payload = JSON.parse(JSON.stringify(src.payload));
+            await sendPayload(payload, { cid: row.dataset.cid, peerUid: row.dataset.peer, forward: true });
+          }
           toast("已转发");
+          exitSelect();
         } catch (err) {
           dlgAlert(err.message);
         }
@@ -2745,9 +3229,20 @@
     const q = $("chat-search").value.trim();
     clearTimeout(chatSearchTimer);
     chatSearchTimer = setTimeout(async () => {
-      state.searchQ = q;
+      if (!q) {
+        state.searchQ = "";
+        return;
+      }
+      const hit = state.messages.find((m) => ((m.payload && m.payload.text) || "").indexOf(q) >= 0);
+      if (hit) {
+        highlightMsg(field(hit, "msgId", "msg_id"));
+        return;
+      }
       try {
-        await reloadTimeline();
+        const data = await api("/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&q=" + encodeURIComponent(q) + "&limit=5");
+        const m = (data.messages || [])[0];
+        if (m) jumpToMessage(state.activeCid, field(m, "msgId", "msg_id"), field(m, "convSeq", "conv_seq"), state.activePeer);
+        else toast("没有匹配的聊天记录");
       } catch (err) {
         toast(err.message);
       }
@@ -2796,15 +3291,23 @@
     const q = val.slice(at + 1).toLowerCase();
     const members = (state.group.members || []).filter((m) => {
       const id = uidOf(m);
-      return id && id !== state.uid && id.toLowerCase().indexOf(q) === 0;
+      if (!id || id === state.uid) return false;
+      const name = memberNick(id).toLowerCase();
+      return !q || id.toLowerCase().indexOf(q) === 0 || name.indexOf(q) >= 0;
     });
-    if (!members.length) {
+    const rows = [];
+    if (isGroupManager() && (!q || "所有人".indexOf(q) === 0)) {
+      rows.push(`<div class="row" data-uid="所有人"><div class="row-title">所有人</div></div>`);
+    }
+    members.forEach((m) => {
+      const id = uidOf(m);
+      rows.push(`<div class="row" data-uid="${escapeHtml(id)}">${escapeHtml(memberNick(id))}<span class="row-sub"> ${escapeHtml(id)}</span></div>`);
+    });
+    if (!rows.length) {
       box.classList.add("hidden");
       return;
     }
-    box.innerHTML = members
-      .map((m) => `<div class="row" data-uid="${escapeHtml(uidOf(m))}">${escapeHtml(uidOf(m))}</div>`)
-      .join("");
+    box.innerHTML = rows.join("");
     box.classList.remove("hidden");
     box.querySelectorAll(".row").forEach((row) => {
       row.onclick = () => {
@@ -2835,6 +3338,7 @@
 
   const params = new URLSearchParams(location.search);
   state.pendingTicket = params.get("ticket") || "";
+  state.addPeer = params.get("add") || "";
 
   const savedUid = sessionStorage.getItem("surge_uid");
   const savedTok = sessionStorage.getItem("surge_token");
@@ -2855,7 +3359,7 @@
       state.lastSyncSeq = Number(v || 0);
     });
     kvGet(savedUid + ":outbox").then((v) => {
-      state.outbox = (v || []).filter((m) => m.status !== "fail" && !m.dead);
+      state.outbox = (v || []).filter((m) => !m.dead);
     });
     loadMe()
       .then(loadFriends)
@@ -2867,6 +3371,7 @@
         startWSElection();
         maybeApproveTicket();
         e2eePair().catch(() => {});
+        maybeAddFriendFromURL();
       })
       .catch((e) => dlgAlert(e.message));
   } else {

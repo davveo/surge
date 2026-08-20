@@ -137,8 +137,8 @@ func (s *memoryStore) SetGroupMuteAll(_ context.Context, operatorUID, cid string
 	if g == nil {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
-	if g.OwnerUID != operatorUID {
-		return nil, errNotOwner
+	if !isManager(g, operatorUID) {
+		return nil, errNotAdmin
 	}
 	g.MutedAll = muted
 	cp := *g

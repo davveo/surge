@@ -284,6 +284,12 @@ func (s *memoryStore) TimelineQuery(_ context.Context, uid, cid string, afterSeq
 		if beforeSeq > 0 && row.convSeq >= beforeSeq {
 			continue
 		}
+		if cut := s.cleared[uid][cid]; cut > 0 && row.convSeq <= cut {
+			continue
+		}
+		if _, gone := s.deletedMsgs[uid][row.msgID]; gone {
+			continue
+		}
 		if query != "" {
 			text := ""
 			if row.payload != nil {

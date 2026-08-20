@@ -67,6 +67,12 @@ const (
 	IMCore_ConsumeEphemeral_FullMethodName   = "/surge.im.v1.IMCore/ConsumeEphemeral"
 	IMCore_AddSticker_FullMethodName         = "/surge.im.v1.IMCore/AddSticker"
 	IMCore_ListStickers_FullMethodName       = "/surge.im.v1.IMCore/ListStickers"
+	IMCore_DeleteMessage_FullMethodName      = "/surge.im.v1.IMCore/DeleteMessage"
+	IMCore_ClearConversation_FullMethodName  = "/surge.im.v1.IMCore/ClearConversation"
+	IMCore_SetMember_FullMethodName          = "/surge.im.v1.IMCore/SetMember"
+	IMCore_ListJoinRequests_FullMethodName   = "/surge.im.v1.IMCore/ListJoinRequests"
+	IMCore_RequestJoin_FullMethodName        = "/surge.im.v1.IMCore/RequestJoin"
+	IMCore_DecideJoin_FullMethodName         = "/surge.im.v1.IMCore/DecideJoin"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -121,6 +127,12 @@ type IMCoreClient interface {
 	ConsumeEphemeral(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error)
 	AddSticker(ctx context.Context, in *AddStickerRequest, opts ...grpc.CallOption) (*Sticker, error)
 	ListStickers(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListStickersResponse, error)
+	DeleteMessage(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	ClearConversation(ctx context.Context, in *HideConversationRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	SetMember(ctx context.Context, in *SetMemberRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	ListJoinRequests(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*ListJoinRequestsResponse, error)
+	RequestJoin(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	DecideJoin(ctx context.Context, in *DecideJoinRequest, opts ...grpc.CallOption) (*GroupResponse, error)
 }
 
 type iMCoreClient struct {
@@ -563,6 +575,60 @@ func (c *iMCoreClient) ListStickers(ctx context.Context, in *ListFriendsRequest,
 	return out, nil
 }
 
+func (c *iMCoreClient) DeleteMessage(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_DeleteMessage_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ClearConversation(ctx context.Context, in *HideConversationRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_ClearConversation_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetMember(ctx context.Context, in *SetMemberRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_SetMember_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListJoinRequests(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*ListJoinRequestsResponse, error) {
+	out := new(ListJoinRequestsResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListJoinRequests_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) RequestJoin(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_RequestJoin_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) DecideJoin(ctx context.Context, in *DecideJoinRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_DecideJoin_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -615,6 +681,12 @@ type IMCoreServer interface {
 	ConsumeEphemeral(context.Context, *RecallMessageRequest) (*RecallNotify, error)
 	AddSticker(context.Context, *AddStickerRequest) (*Sticker, error)
 	ListStickers(context.Context, *ListFriendsRequest) (*ListStickersResponse, error)
+	DeleteMessage(context.Context, *RecallMessageRequest) (*HideConversationResponse, error)
+	ClearConversation(context.Context, *HideConversationRequest) (*HideConversationResponse, error)
+	SetMember(context.Context, *SetMemberRequest) (*GroupResponse, error)
+	ListJoinRequests(context.Context, *GetGroupRequest) (*ListJoinRequestsResponse, error)
+	RequestJoin(context.Context, *LeaveGroupRequest) (*GroupResponse, error)
+	DecideJoin(context.Context, *DecideJoinRequest) (*GroupResponse, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -765,6 +837,24 @@ func (UnimplementedIMCoreServer) AddSticker(context.Context, *AddStickerRequest)
 }
 func (UnimplementedIMCoreServer) ListStickers(context.Context, *ListFriendsRequest) (*ListStickersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListStickers not implemented")
+}
+func (UnimplementedIMCoreServer) DeleteMessage(context.Context, *RecallMessageRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteMessage not implemented")
+}
+func (UnimplementedIMCoreServer) ClearConversation(context.Context, *HideConversationRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearConversation not implemented")
+}
+func (UnimplementedIMCoreServer) SetMember(context.Context, *SetMemberRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetMember not implemented")
+}
+func (UnimplementedIMCoreServer) ListJoinRequests(context.Context, *GetGroupRequest) (*ListJoinRequestsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListJoinRequests not implemented")
+}
+func (UnimplementedIMCoreServer) RequestJoin(context.Context, *LeaveGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestJoin not implemented")
+}
+func (UnimplementedIMCoreServer) DecideJoin(context.Context, *DecideJoinRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DecideJoin not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -1643,6 +1733,114 @@ func _IMCore_ListStickers_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_DeleteMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecallMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).DeleteMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_DeleteMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).DeleteMessage(ctx, req.(*RecallMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ClearConversation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HideConversationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ClearConversation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ClearConversation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ClearConversation(ctx, req.(*HideConversationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetMember_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMemberRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetMember(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetMember_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetMember(ctx, req.(*SetMemberRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListJoinRequests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListJoinRequests(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListJoinRequests_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListJoinRequests(ctx, req.(*GetGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_RequestJoin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).RequestJoin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_RequestJoin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).RequestJoin(ctx, req.(*LeaveGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_DecideJoin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideJoinRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).DecideJoin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_DecideJoin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).DecideJoin(ctx, req.(*DecideJoinRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1841,6 +2039,30 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListStickers",
 			Handler:    _IMCore_ListStickers_Handler,
+		},
+		{
+			MethodName: "DeleteMessage",
+			Handler:    _IMCore_DeleteMessage_Handler,
+		},
+		{
+			MethodName: "ClearConversation",
+			Handler:    _IMCore_ClearConversation_Handler,
+		},
+		{
+			MethodName: "SetMember",
+			Handler:    _IMCore_SetMember_Handler,
+		},
+		{
+			MethodName: "ListJoinRequests",
+			Handler:    _IMCore_ListJoinRequests_Handler,
+		},
+		{
+			MethodName: "RequestJoin",
+			Handler:    _IMCore_RequestJoin_Handler,
+		},
+		{
+			MethodName: "DecideJoin",
+			Handler:    _IMCore_DecideJoin_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

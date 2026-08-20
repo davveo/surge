@@ -305,12 +305,20 @@ func (s *server) UpdateProfile(ctx context.Context, req *imv1.UpdateProfileReque
 }
 
 func (s *server) UpdateGroup(ctx context.Context, req *imv1.UpdateGroupRequest) (*imv1.GroupResponse, error) {
-	g, err := s.store.UpdateGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetName(), req.GetAvatarUrl())
+	var joinApproval *bool
+	if req.GetSetJoinApproval() {
+		v := req.GetJoinApproval()
+		joinApproval = &v
+	}
+	g, err := s.store.UpdateGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetName(), req.GetAvatarUrl(), req.GetAnnouncement(), req.GetSetAnnouncement(), joinApproval)
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	if n := strings.TrimSpace(req.GetName()); n != "" {
 		s.notifyGroup(ctx, req.GetOperatorUid(), g.CID, req.GetOperatorUid()+" 将群名改为「"+g.Name+"」")
+	}
+	if req.GetSetAnnouncement() {
+		s.notifyGroup(ctx, req.GetOperatorUid(), g.CID, req.GetOperatorUid()+" 更新了群公告")
 	}
 	return protoGroup(g), nil
 }
@@ -359,6 +367,8 @@ func (s *server) InviteGroup(ctx context.Context, req *imv1.InviteGroupRequest) 
 		for _, uid := range added {
 			s.notifyRoster(ctx, uid, req.GetOperatorUid(), "group_invite", g.CID)
 		}
+	} else if g.JoinApproval && len(req.GetMemberUids()) > 0 {
+		s.notifyRoster(ctx, g.OwnerUID, req.GetOperatorUid(), "group_join_request", g.CID)
 	}
 	return protoGroup(g), nil
 }
@@ -368,8 +378,8 @@ func (s *server) KickGroup(ctx context.Context, req *imv1.KickGroupRequest) (*im
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	if cur.OwnerUID != req.GetOperatorUid() {
-		return nil, mapErr(errNotOwner)
+	if err := canKick(cur, req.GetOperatorUid(), req.GetMemberUid()); err != nil {
+		return nil, mapErr(err)
 	}
 	s.notifyGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetOperatorUid()+" 将 "+req.GetMemberUid()+" 移出群聊")
 	g, err := s.store.KickGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUid())
@@ -509,7 +519,7 @@ func mapErr(err error) error {
 	if errors.Is(err, errNotFriends) {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
-	if errors.Is(err, errNotMember) || errors.Is(err, errNotOwner) {
+	if errors.Is(err, errNotMember) || errors.Is(err, errNotOwner) || errors.Is(err, errNotAdmin) {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	if errors.Is(err, errTooLarge) {

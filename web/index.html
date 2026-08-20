@@ -101,6 +101,7 @@
           <button type="submit">建群</button>
         </form>
         <div id="friend-list"></div>
+        <div id="tag-groups"></div>
         <div id="block-wrap">
           <div class="mid-label">黑名单</div>
           <div id="block-list"></div>
@@ -125,6 +126,11 @@
         <input id="chat-search" placeholder="搜索聊天记录" />
       </div>
       <div id="msgs"></div>
+      <div id="select-bar" class="hidden">
+        <span id="select-count">已选 0</span>
+        <button id="select-fwd" type="button">转发</button>
+        <button id="select-cancel" type="button">取消</button>
+      </div>
       <div id="typing" class="hidden">对方正在输入…</div>
       <div id="quote-bar" class="hidden">
         <span id="quote-text"></span>
@@ -176,6 +182,18 @@
               <span>群聊名称</span>
               <span class="side-val" id="side-group-name"></span>
             </button>
+            <button type="button" class="side-row" id="announce-row">
+              <span>群公告</span>
+              <span class="side-val" id="side-announce"></span>
+            </button>
+            <button type="button" class="side-row" id="mynick-row">
+              <span>我在本群的昵称</span>
+              <span class="side-val" id="side-my-nick"></span>
+            </button>
+            <button type="button" class="side-row" id="join-approval-btn">
+              <span>进群需验证</span>
+              <span class="side-switch" id="join-approval-switch"></span>
+            </button>
             <input id="group-rename" class="hidden" />
             <button id="rename-btn" type="button" class="hidden">改名</button>
             <button type="button" class="side-row" id="group-avatar-btn">
@@ -208,11 +226,19 @@
               <span>端到端加密</span>
               <span class="side-switch" id="e2ee-switch"></span>
             </button>
+            <div id="e2ee-fp" class="side-note hidden"></div>
             <button id="hide-btn" type="button" class="side-row">隐藏会话</button>
+            <button id="clear-btn" type="button" class="side-row">清空聊天记录</button>
+            <button id="qr-card-btn" type="button" class="side-row hidden">名片二维码</button>
+            <button id="devices-btn" type="button" class="side-row">登录设备</button>
             <button id="block-btn" type="button" class="side-row danger hidden">加入黑名单</button>
           </div>
           <div id="side-group-admin" class="side-list hidden">
             <button id="mute-all-btn" type="button" class="side-row hidden">全员禁言</button>
+            <div id="join-req-wrap" class="hidden">
+              <div class="mid-label">入群申请</div>
+              <div id="join-req-list"></div>
+            </div>
             <button id="transfer-btn" type="button" class="side-row hidden">转让群主</button>
             <button id="leave-btn" type="button" class="side-row danger">退出群聊</button>
             <button id="dissolve-btn" type="button" class="side-row danger hidden">解散群聊</button>
@@ -221,6 +247,34 @@
         </div>
       </aside>
     </section>
+  </div>
+  <div id="msg-menu" class="hidden"></div>
+  <div id="readers-box" class="overlay hidden">
+    <div class="modal-card">
+      <div class="modal-title">已读详情</div>
+      <div id="readers-list" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="readers-ok" type="button" class="btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+  <div id="qr-card-box" class="overlay hidden">
+    <div class="modal-card">
+      <div class="modal-title">扫一扫加我为好友</div>
+      <div class="modal-body" style="text-align:center"><img id="qr-card-img" alt="" /></div>
+      <div class="modal-actions">
+        <button id="qr-card-close" type="button" class="btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="devices-box" class="overlay hidden">
+    <div class="modal-card">
+      <div class="modal-title">登录设备</div>
+      <div id="devices-list" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="devices-ok" type="button" class="btn-ghost">关闭</button>
+      </div>
+    </div>
   </div>
   <div id="lightbox" class="overlay hidden">
     <img id="lightbox-img" alt="" />

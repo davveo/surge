@@ -162,26 +162,37 @@ func (s *mysqlStore) SearchUsers(ctx context.Context, query string, limit int) (
 	return out, rows.Err()
 }
 
-func (s *mysqlStore) UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL string) (*groupInfo, error) {
+func (s *mysqlStore) UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL, announcement string, setAnnouncement bool, joinApproval *bool) (*groupInfo, error) {
 	g, err := s.loadGroup(ctx, cid)
 	if err != nil {
 		return nil, err
 	}
-	if g.OwnerUID != operatorUID {
-		return nil, errNotOwner
+	if !isManager(g, operatorUID) {
+		return nil, errNotAdmin
 	}
 	name = strings.TrimSpace(name)
 	avatarURL = strings.TrimSpace(avatarURL)
-	if name == "" && avatarURL == "" {
-		return g, nil
-	}
 	if name != "" {
 		g.Name = clipText(name, 128)
 	}
 	if avatarURL != "" {
 		g.AvatarURL = clipText(avatarURL, 512)
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE im_groups SET name = ?, avatar_url = ? WHERE cid = ?`, g.Name, g.AvatarURL, cid); err != nil {
+	if setAnnouncement {
+		g.Announcement = clipText(announcement, 2000)
+	}
+	if joinApproval != nil {
+		if g.OwnerUID != operatorUID {
+			return nil, errNotOwner
+		}
+		g.JoinApproval = *joinApproval
+	}
+	join := 0
+	if g.JoinApproval {
+		join = 1
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE im_groups SET name = ?, avatar_url = ?, announcement = ?, join_approval = ? WHERE cid = ?`,
+		g.Name, g.AvatarURL, g.Announcement, join, cid); err != nil {
 		return nil, err
 	}
 	if name != "" {

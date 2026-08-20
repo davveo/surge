@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   kind VARCHAR(16) NOT NULL DEFAULT 'p2p',
   hidden TINYINT NOT NULL DEFAULT 0,
   pinned TINYINT NOT NULL DEFAULT 0,
+  cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,
   PRIMARY KEY (uid, cid),
   KEY idx_uid_updated (uid, updated_at_ms)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -60,6 +61,8 @@ CREATE TABLE IF NOT EXISTS im_groups (
   created_at_ms BIGINT NOT NULL,
   avatar_url VARCHAR(512) NOT NULL DEFAULT '',
   muted_all TINYINT NOT NULL DEFAULT 0,
+  announcement TEXT,
+  join_approval TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (cid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -67,6 +70,8 @@ CREATE TABLE IF NOT EXISTS group_members (
   cid VARCHAR(128) NOT NULL,
   uid VARCHAR(64) NOT NULL,
   role VARCHAR(16) NOT NULL,
+  nickname VARCHAR(64) NOT NULL DEFAULT '',
+  muted TINYINT NOT NULL DEFAULT 0,
   joined_at_ms BIGINT NOT NULL,
   PRIMARY KEY (cid, uid),
   KEY idx_uid (uid)
@@ -137,4 +142,19 @@ CREATE TABLE IF NOT EXISTS stickers (
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (id),
   KEY idx_uid (uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS hidden_messages (
+  uid VARCHAR(64) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  PRIMARY KEY (uid, msg_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS group_join_requests (
+  cid VARCHAR(128) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (cid, uid),
+  KEY idx_cid (cid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

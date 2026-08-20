@@ -236,6 +236,17 @@ func (h *Hub) listenPushes(ctx context.Context) {
 				return
 			}
 			gp := &imv1.GatewayPush{}
+			if strings.Contains(msg.Payload, `"kick"`) {
+				var km struct {
+					UID    string `json:"uid"`
+					ConnID string `json:"conn_id"`
+					Kick   string `json:"kick"`
+				}
+				if json.Unmarshal([]byte(msg.Payload), &km) == nil && km.Kick != "" {
+					h.kickLocal(km.UID, km.ConnID)
+					continue
+				}
+			}
 			if err := unmarshalGatewayPush([]byte(msg.Payload), gp); err != nil {
 				log.Printf("push decode: %v", err)
 				continue

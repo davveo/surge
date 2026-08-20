@@ -422,10 +422,10 @@ func TestUpdateGroupOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "new", ""); err == nil {
+	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "new", "", "", false, nil); err == nil {
 		t.Fatal("member should not rename")
 	}
-	out, err := st.UpdateGroup(ctx, "u1", g.CID, "new", "http://x/a.png")
+	out, err := st.UpdateGroup(ctx, "u1", g.CID, "new", "http://x/a.png", "", false, nil)
 	if err != nil || out.Name != "new" || out.AvatarURL == "" {
 		t.Fatalf("update %+v %v", out, err)
 	}

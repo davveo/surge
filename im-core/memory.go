@@ -52,17 +52,27 @@ type timelineRow struct {
 }
 
 type groupInfo struct {
-	CID       string
-	Name      string
-	OwnerUID  string
-	AvatarURL string
-	MutedAll  bool
-	Members   []groupMember
+	CID          string
+	Name         string
+	OwnerUID     string
+	AvatarURL    string
+	MutedAll     bool
+	Announcement string
+	JoinApproval bool
+	Members      []groupMember
 }
 
 type groupMember struct {
-	UID  string
-	Role string
+	UID      string
+	Role     string
+	Nickname string
+	Muted    bool
+}
+
+type joinReq struct {
+	UID         string
+	FromUID     string
+	CreatedAtMs int64
 }
 
 type Store interface {
@@ -87,7 +97,7 @@ type Store interface {
 	GetProfile(ctx context.Context, uid string) (*imv1.UserProfile, error)
 	UpdateProfile(ctx context.Context, uid, displayName, avatarURL string) (*imv1.UserProfile, error)
 	SearchUsers(ctx context.Context, query string, limit int) ([]*imv1.UserProfile, error)
-	UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL string) (*groupInfo, error)
+	UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL, announcement string, setAnnouncement bool, joinApproval *bool) (*groupInfo, error)
 	SetMute(ctx context.Context, uid, cid string, muted bool) error
 	ListMutes(ctx context.Context, uid string) ([]string, error)
 	GetProfiles(ctx context.Context, uids []string) ([]*imv1.UserProfile, error)
@@ -121,6 +131,12 @@ type Store interface {
 	ConsumeEphemeral(ctx context.Context, uid, cid, msgID string) (*imv1.RecallNotify, []string, error)
 	AddSticker(ctx context.Context, uid, url, pack string) (*imv1.Sticker, error)
 	ListStickers(ctx context.Context, uid string) ([]*imv1.Sticker, error)
+	DeleteMessage(ctx context.Context, uid, cid, msgID string) error
+	ClearConversation(ctx context.Context, uid, cid string) error
+	SetMember(ctx context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool) (*groupInfo, error)
+	ListJoinRequests(ctx context.Context, uid, cid string) ([]joinReq, error)
+	RequestJoin(ctx context.Context, uid, cid string) (*groupInfo, error)
+	DecideJoin(ctx context.Context, operatorUID, cid, memberUID string, accept bool) (*groupInfo, error)
 }
 
 func clipText(s string, max int) string {
@@ -155,8 +171,11 @@ type memoryStore struct {
 	blocks   map[string]map[string]struct{}
 	requests map[string]map[string]struct{} // toUID -> fromUID
 	remarks  map[string]map[string]string
-	tags     map[string]map[string][]string // uid -> peer -> tags
-	stickers map[string][]*imv1.Sticker
+	tags        map[string]map[string][]string // uid -> peer -> tags
+	stickers    map[string][]*imv1.Sticker
+	deletedMsgs map[string]map[string]struct{} // uid -> msgID
+	cleared     map[string]map[string]uint64   // uid -> cid -> seq
+	joins       map[string]map[string]joinReq  // cid -> uid
 }
 
 func newMemoryStore(seq Seq) *memoryStore {
@@ -180,8 +199,11 @@ func newMemoryStore(seq Seq) *memoryStore {
 		blocks:   map[string]map[string]struct{}{},
 		requests: map[string]map[string]struct{}{},
 		remarks:  map[string]map[string]string{},
-		tags:     map[string]map[string][]string{},
-		stickers: map[string][]*imv1.Sticker{},
+		tags:        map[string]map[string][]string{},
+		stickers:    map[string][]*imv1.Sticker{},
+		deletedMsgs: map[string]map[string]struct{}{},
+		cleared:     map[string]map[string]uint64{},
+		joins:       map[string]map[string]joinReq{},
 	}
 }
 
@@ -309,8 +331,8 @@ func (s *memoryStore) targetsLocked(fromUID, cid, peer string) (title, kind stri
 		if !ok {
 			return "", "", nil, errNotMember
 		}
-		if g.MutedAll && fromUID != g.OwnerUID {
-			return "", "", nil, errMutedAll
+		if err := canSpeak(g, fromUID); err != nil {
+			return "", "", nil, err
 		}
 		return g.Name, conv.KindGroup, members, nil
 	}
@@ -568,9 +590,12 @@ func protoGroup(g *groupInfo) *imv1.GroupResponse {
 	if g == nil {
 		return nil
 	}
-	out := &imv1.GroupResponse{Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL, MutedAll: g.MutedAll}
+	out := &imv1.GroupResponse{
+		Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL,
+		MutedAll: g.MutedAll, Announcement: g.Announcement, JoinApproval: g.JoinApproval,
+	}
 	for _, m := range g.Members {
-		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role})
+		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role, Nickname: m.Nickname, Muted: m.Muted})
 	}
 	return out
 }
@@ -626,6 +651,7 @@ func (s *memoryStore) InviteGroup(_ context.Context, operatorUID, cid string, me
 		return nil, errNotMember
 	}
 	now := time.Now().UnixMilli()
+	pending := g.JoinApproval && !isManager(g, operatorUID)
 	for _, uid := range uniqueUIDs(memberUIDs) {
 		if s.isMemberLocked(g, uid) {
 			continue
@@ -633,12 +659,22 @@ func (s *memoryStore) InviteGroup(_ context.Context, operatorUID, cid string, me
 		if !s.hasFriend(operatorUID, uid) {
 			return nil, fmt.Errorf("%w: add friend first", errNotFriends)
 		}
+		if pending {
+			if s.joins[cid] == nil {
+				s.joins[cid] = map[string]joinReq{}
+			}
+			s.joins[cid][uid] = joinReq{UID: uid, FromUID: operatorUID, CreatedAtMs: now}
+			continue
+		}
 		if len(g.Members)+1 > maxGroupMembers {
 			return nil, errTooLarge
 		}
 		g.Members = append(g.Members, groupMember{UID: uid, Role: "member"})
 		row := &timelineRow{msgID: "", convSeq: 0, createdAt: now, payload: &imv1.Payload{Text: "加入群聊"}}
 		s.upsertConv(uid, g.CID, "", g.Name, conv.KindGroup, row, "加入群聊", true)
+		if s.joins[cid] != nil {
+			delete(s.joins[cid], uid)
+		}
 	}
 	return g, nil
 }
@@ -650,11 +686,8 @@ func (s *memoryStore) KickGroup(_ context.Context, operatorUID, cid, memberUID s
 	if g == nil {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
-	if g.OwnerUID != operatorUID {
-		return nil, errNotOwner
-	}
-	if memberUID == operatorUID {
-		return nil, fmt.Errorf("%w: cannot kick owner", errInvalid)
+	if err := canKick(g, operatorUID, memberUID); err != nil {
+		return nil, err
 	}
 	kept := g.Members[:0]
 	for _, m := range g.Members {

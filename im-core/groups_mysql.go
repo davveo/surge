@@ -15,25 +15,29 @@ import (
 
 func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, error) {
 	g := &groupInfo{CID: cid}
-	var muted int
-	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url, IFNULL(muted_all, 0) FROM im_groups WHERE cid = ?`, cid).Scan(&g.Name, &g.OwnerUID, &g.AvatarURL, &muted)
+	var muted, join int
+	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url, IFNULL(muted_all, 0), IFNULL(announcement, ''), IFNULL(join_approval, 0) FROM im_groups WHERE cid = ?`, cid).
+		Scan(&g.Name, &g.OwnerUID, &g.AvatarURL, &muted, &g.Announcement, &join)
 	g.MutedAll = muted != 0
+	g.JoinApproval = join != 0
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT uid, role FROM group_members WHERE cid = ?`, cid)
+	rows, err := s.db.QueryContext(ctx, `SELECT uid, role, IFNULL(nickname, ''), IFNULL(muted, 0) FROM group_members WHERE cid = ?`, cid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var m groupMember
-		if err := rows.Scan(&m.UID, &m.Role); err != nil {
+		var mutedMem int
+		if err := rows.Scan(&m.UID, &m.Role, &m.Nickname, &mutedMem); err != nil {
 			return nil, err
 		}
+		m.Muted = mutedMem != 0
 		g.Members = append(g.Members, m)
 	}
 	return g, rows.Err()
@@ -118,6 +122,7 @@ func (s *mysqlStore) InviteGroup(ctx context.Context, operatorUID, cid string, m
 		return nil, err
 	}
 	now := time.Now().UnixMilli()
+	pending := g.JoinApproval && !isManager(g, operatorUID)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -138,6 +143,15 @@ func (s *mysqlStore) InviteGroup(ctx context.Context, operatorUID, cid string, m
 		if !ok {
 			return nil, fmt.Errorf("%w: add friend first", errNotFriends)
 		}
+		if pending {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO group_join_requests (cid, uid, from_uid, created_at_ms) VALUES (?, ?, ?, ?)
+				ON DUPLICATE KEY UPDATE from_uid = VALUES(from_uid), created_at_ms = VALUES(created_at_ms)`,
+				cid, uid, operatorUID, now); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if len(existing)+1 > maxGroupMembers {
 			return nil, errTooLarge
 		}
@@ -148,6 +162,7 @@ func (s *mysqlStore) InviteGroup(ctx context.Context, operatorUID, cid string, m
 		if err := upsertConv(ctx, tx, uid, cid, "", g.Name, conv.KindGroup, "", 0, "加入群聊", now, true); err != nil {
 			return nil, err
 		}
+		_, _ = tx.ExecContext(ctx, `DELETE FROM group_join_requests WHERE cid = ? AND uid = ?`, cid, uid)
 		existing[uid] = struct{}{}
 		g.Members = append(g.Members, groupMember{UID: uid, Role: "member"})
 	}
@@ -162,11 +177,8 @@ func (s *mysqlStore) KickGroup(ctx context.Context, operatorUID, cid, memberUID 
 	if err != nil {
 		return nil, err
 	}
-	if g.OwnerUID != operatorUID {
-		return nil, errNotOwner
-	}
-	if memberUID == operatorUID {
-		return nil, fmt.Errorf("%w: cannot kick owner", errInvalid)
+	if err := canKick(g, operatorUID, memberUID); err != nil {
+		return nil, err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM group_members WHERE cid = ? AND uid = ?`, cid, memberUID); err != nil {
 		return nil, err

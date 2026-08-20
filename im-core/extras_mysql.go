@@ -318,8 +318,11 @@ func (s *mysqlStore) TimelineQuery(ctx context.Context, uid, cid string, afterSe
 	query = strings.TrimSpace(query)
 	var rows *sql.Rows
 	var err error
-	args := []any{cid}
-	sqlStr := `SELECT msg_id, conv_seq, from_uid, payload_type, payload_text, COALESCE(payload_media, ''), created_at_ms, recalled, quote_msg_id FROM messages WHERE cid = ?`
+	args := []any{cid, uid, uid}
+	sqlStr := `SELECT msg_id, conv_seq, from_uid, payload_type, payload_text, COALESCE(payload_media, ''), created_at_ms, recalled, quote_msg_id
+		FROM messages WHERE cid = ?
+		AND conv_seq > IFNULL((SELECT cleared_seq FROM conversations WHERE uid = ? AND cid = messages.cid), 0)
+		AND msg_id NOT IN (SELECT msg_id FROM hidden_messages WHERE uid = ?)`
 	if afterSeq > 0 {
 		sqlStr += ` AND conv_seq > ?`
 		args = append(args, afterSeq)

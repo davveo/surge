@@ -45,9 +45,27 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE users ADD COLUMN phone VARCHAR(32) NOT NULL DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN public_key TEXT`,
 		`ALTER TABLE im_groups ADD COLUMN muted_all TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE im_groups ADD COLUMN announcement TEXT`,
+		`ALTER TABLE im_groups ADD COLUMN join_approval TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE group_members ADD COLUMN nickname VARCHAR(64) NOT NULL DEFAULT ''`,
+		`ALTER TABLE group_members ADD COLUMN muted TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE conversations ADD COLUMN cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0`,
+		`CREATE TABLE IF NOT EXISTS hidden_messages (
+  uid VARCHAR(64) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  PRIMARY KEY (uid, msg_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS group_join_requests (
+  cid VARCHAR(128) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (cid, uid),
+  KEY idx_cid (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 	for _, a := range alters {
-		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") {
+		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") && !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("migrate alter: %w", err)
 		}
 	}
@@ -164,8 +182,8 @@ func (s *mysqlStore) targets(ctx context.Context, fromUID, cid, peer string) (ti
 		if !ok {
 			return "", "", nil, errNotMember
 		}
-		if g.MutedAll && fromUID != g.OwnerUID {
-			return "", "", nil, errMutedAll
+		if err := canSpeak(g, fromUID); err != nil {
+			return "", "", nil, err
 		}
 		return g.Name, conv.KindGroup, members, nil
 	}

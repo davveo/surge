@@ -77,6 +77,13 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/link-preview", a.linkPreview)
 	mux.HandleFunc("/v1/media/presign", a.mediaPresign)
 	mux.HandleFunc("/v1/media/complete", a.mediaComplete)
+	mux.HandleFunc("/v1/message-delete", a.messageDelete)
+	mux.HandleFunc("/v1/conversation-clear", a.conversationClear)
+	mux.HandleFunc("/v1/group-member", a.groupMember)
+	mux.HandleFunc("/v1/group-join-requests", a.groupJoinRequests)
+	mux.HandleFunc("/v1/group-join", a.groupJoin)
+	mux.HandleFunc("/v1/devices", a.devices)
+	mux.HandleFunc("/v1/me/qr.png", a.meQRPNG)
 	mux.HandleFunc("/v1/ws", a.ws.handleWS)
 	if dir := strings.TrimSpace(a.webDir); dir != "" {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
@@ -324,17 +331,26 @@ func (a *httpAPI) groupUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CID       string `json:"cid"`
-		Name      string `json:"name"`
-		AvatarURL string `json:"avatar_url"`
+		CID          string `json:"cid"`
+		Name         string `json:"name"`
+		AvatarURL    string `json:"avatar_url"`
+		Announcement *string `json:"announcement"`
+		JoinApproval *bool   `json:"join_approval"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.CID) == "" {
 		http.Error(w, `{"error":"cid required"}`, http.StatusBadRequest)
 		return
 	}
-	resp, err := a.core.UpdateGroup(r.Context(), &imv1.UpdateGroupRequest{
-		OperatorUid: uid, Cid: body.CID, Name: body.Name, AvatarUrl: body.AvatarURL,
-	})
+	req := &imv1.UpdateGroupRequest{OperatorUid: uid, Cid: body.CID, Name: body.Name, AvatarUrl: body.AvatarURL}
+	if body.Announcement != nil {
+		req.Announcement = *body.Announcement
+		req.SetAnnouncement = true
+	}
+	if body.JoinApproval != nil {
+		req.JoinApproval = *body.JoinApproval
+		req.SetJoinApproval = true
+	}
+	resp, err := a.core.UpdateGroup(r.Context(), req)
 	if err != nil {
 		writeRPCError(w, err)
 		return

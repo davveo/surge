@@ -56,6 +56,12 @@ service IMCore {
   rpc ConsumeEphemeral(RecallMessageRequest) returns (RecallNotify);
   rpc AddSticker(AddStickerRequest) returns (Sticker);
   rpc ListStickers(ListFriendsRequest) returns (ListStickersResponse);
+  rpc DeleteMessage(RecallMessageRequest) returns (HideConversationResponse);
+  rpc ClearConversation(HideConversationRequest) returns (HideConversationResponse);
+  rpc SetMember(SetMemberRequest) returns (GroupResponse);
+  rpc ListJoinRequests(GetGroupRequest) returns (ListJoinRequestsResponse);
+  rpc RequestJoin(LeaveGroupRequest) returns (GroupResponse);
+  rpc DecideJoin(DecideJoinRequest) returns (GroupResponse);
 }
 
 message WatermarkRequest {
@@ -240,6 +246,10 @@ message UpdateGroupRequest {
   string cid = 2;
   string name = 3;
   string avatar_url = 4;
+  string announcement = 5;
+  bool join_approval = 6;
+  bool set_join_approval = 7;
+  bool set_announcement = 8;
 }
 
 message SetMuteRequest {
@@ -264,6 +274,8 @@ message ListMutesResponse {
 message GroupMember {
   string uid = 1;
   string role = 2;
+  string nickname = 3;
+  bool muted = 4;
 }
 
 message CreateGroupRequest {
@@ -301,6 +313,8 @@ message GroupResponse {
   repeated GroupMember members = 4;
   string avatar_url = 5;
   bool muted_all = 6;
+  string announcement = 7;
+  bool join_approval = 8;
 }
 
 message RecallMessageRequest {
@@ -452,4 +466,34 @@ message Sticker {
 
 message ListStickersResponse {
   repeated Sticker stickers = 1;
+}
+
+message SetMemberRequest {
+  string operator_uid = 1;
+  string cid = 2;
+  string member_uid = 3;
+  string nickname = 4;
+  string role = 5;
+  bool muted = 6;
+  bool set_muted = 7;
+  bool set_nickname = 8;
+  bool set_role = 9;
+}
+
+message JoinRequest {
+  string uid = 1;
+  string from_uid = 2;
+  int64 created_at_ms = 3;
+}
+
+message ListJoinRequestsResponse {
+  string cid = 1;
+  repeated JoinRequest requests = 2;
+}
+
+message DecideJoinRequest {
+  string operator_uid = 1;
+  string cid = 2;
+  string member_uid = 3;
+  bool accept = 4;
 }
