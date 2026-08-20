@@ -8,16 +8,15 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/skip2/go-qrcode"
-
-	"github.com/davveo/surge/pkg/auth"
 )
 
 const qrTTL = 2 * time.Minute
 
 type qrSession struct {
-	Status string `json:"status"`
-	UID    string `json:"uid,omitempty"`
-	Token  string `json:"token,omitempty"`
+	Status  string `json:"status"`
+	UID     string `json:"uid,omitempty"`
+	Token   string `json:"token,omitempty"`
+	Refresh string `json:"refresh,omitempty"`
 }
 
 func qrRedisKey(ticket string) string { return "qrlogin:" + ticket }
@@ -82,6 +81,9 @@ func (a *httpAPI) qrStatus(w http.ResponseWriter, r *http.Request) {
 	if sess.Status == "approved" {
 		out["uid"] = sess.UID
 		out["access_token"] = sess.Token
+		if sess.Refresh != "" {
+			out["refresh_token"] = sess.Refresh
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -111,14 +113,15 @@ func (a *httpAPI) qrApprove(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 		return
 	}
-	token, err := auth.Issue(a.secret, uid, "web-qr", 7*24*time.Hour)
+	sessOut, err := a.issueSession(r.Context(), uid, "web-qr", accessTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	sess.Status = "approved"
 	sess.UID = uid
-	sess.Token = token
+	sess.Token = sessOut.AccessToken
+	sess.Refresh = sessOut.RefreshToken
 	b, _ := json.Marshal(sess)
 	ttl, err := a.rdb.TTL(r.Context(), qrRedisKey(body.Ticket)).Result()
 	if err != nil || ttl <= 0 {

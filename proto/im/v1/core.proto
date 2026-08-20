@@ -16,13 +16,21 @@ service IMCore {
   rpc AddFriend(AddFriendRequest) returns (AddFriendResponse);
   rpc ListFriends(ListFriendsRequest) returns (ListFriendsResponse);
   rpc LookupUser(LookupUserRequest) returns (LookupUserResponse);
+  rpc SearchUsers(SearchUsersRequest) returns (SearchUsersResponse);
+  rpc Register(RegisterRequest) returns (UserProfile);
+  rpc VerifyPassword(LoginRequest) returns (UserProfile);
+  rpc GetProfile(GetProfileRequest) returns (UserProfile);
+  rpc UpdateProfile(UpdateProfileRequest) returns (UserProfile);
   rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
   rpc InviteGroup(InviteGroupRequest) returns (GroupResponse);
   rpc KickGroup(KickGroupRequest) returns (GroupResponse);
   rpc GetGroup(GetGroupRequest) returns (GroupResponse);
+  rpc UpdateGroup(UpdateGroupRequest) returns (GroupResponse);
   rpc Recall(RecallMessageRequest) returns (RecallNotify);
   rpc MarkRead(MarkReadRequest) returns (ReadReceipt);
   rpc FanoutTyping(Typing) returns (Typing);
+  rpc SetMute(SetMuteRequest) returns (MuteState);
+  rpc ListMutes(ListMutesRequest) returns (ListMutesResponse);
 }
 
 message WatermarkRequest {
@@ -80,6 +88,7 @@ message Conversation {
   string last_text = 7;
   string title = 8;
   string kind = 9;
+  bool muted = 10;
 }
 
 message ListConversationsResponse {
@@ -150,6 +159,67 @@ message LookupUserResponse {
   bool found = 2;
 }
 
+message SearchUsersRequest {
+  string query = 1;
+  uint32 limit = 2;
+}
+
+message SearchUsersResponse {
+  repeated UserProfile users = 1;
+}
+
+message RegisterRequest {
+  string uid = 1;
+  string password = 2;
+}
+
+message LoginRequest {
+  string uid = 1;
+  string password = 2;
+}
+
+message GetProfileRequest {
+  string uid = 1;
+}
+
+message UpdateProfileRequest {
+  string uid = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+}
+
+message UserProfile {
+  string uid = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+}
+
+message UpdateGroupRequest {
+  string operator_uid = 1;
+  string cid = 2;
+  string name = 3;
+  string avatar_url = 4;
+}
+
+message SetMuteRequest {
+  string uid = 1;
+  string cid = 2;
+  bool muted = 3;
+}
+
+message MuteState {
+  string cid = 1;
+  bool muted = 2;
+}
+
+message ListMutesRequest {
+  string uid = 1;
+}
+
+message ListMutesResponse {
+  repeated string cids = 1;
+}
+
 message GroupMember {
   string uid = 1;
   string role = 2;
@@ -188,6 +258,7 @@ message GroupResponse {
   string name = 2;
   string owner_uid = 3;
   repeated GroupMember members = 4;
+  string avatar_url = 5;
 }
 
 message RecallMessageRequest {

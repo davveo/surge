@@ -2,9 +2,9 @@
 
 对标微信网页版的 Web 端即时通讯：单聊 + 群聊。目标是 **100 万同时在线** 长连接。
 
-当前仓库 **P1**：单聊 + 群聊（含成员变更系统消息）、2 分钟撤回、单聊已读、正在输入、草稿/通知/免打扰、MinIO 预签名图片文件、扫码登录。
+当前仓库 **P1**：注册/登录/刷新令牌、搜人加好友、单聊 + 群聊（含改名头像与成员变更）、2 分钟撤回、单聊已读、正在输入、草稿/通知/免打扰、置顶、@、引用、链接预览、MinIO 预签名图片文件、扫码登录、多 Tab 一条 WSS。
 
-打开 http://127.0.0.1:8080 ，两个窗口分别登录 `u1` / `u2`（或一端扫码确认），通讯录里互相添加后再发消息；也可建群、发图。
+打开 http://127.0.0.1:8080 ：可用 uid+密码注册/登录；空密码走开发登录（`u1` / `u2`）。通讯录搜索真实用户后添加，再发消息；也可建群、发图、改群资料。
 
 ## 文档
 
@@ -70,11 +70,14 @@ go run ./im-core
 go run ./gateway
 ```
 
-开发登录后须先加好友，否则发送返回 403：
+开发登录后须先加好友，否则发送返回 403。也可用密码注册/登录，并用 refresh_token 换新 access_token：
 
 ```bash
+curl -s -X POST localhost:8080/v1/auth/register -d '{"uid":"alice","password":"secret1"}'
+curl -s -X POST localhost:8080/v1/auth/login -d '{"uid":"alice","password":"secret1"}'
 TOKEN=$(curl -s -X POST localhost:8080/v1/auth/dev-login -d '{"uid":"u1"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 curl -s -X POST localhost:8080/v1/friends -H "Authorization: Bearer $TOKEN" -d '{"peer_uid":"u2"}'
+curl -s "localhost:8080/v1/users?q=u" -H "Authorization: Bearer $TOKEN"
 ```
 
 把返回的 `access_token` 用于 WebSocket。调试可用文本帧（protojson）：

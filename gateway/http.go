@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -34,10 +33,14 @@ func (a *httpAPI) routes() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/v1/auth/dev-login", a.devLogin)
+	mux.HandleFunc("/v1/auth/register", a.register)
+	mux.HandleFunc("/v1/auth/login", a.login)
+	mux.HandleFunc("/v1/auth/refresh", a.refresh)
 	mux.HandleFunc("/v1/auth/qr/new", a.qrNew)
 	mux.HandleFunc("/v1/auth/qr/status", a.qrStatus)
 	mux.HandleFunc("/v1/auth/qr.png", a.qrPNG)
 	mux.HandleFunc("/v1/auth/qr/approve", a.qrApprove)
+	mux.HandleFunc("/v1/me", a.me)
 	mux.HandleFunc("/v1/conversations", a.conversations)
 	mux.HandleFunc("/v1/timeline", a.timeline)
 	mux.HandleFunc("/v1/friends", a.friends)
@@ -45,7 +48,10 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/groups", a.groups)
 	mux.HandleFunc("/v1/group-invite", a.groupInvite)
 	mux.HandleFunc("/v1/group-kick", a.groupKick)
+	mux.HandleFunc("/v1/group-update", a.groupUpdate)
 	mux.HandleFunc("/v1/group", a.groupGet)
+	mux.HandleFunc("/v1/mute", a.mute)
+	mux.HandleFunc("/v1/link-preview", a.linkPreview)
 	mux.HandleFunc("/v1/media/presign", a.mediaPresign)
 	mux.HandleFunc("/v1/media/complete", a.mediaComplete)
 	mux.HandleFunc("/v1/ws", a.ws.handleWS)
@@ -70,12 +76,12 @@ func (a *httpAPI) devLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"uid required"}`, http.StatusBadRequest)
 		return
 	}
-	token, err := auth.Issue(a.secret, body.UID, body.DeviceID, 7*24*time.Hour)
+	sess, err := a.issueSession(r.Context(), body.UID, body.DeviceID, devAccessTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"uid": body.UID, "access_token": token})
+	writeJSON(w, http.StatusOK, sess)
 }
 
 func (a *httpAPI) conversations(w http.ResponseWriter, r *http.Request) {
@@ -152,11 +158,22 @@ func (a *httpAPI) lookupUser(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.uidFromAuth(w, r); !ok {
 		return
 	}
-	q := strings.TrimSpace(r.URL.Query().Get("uid"))
-	if q == "" {
-		q = strings.TrimSpace(r.URL.Query().Get("q"))
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q != "" {
+		resp, err := a.core.SearchUsers(r.Context(), &imv1.SearchUsersRequest{Query: q, Limit: 20})
+		if err != nil {
+			writeRPCError(w, err)
+			return
+		}
+		writeProtoJSON(w, resp)
+		return
 	}
-	resp, err := a.core.LookupUser(r.Context(), &imv1.LookupUserRequest{Query: q})
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	if uid == "" {
+		http.Error(w, "q or uid required", http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.LookupUser(r.Context(), &imv1.LookupUserRequest{Query: uid})
 	if err != nil {
 		writeRPCError(w, err)
 		return
@@ -245,6 +262,59 @@ func (a *httpAPI) groupKick(w http.ResponseWriter, r *http.Request) {
 	writeProtoJSON(w, resp)
 }
 
+func (a *httpAPI) groupUpdate(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CID       string `json:"cid"`
+		Name      string `json:"name"`
+		AvatarURL string `json:"avatar_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.CID) == "" {
+		http.Error(w, `{"error":"cid required"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.UpdateGroup(r.Context(), &imv1.UpdateGroupRequest{
+		OperatorUid: uid, Cid: body.CID, Name: body.Name, AvatarUrl: body.AvatarURL,
+	})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (a *httpAPI) mute(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CID   string `json:"cid"`
+		Muted bool   `json:"muted"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.CID) == "" {
+		http.Error(w, `{"error":"cid required"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.SetMute(r.Context(), &imv1.SetMuteRequest{Uid: uid, Cid: body.CID, Muted: body.Muted})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
 func (a *httpAPI) groupGet(w http.ResponseWriter, r *http.Request) {
 	uid, ok := a.uidFromAuth(w, r)
 	if !ok {
@@ -271,6 +341,8 @@ func writeRPCError(w http.ResponseWriter, err error) {
 			code = http.StatusBadRequest
 		case codes.PermissionDenied:
 			code = http.StatusForbidden
+		case codes.Unauthenticated:
+			code = http.StatusUnauthorized
 		}
 		http.Error(w, st.Message(), code)
 		return

@@ -38,6 +38,7 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE messages ADD COLUMN recalled TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE messages ADD COLUMN quote_msg_id VARCHAR(36) NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN payload_media TEXT`,
+		`ALTER TABLE im_groups ADD COLUMN avatar_url VARCHAR(512) NOT NULL DEFAULT ''`,
 	}
 	for _, a := range alters {
 		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") {
@@ -73,6 +74,7 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 	}
 	now := time.Now().UnixMilli()
 	msgID := uuid.NewString()
+	payload = enrichPayload(payload, s.lookupQuoteText(ctx, canonical, quoteMsgID))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -82,7 +84,7 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO messages (msg_id, client_msg_id, cid, conv_seq, from_uid, payload_type, payload_text, payload_media, created_at_ms, recalled, quote_msg_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-		msgID, clientMsgID, canonical, convSeq, fromUID, int32(payload.Type), payload.Text, marshalMedia(payload.Media), now, quoteMsgID)
+		msgID, clientMsgID, canonical, convSeq, fromUID, int32(payload.Type), payload.Text, marshalPayloadBlob(payload), now, quoteMsgID)
 	if err != nil {
 		if isDupErr(err) {
 			return s.loadDup(ctx, fromUID, clientMsgID, canonical)
@@ -282,9 +284,12 @@ func (s *mysqlStore) Watermark(ctx context.Context, uid string) (uint64, error) 
 
 func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT cid, peer_uid, last_msg_id, last_conv_seq, unread, updated_at_ms, last_text, title, kind
-		FROM conversations WHERE uid = ?
-		ORDER BY updated_at_ms DESC`, uid)
+		SELECT c.cid, c.peer_uid, c.last_msg_id, c.last_conv_seq, c.unread, c.updated_at_ms, c.last_text, c.title, c.kind,
+			IFNULL(m.muted, 0)
+		FROM conversations c
+		LEFT JOIN conv_mutes m ON m.uid = c.uid AND m.cid = c.cid
+		WHERE c.uid = ?
+		ORDER BY c.updated_at_ms DESC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -292,9 +297,11 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 	var out []*imv1.Conversation
 	for rows.Next() {
 		c := &imv1.Conversation{}
-		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind); err != nil {
+		var muted int
+		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted); err != nil {
 			return nil, err
 		}
+		c.Muted = muted != 0
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -374,6 +381,8 @@ func (s *mysqlStore) AddFriend(ctx context.Context, uid, peerUID string) (bool, 
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
+	_ = s.EnsureUser(ctx, uid)
+	_ = s.EnsureUser(ctx, peerUID)
 	return already, nil
 }
 

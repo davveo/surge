@@ -23,6 +23,12 @@
     qrTimer: null,
     pendingTicket: "",
     muted: {},
+    pins: {},
+    refresh: "",
+    isLeader: false,
+    tabCh: null,
+    tabId: "",
+    leaderAt: 0,
   };
 
   const dbp = new Promise((resolve, reject) => {
@@ -50,14 +56,33 @@
     });
   }
 
-  function api(path, opts = {}) {
+  function api(path, opts = {}, retry = true) {
     const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
     if (state.token) headers.Authorization = "Bearer " + state.token;
     return fetch(path, Object.assign({}, opts, { headers })).then(async (r) => {
       const text = await r.text();
+      if (r.status === 401 && retry && state.refresh) {
+        await refreshTokens();
+        return api(path, opts, false);
+      }
       if (!r.ok) throw new Error(text || r.statusText);
       return text ? JSON.parse(text) : {};
     });
+  }
+
+  async function refreshTokens() {
+    const r = await fetch("/v1/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: state.refresh, device_id: "web" }),
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(text || "refresh failed");
+    const data = JSON.parse(text);
+    state.token = data.access_token;
+    if (data.refresh_token) state.refresh = data.refresh_token;
+    sessionStorage.setItem("surge_token", state.token);
+    if (state.refresh) sessionStorage.setItem("surge_refresh", state.refresh);
   }
 
   function uuid() {
@@ -104,12 +129,19 @@
 
   function renderLists() {
     const convEl = $("conv-list");
-    convEl.innerHTML = state.convs
+    const sorted = state.convs.slice().sort((a, b) => {
+      const pa = isPinned(a.cid) ? 1 : 0;
+      const pb = isPinned(b.cid) ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return Number(b.updatedAtMs || b.updated_at_ms || 0) - Number(a.updatedAtMs || a.updated_at_ms || 0);
+    });
+    convEl.innerHTML = sorted
       .map((c) => {
         const active = c.cid === state.activeCid ? " active" : "";
+        const pinCls = isPinned(c.cid) ? " pinned" : "";
         const badge = c.unread && Number(c.unread) > 0 ? `<span class="badge">${c.unread}</span>` : "";
         const peer = field(c, "peerUid", "peer_uid") || "";
-        return `<div class="row${active}" data-peer="${peer}" data-cid="${c.cid}">
+        return `<div class="row${active}${pinCls}" data-peer="${peer}" data-cid="${c.cid}">
           <div><div class="row-title">${escapeHtml(convTitle(c))}</div><div class="row-sub">${escapeHtml(c.lastText || c.last_text || "")}</div></div>${badge}
         </div>`;
       })
@@ -139,6 +171,26 @@
     return mine && !recalled && id && created && Date.now() - created < RECALL_MS;
   }
 
+  function pinKey() {
+    return "surge:pin:" + state.uid;
+  }
+
+  function isPinned(cid) {
+    return !!state.pins[cid];
+  }
+
+  function loadPins() {
+    try {
+      state.pins = JSON.parse(localStorage.getItem(pinKey()) || "{}");
+    } catch (_) {
+      state.pins = {};
+    }
+  }
+
+  function savePins() {
+    localStorage.setItem(pinKey(), JSON.stringify(state.pins));
+  }
+
   function muteKey() {
     return "surge:mute:" + state.uid;
   }
@@ -153,10 +205,6 @@
     } catch (_) {
       state.muted = {};
     }
-  }
-
-  function saveMuted() {
-    localStorage.setItem(muteKey(), JSON.stringify(state.muted));
   }
 
   function payloadType(p) {
@@ -180,7 +228,27 @@
   }
 
   function linkify(s) {
-    return escapeHtml(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    const html = escapeHtml(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    return html.replace(/@([A-Za-z0-9._@+-]{1,64})/g, '<span class="mention">@$1</span>');
+  }
+
+  function quoteBlock(m) {
+    const qtext = (m.payload && (m.payload.quoteText || m.payload.quote_text)) || "";
+    const qid = field(m, "quoteMsgId", "quote_msg_id");
+    if (!qtext && !qid) return "";
+    return `<div class="quote-card">${escapeHtml(qtext || "引用消息")}</div>`;
+  }
+
+  function linkCard(m) {
+    const link = (m.payload && m.payload.link) || null;
+    if (!link || !(link.url || link.URL)) return "";
+    const url = link.url || link.URL;
+    const title = link.title || url;
+    const desc = link.description || "";
+    const img = link.image || "";
+    return `<a class="link-card" href="${escapeHtml(url)}" target="_blank" rel="noopener">${
+      img ? `<img src="${escapeHtml(img)}" alt="" />` : ""
+    }<div class="t">${escapeHtml(title)}</div>${desc ? `<div class="d">${escapeHtml(desc)}</div>` : ""}</a>`;
   }
 
   function mediaOf(p) {
@@ -237,9 +305,8 @@
         const from = field(m, "fromUid", "from_uid") || "";
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
         const who = isGroup(state.activeCid) && !mine ? `<div class="meta">${escapeHtml(from)}</div>` : "";
-        const qid = field(m, "quoteMsgId", "quote_msg_id");
-        const quote = qid ? `<div class="meta">引用 ${escapeHtml(qid.slice(0, 8))}…</div>` : "";
-        const body = recalled ? "已撤回一条消息" : renderBody(m);
+        const quote = quoteBlock(m);
+        const body = recalled ? "已撤回一条消息" : renderBody(m) + (recalled ? "" : linkCard(m));
         const recallBtn = canRecall(m)
           ? `<button type="button" class="recall-btn ok" data-id="${id}">撤回</button>`
           : "";
@@ -263,7 +330,7 @@
     box.querySelectorAll(".bubble:not(.system)").forEach((el) => {
       el.ondblclick = () => {
         if (!el.dataset.id) return;
-        state.quote = { id: el.dataset.id, preview: el.textContent.slice(0, 40) };
+        state.quote = { id: el.dataset.id, preview: (el.querySelector(".quote-card") ? "" : "") || el.textContent.slice(0, 80) };
         $("quote-text").textContent = "引用：" + state.quote.preview;
         $("quote-bar").classList.remove("hidden");
       };
@@ -281,6 +348,10 @@
   async function loadConvs() {
     const data = await api("/v1/conversations");
     state.convs = data.conversations || [];
+    state.muted = {};
+    state.convs.forEach((c) => {
+      if (c.muted) state.muted[c.cid] = true;
+    });
     renderLists();
   }
 
@@ -356,7 +427,9 @@
     $("send-form").querySelector("button").disabled = false;
     $("attach-btn").disabled = false;
     $("mute-btn").classList.remove("hidden");
+    $("pin-btn").classList.remove("hidden");
     $("mute-btn").textContent = isMuted(cid) ? "已免打扰" : "免打扰";
+    $("pin-btn").textContent = isPinned(cid) ? "取消置顶" : "置顶";
     loadDraft(cid);
     const data = await api("/v1/timeline?cid=" + encodeURIComponent(cid) + "&limit=200");
     state.messages = data.messages || [];
@@ -370,9 +443,85 @@
   }
 
   function sendFrame(body) {
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) throw new Error("offline");
     const env = Object.assign({ requestId: String(state.reqId++) }, body);
-    state.ws.send(JSON.stringify(env));
+    if (state.isLeader && state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(JSON.stringify(env));
+      return;
+    }
+    if (state.tabCh && !state.isLeader) {
+      state.tabCh.postMessage({ type: "send", env: env });
+      return;
+    }
+    throw new Error("offline");
+  }
+
+  function broadcastFrame(env) {
+    if (state.tabCh && state.isLeader) {
+      state.tabCh.postMessage({ type: "frame", env: env });
+    }
+  }
+
+  function startWSElection() {
+    state.tabId = uuid();
+    if (!("BroadcastChannel" in window)) {
+      state.isLeader = true;
+      connect();
+      return;
+    }
+    const ch = new BroadcastChannel("surge-ws");
+    state.tabCh = ch;
+    ch.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.type === "leader" && m.id && m.id !== state.tabId) {
+        state.leaderAt = Date.now();
+        if (state.isLeader && String(m.id) < String(state.tabId)) {
+          yieldLeader();
+        }
+      }
+      if (m.type === "elect" && state.isLeader) {
+        ch.postMessage({ type: "leader", id: state.tabId });
+      }
+      if (m.type === "frame" && !state.isLeader && m.env) {
+        onFrame(m.env);
+      }
+      if (m.type === "send" && state.isLeader && m.env && state.ws && state.ws.readyState === WebSocket.OPEN) {
+        try {
+          state.ws.send(JSON.stringify(m.env));
+        } catch (_) {}
+      }
+    };
+    ch.postMessage({ type: "elect", id: state.tabId });
+    setTimeout(() => {
+      if (Date.now() - state.leaderAt < 600) {
+        state.isLeader = false;
+        setConn("跟随标签页", true);
+        return;
+      }
+      becomeLeader();
+    }, 400);
+    setInterval(() => {
+      if (state.isLeader) ch.postMessage({ type: "leader", id: state.tabId });
+      else if (Date.now() - state.leaderAt > 2000) becomeLeader();
+    }, 800);
+  }
+
+  function becomeLeader() {
+    if (state.isLeader && state.ws) return;
+    state.isLeader = true;
+    connect();
+  }
+
+  function yieldLeader() {
+    state.isLeader = false;
+    clearInterval(state.hb);
+    if (state.ws) {
+      state.ws.onclose = null;
+      try {
+        state.ws.close();
+      } catch (_) {}
+      state.ws = null;
+    }
+    setConn("跟随标签页", true);
   }
 
   function applyRecall(cid, msgId) {
@@ -397,7 +546,9 @@
   function notifyIncoming(ev) {
     const from = field(ev, "fromUid", "from_uid");
     if (from === state.uid) return;
-    if (isMuted(ev.cid)) return;
+    const mentions = (ev.payload && (ev.payload.mentionUids || ev.payload.mention_uids)) || [];
+    const mentioned = mentions.indexOf(state.uid) >= 0 || ((ev.payload && ev.payload.text) || "").indexOf("@" + state.uid) >= 0;
+    if (isMuted(ev.cid) && !mentioned) return;
     if (!document.hidden) return;
     if (!window.Notification || Notification.permission !== "granted") return;
     const text = (ev.payload && ev.payload.text) || "";
@@ -506,6 +657,13 @@
   }
 
   function connect() {
+    if (state.ws) {
+      state.ws.onclose = null;
+      try {
+        state.ws.close();
+      } catch (_) {}
+      state.ws = null;
+    }
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(proto + "//" + location.host + "/v1/ws");
     state.ws = ws;
@@ -516,12 +674,15 @@
     };
     ws.onmessage = (e) => {
       try {
-        onFrame(JSON.parse(e.data));
+        const env = JSON.parse(e.data);
+        onFrame(env);
+        broadcastFrame(env);
       } catch (err) {
         console.error(err);
       }
     };
     ws.onclose = () => {
+      if (!state.isLeader) return;
       setConn("重连中", false);
       clearInterval(state.hb);
       setTimeout(connect, 1500);
@@ -552,13 +713,16 @@
     }
   }
 
-  async function sessionEnter(uid, token) {
+  async function sessionEnter(uid, token, refresh) {
     state.uid = uid;
     state.token = token;
+    state.refresh = refresh || "";
     sessionStorage.setItem("surge_uid", state.uid);
     sessionStorage.setItem("surge_token", state.token);
+    if (state.refresh) sessionStorage.setItem("surge_refresh", state.refresh);
     $("me").textContent = state.uid;
     loadMuted();
+    loadPins();
     $("login").classList.add("hidden");
     $("confirm-qr").classList.add("hidden");
     $("app").classList.remove("hidden");
@@ -569,7 +733,7 @@
     state.outbox = (await kvGet(state.uid + ":outbox")) || [];
     await loadFriends();
     await loadConvs();
-    connect();
+    startWSElection();
     maybeApproveTicket();
   }
 
@@ -594,7 +758,7 @@
           const st = await fetch("/v1/auth/qr/status?ticket=" + encodeURIComponent(state.qrTicket)).then((r) => r.json());
           if (st.status === "approved" && st.access_token) {
             clearInterval(state.qrTimer);
-            await sessionEnter(st.uid, st.access_token);
+            await sessionEnter(st.uid, st.access_token, st.refresh_token);
           }
         } catch (_) {}
       }, 1000);
@@ -604,8 +768,30 @@
     }
   }
 
+  function mentionUidsOf(text) {
+    const out = [];
+    const re = /@([A-Za-z0-9._@+-]{1,64})/g;
+    let m;
+    while ((m = re.exec(text || ""))) {
+      if (out.indexOf(m[1]) < 0) out.push(m[1]);
+    }
+    return out;
+  }
+
+  async function attachLinkPreview(payload) {
+    const text = payload.text || "";
+    const m = text.match(/https?:\/\/[^\s]+/);
+    if (!m) return payload;
+    try {
+      payload.link = await api("/v1/link-preview", { method: "POST", body: JSON.stringify({ url: m[0] }) });
+    } catch (_) {}
+    return payload;
+  }
+
   async function sendPayload(payload) {
     if (!state.activeCid) return;
+    payload.mentionUids = mentionUidsOf(payload.text || "");
+    payload = await attachLinkPreview(payload);
     const item = {
       clientMsgId: uuid(),
       peerUid: isGroup(state.activeCid) ? "" : state.activePeer,
@@ -680,20 +866,49 @@
     localStorage.removeItem(draftKey());
   }
 
-  async function enter(uid) {
-    const data = await api("/v1/auth/dev-login", {
+  async function enter(uid, password) {
+    let data;
+    if (password) {
+      data = await api("/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ uid, password, device_id: "web" }),
+      });
+    } else {
+      data = await api("/v1/auth/dev-login", {
+        method: "POST",
+        body: JSON.stringify({ uid, device_id: "web" }),
+      });
+    }
+    await sessionEnter(data.uid, data.access_token, data.refresh_token);
+  }
+
+  async function register(uid, password) {
+    const data = await api("/v1/auth/register", {
       method: "POST",
-      body: JSON.stringify({ uid, device_id: "web" }),
+      body: JSON.stringify({ uid, password, device_id: "web" }),
     });
-    await sessionEnter(data.uid, data.access_token);
+    await sessionEnter(data.uid, data.access_token, data.refresh_token);
   }
 
   $("login-btn").onclick = () => {
     const uid = $("login-uid").value.trim();
+    const password = $("login-pass").value;
     if (!uid) return;
-    enter(uid).catch((e) => alert(e.message));
+    enter(uid, password).catch((e) => alert(e.message));
+  };
+  $("register-btn").onclick = () => {
+    const uid = $("login-uid").value.trim();
+    const password = $("login-pass").value;
+    if (!uid || !password) {
+      alert("注册需要 uid 和至少 6 位密码");
+      return;
+    }
+    register(uid, password).catch((e) => alert(e.message));
   };
   $("login-uid").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("login-btn").click();
+  });
+  $("login-pass").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("login-btn").click();
   });
   $("logout").onclick = () => {
@@ -717,11 +932,42 @@
     try {
       await api("/v1/friends", { method: "POST", body: JSON.stringify({ peer_uid: peer }) });
       $("add-uid").value = "";
+      $("search-hits").innerHTML = "";
       await loadFriends();
     } catch (err) {
       alert(err.message);
     }
   };
+
+  let searchTimer = 0;
+  $("add-uid").addEventListener("input", () => {
+    const q = $("add-uid").value.trim();
+    clearTimeout(searchTimer);
+    if (!q) {
+      $("search-hits").innerHTML = "";
+      return;
+    }
+    searchTimer = setTimeout(async () => {
+      try {
+        const data = await api("/v1/users?q=" + encodeURIComponent(q));
+        const users = data.users || [];
+        $("search-hits").innerHTML = users
+          .map((u) => {
+            const uid = u.uid;
+            const name = u.displayName || u.display_name || uid;
+            return `<div class="row" data-uid="${uid}"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}</div></div>`;
+          })
+          .join("");
+        $("search-hits").querySelectorAll(".row").forEach((row) => {
+          row.onclick = () => {
+            $("add-uid").value = row.dataset.uid;
+          };
+        });
+      } catch (_) {
+        $("search-hits").innerHTML = "";
+      }
+    }, 200);
+  });
 
   $("group-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -758,6 +1004,62 @@
     }
   };
 
+  $("rename-btn").onclick = async () => {
+    const name = $("group-rename").value.trim();
+    if (!name || !state.activeCid) return;
+    try {
+      await api("/v1/group-update", {
+        method: "POST",
+        body: JSON.stringify({ cid: state.activeCid, name }),
+      });
+      $("group-rename").value = "";
+      await refreshGroup();
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  async function uploadAvatar(file, forGroup) {
+    const presign = await api("/v1/media/presign", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, content_type: file.type, size: file.size }),
+    });
+    await fetch(presign.put_url, { method: "PUT", body: file });
+    const done = await api("/v1/media/complete", {
+      method: "POST",
+      body: JSON.stringify({ object_key: presign.object_key, filename: file.name }),
+    });
+    const url = done.get_url || done.thumb_url;
+    if (forGroup) {
+      await api("/v1/group-update", {
+        method: "POST",
+        body: JSON.stringify({ cid: state.activeCid, avatar_url: url }),
+      });
+      await refreshGroup();
+    } else {
+      await api("/v1/me", { method: "POST", body: JSON.stringify({ avatar_url: url }) });
+    }
+  }
+
+  $("group-avatar-btn").onclick = () => $("group-avatar-file").click();
+  $("group-avatar-file").onchange = () => {
+    const f = $("group-avatar-file").files && $("group-avatar-file").files[0];
+    $("group-avatar-file").value = "";
+    if (!f) return;
+    uploadAvatar(f, true).catch((err) => alert(err.message));
+  };
+
+  $("me").onclick = async () => {
+    const name = prompt("显示名", state.uid);
+    if (name === null) return;
+    try {
+      await api("/v1/me", { method: "POST", body: JSON.stringify({ display_name: name.trim() }) });
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   $("send-form").onsubmit = async (e) => {
     e.preventDefault();
     const text = $("draft").value.trim();
@@ -777,12 +1079,26 @@
       alert(err.message);
     });
   };
-  $("mute-btn").onclick = () => {
+  $("mute-btn").onclick = async () => {
     if (!state.activeCid) return;
-    if (isMuted(state.activeCid)) delete state.muted[state.activeCid];
-    else state.muted[state.activeCid] = true;
-    saveMuted();
-    $("mute-btn").textContent = isMuted(state.activeCid) ? "已免打扰" : "免打扰";
+    const next = !isMuted(state.activeCid);
+    try {
+      await api("/v1/mute", { method: "POST", body: JSON.stringify({ cid: state.activeCid, muted: next }) });
+      if (next) state.muted[state.activeCid] = true;
+      else delete state.muted[state.activeCid];
+      $("mute-btn").textContent = next ? "已免打扰" : "免打扰";
+      await loadConvs();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  $("pin-btn").onclick = () => {
+    if (!state.activeCid) return;
+    if (isPinned(state.activeCid)) delete state.pins[state.activeCid];
+    else state.pins[state.activeCid] = true;
+    savePins();
+    $("pin-btn").textContent = isPinned(state.activeCid) ? "取消置顶" : "置顶";
+    renderLists();
   };
   $("quote-clear").onclick = () => {
     state.quote = null;
@@ -807,11 +1123,40 @@
     saveDraft();
     if (!state.activeCid) return;
     const now = Date.now();
-    if (now - state.lastTypingAt < 2000) return;
-    state.lastTypingAt = now;
-    try {
-      sendFrame({ typing: { cid: state.activeCid } });
-    } catch (_) {}
+    if (now - state.lastTypingAt >= 2000) {
+      state.lastTypingAt = now;
+      try {
+        sendFrame({ typing: { cid: state.activeCid } });
+      } catch (_) {}
+    }
+    const box = $("mention-box");
+    if (!isGroup(state.activeCid) || !state.group) {
+      box.classList.add("hidden");
+      return;
+    }
+    const val = $("draft").value;
+    const at = val.lastIndexOf("@");
+    if (at < 0 || /\s/.test(val.slice(at))) {
+      box.classList.add("hidden");
+      return;
+    }
+    const q = val.slice(at + 1).toLowerCase();
+    const members = (state.group.members || []).filter((m) => m.uid !== state.uid && m.uid.toLowerCase().indexOf(q) === 0);
+    if (!members.length) {
+      box.classList.add("hidden");
+      return;
+    }
+    box.innerHTML = members
+      .map((m) => `<div class="row" data-uid="${m.uid}">${escapeHtml(m.uid)}</div>`)
+      .join("");
+    box.classList.remove("hidden");
+    box.querySelectorAll(".row").forEach((row) => {
+      row.onclick = () => {
+        $("draft").value = val.slice(0, at) + "@" + row.dataset.uid + " ";
+        box.classList.add("hidden");
+        $("draft").focus();
+      };
+    });
   });
 
   $("draft").addEventListener("keydown", (e) => {
@@ -826,11 +1171,14 @@
 
   const savedUid = sessionStorage.getItem("surge_uid");
   const savedTok = sessionStorage.getItem("surge_token");
+  const savedRefresh = sessionStorage.getItem("surge_refresh") || "";
   if (savedUid && savedTok) {
     state.uid = savedUid;
     state.token = savedTok;
+    state.refresh = savedRefresh;
     $("me").textContent = savedUid;
     loadMuted();
+    loadPins();
     $("login").classList.add("hidden");
     $("app").classList.remove("hidden");
     if (window.Notification && Notification.permission === "default") {
@@ -844,7 +1192,7 @@
     });
     loadFriends()
       .then(loadConvs)
-      .then(connect)
+      .then(startWSElection)
       .then(maybeApproveTicket)
       .catch((e) => alert(e.message));
   } else {

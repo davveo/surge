@@ -15,7 +15,7 @@ import (
 
 func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, error) {
 	g := &groupInfo{CID: cid}
-	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid FROM im_groups WHERE cid = ?`, cid).Scan(&g.Name, &g.OwnerUID)
+	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url FROM im_groups WHERE cid = ?`, cid).Scan(&g.Name, &g.OwnerUID, &g.AvatarURL)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}

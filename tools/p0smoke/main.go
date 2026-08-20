@@ -114,6 +114,42 @@ func main() {
 	fmt.Printf("denied=%s\n", mustJSON(denied))
 	fmt.Printf("ack=%s\n", mustJSON(ack))
 	fmt.Printf("push=%s\n", mustJSON(push))
+
+	if err := a.Close(); err != nil {
+		panic(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	a = connect(t1)
+	defer a.Close()
+	if err := a.WriteMessage(websocket.TextMessage, []byte(`{"sync":{"lastSyncSeq":"0","limit":50}}`)); err != nil {
+		panic(err)
+	}
+	recovered := false
+	for i := 0; i < 6; i++ {
+		frame := readJSON(a)
+		raw := mustJSON(frame)
+		if strings.Contains(raw, "hello p0") {
+			recovered = true
+			break
+		}
+	}
+	if !recovered {
+		fmt.Fprintln(os.Stderr, "expected sync after reconnect to contain hello p0")
+		os.Exit(1)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:8080/v1/conversations", nil)
+	req.Header.Set("Authorization", "Bearer "+t2)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode >= 300 || !strings.Contains(string(raw), "p2p:u1:u2") {
+		fmt.Fprintf(os.Stderr, "conversations after reconnect: %s %s\n", resp.Status, raw)
+		os.Exit(1)
+	}
+	fmt.Println("P0 reconnect smoke ok")
 }
 
 func mustJSON(v interface{}) string {

@@ -27,13 +27,21 @@ const (
 	IMCore_AddFriend_FullMethodName         = "/surge.im.v1.IMCore/AddFriend"
 	IMCore_ListFriends_FullMethodName       = "/surge.im.v1.IMCore/ListFriends"
 	IMCore_LookupUser_FullMethodName        = "/surge.im.v1.IMCore/LookupUser"
+	IMCore_SearchUsers_FullMethodName       = "/surge.im.v1.IMCore/SearchUsers"
+	IMCore_Register_FullMethodName          = "/surge.im.v1.IMCore/Register"
+	IMCore_VerifyPassword_FullMethodName    = "/surge.im.v1.IMCore/VerifyPassword"
+	IMCore_GetProfile_FullMethodName        = "/surge.im.v1.IMCore/GetProfile"
+	IMCore_UpdateProfile_FullMethodName     = "/surge.im.v1.IMCore/UpdateProfile"
 	IMCore_CreateGroup_FullMethodName       = "/surge.im.v1.IMCore/CreateGroup"
 	IMCore_InviteGroup_FullMethodName       = "/surge.im.v1.IMCore/InviteGroup"
 	IMCore_KickGroup_FullMethodName         = "/surge.im.v1.IMCore/KickGroup"
 	IMCore_GetGroup_FullMethodName          = "/surge.im.v1.IMCore/GetGroup"
+	IMCore_UpdateGroup_FullMethodName       = "/surge.im.v1.IMCore/UpdateGroup"
 	IMCore_Recall_FullMethodName            = "/surge.im.v1.IMCore/Recall"
 	IMCore_MarkRead_FullMethodName          = "/surge.im.v1.IMCore/MarkRead"
 	IMCore_FanoutTyping_FullMethodName      = "/surge.im.v1.IMCore/FanoutTyping"
+	IMCore_SetMute_FullMethodName           = "/surge.im.v1.IMCore/SetMute"
+	IMCore_ListMutes_FullMethodName         = "/surge.im.v1.IMCore/ListMutes"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -48,13 +56,21 @@ type IMCoreClient interface {
 	AddFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*AddFriendResponse, error)
 	ListFriends(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListFriendsResponse, error)
 	LookupUser(ctx context.Context, in *LookupUserRequest, opts ...grpc.CallOption) (*LookupUserResponse, error)
+	SearchUsers(ctx context.Context, in *SearchUsersRequest, opts ...grpc.CallOption) (*SearchUsersResponse, error)
+	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*UserProfile, error)
+	VerifyPassword(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*UserProfile, error)
+	GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*UserProfile, error)
+	UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UserProfile, error)
 	CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error)
 	InviteGroup(ctx context.Context, in *InviteGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
 	KickGroup(ctx context.Context, in *KickGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
 	GetGroup(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	UpdateGroup(ctx context.Context, in *UpdateGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
 	Recall(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error)
 	MarkRead(ctx context.Context, in *MarkReadRequest, opts ...grpc.CallOption) (*ReadReceipt, error)
 	FanoutTyping(ctx context.Context, in *Typing, opts ...grpc.CallOption) (*Typing, error)
+	SetMute(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*MuteState, error)
+	ListMutes(ctx context.Context, in *ListMutesRequest, opts ...grpc.CallOption) (*ListMutesResponse, error)
 }
 
 type iMCoreClient struct {
@@ -137,6 +153,51 @@ func (c *iMCoreClient) LookupUser(ctx context.Context, in *LookupUserRequest, op
 	return out, nil
 }
 
+func (c *iMCoreClient) SearchUsers(ctx context.Context, in *SearchUsersRequest, opts ...grpc.CallOption) (*SearchUsersResponse, error) {
+	out := new(SearchUsersResponse)
+	err := c.cc.Invoke(ctx, IMCore_SearchUsers_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*UserProfile, error) {
+	out := new(UserProfile)
+	err := c.cc.Invoke(ctx, IMCore_Register_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) VerifyPassword(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*UserProfile, error) {
+	out := new(UserProfile)
+	err := c.cc.Invoke(ctx, IMCore_VerifyPassword_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*UserProfile, error) {
+	out := new(UserProfile)
+	err := c.cc.Invoke(ctx, IMCore_GetProfile_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) UpdateProfile(ctx context.Context, in *UpdateProfileRequest, opts ...grpc.CallOption) (*UserProfile, error) {
+	out := new(UserProfile)
+	err := c.cc.Invoke(ctx, IMCore_UpdateProfile_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *iMCoreClient) CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error) {
 	out := new(CreateGroupResponse)
 	err := c.cc.Invoke(ctx, IMCore_CreateGroup_FullMethodName, in, out, opts...)
@@ -173,6 +234,15 @@ func (c *iMCoreClient) GetGroup(ctx context.Context, in *GetGroupRequest, opts .
 	return out, nil
 }
 
+func (c *iMCoreClient) UpdateGroup(ctx context.Context, in *UpdateGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_UpdateGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *iMCoreClient) Recall(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error) {
 	out := new(RecallNotify)
 	err := c.cc.Invoke(ctx, IMCore_Recall_FullMethodName, in, out, opts...)
@@ -200,6 +270,24 @@ func (c *iMCoreClient) FanoutTyping(ctx context.Context, in *Typing, opts ...grp
 	return out, nil
 }
 
+func (c *iMCoreClient) SetMute(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*MuteState, error) {
+	out := new(MuteState)
+	err := c.cc.Invoke(ctx, IMCore_SetMute_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListMutes(ctx context.Context, in *ListMutesRequest, opts ...grpc.CallOption) (*ListMutesResponse, error) {
+	out := new(ListMutesResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListMutes_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -212,13 +300,21 @@ type IMCoreServer interface {
 	AddFriend(context.Context, *AddFriendRequest) (*AddFriendResponse, error)
 	ListFriends(context.Context, *ListFriendsRequest) (*ListFriendsResponse, error)
 	LookupUser(context.Context, *LookupUserRequest) (*LookupUserResponse, error)
+	SearchUsers(context.Context, *SearchUsersRequest) (*SearchUsersResponse, error)
+	Register(context.Context, *RegisterRequest) (*UserProfile, error)
+	VerifyPassword(context.Context, *LoginRequest) (*UserProfile, error)
+	GetProfile(context.Context, *GetProfileRequest) (*UserProfile, error)
+	UpdateProfile(context.Context, *UpdateProfileRequest) (*UserProfile, error)
 	CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error)
 	InviteGroup(context.Context, *InviteGroupRequest) (*GroupResponse, error)
 	KickGroup(context.Context, *KickGroupRequest) (*GroupResponse, error)
 	GetGroup(context.Context, *GetGroupRequest) (*GroupResponse, error)
+	UpdateGroup(context.Context, *UpdateGroupRequest) (*GroupResponse, error)
 	Recall(context.Context, *RecallMessageRequest) (*RecallNotify, error)
 	MarkRead(context.Context, *MarkReadRequest) (*ReadReceipt, error)
 	FanoutTyping(context.Context, *Typing) (*Typing, error)
+	SetMute(context.Context, *SetMuteRequest) (*MuteState, error)
+	ListMutes(context.Context, *ListMutesRequest) (*ListMutesResponse, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -250,6 +346,21 @@ func (UnimplementedIMCoreServer) ListFriends(context.Context, *ListFriendsReques
 func (UnimplementedIMCoreServer) LookupUser(context.Context, *LookupUserRequest) (*LookupUserResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LookupUser not implemented")
 }
+func (UnimplementedIMCoreServer) SearchUsers(context.Context, *SearchUsersRequest) (*SearchUsersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchUsers not implemented")
+}
+func (UnimplementedIMCoreServer) Register(context.Context, *RegisterRequest) (*UserProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
+}
+func (UnimplementedIMCoreServer) VerifyPassword(context.Context, *LoginRequest) (*UserProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyPassword not implemented")
+}
+func (UnimplementedIMCoreServer) GetProfile(context.Context, *GetProfileRequest) (*UserProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProfile not implemented")
+}
+func (UnimplementedIMCoreServer) UpdateProfile(context.Context, *UpdateProfileRequest) (*UserProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateProfile not implemented")
+}
 func (UnimplementedIMCoreServer) CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateGroup not implemented")
 }
@@ -262,6 +373,9 @@ func (UnimplementedIMCoreServer) KickGroup(context.Context, *KickGroupRequest) (
 func (UnimplementedIMCoreServer) GetGroup(context.Context, *GetGroupRequest) (*GroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetGroup not implemented")
 }
+func (UnimplementedIMCoreServer) UpdateGroup(context.Context, *UpdateGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateGroup not implemented")
+}
 func (UnimplementedIMCoreServer) Recall(context.Context, *RecallMessageRequest) (*RecallNotify, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Recall not implemented")
 }
@@ -270,6 +384,12 @@ func (UnimplementedIMCoreServer) MarkRead(context.Context, *MarkReadRequest) (*R
 }
 func (UnimplementedIMCoreServer) FanoutTyping(context.Context, *Typing) (*Typing, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FanoutTyping not implemented")
+}
+func (UnimplementedIMCoreServer) SetMute(context.Context, *SetMuteRequest) (*MuteState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetMute not implemented")
+}
+func (UnimplementedIMCoreServer) ListMutes(context.Context, *ListMutesRequest) (*ListMutesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMutes not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -428,6 +548,96 @@ func _IMCore_LookupUser_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_SearchUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchUsersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SearchUsers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SearchUsers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SearchUsers(ctx, req.(*SearchUsersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_Register_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).Register(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_Register_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).Register(ctx, req.(*RegisterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_VerifyPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).VerifyPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_VerifyPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).VerifyPassword(ctx, req.(*LoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_GetProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetProfile(ctx, req.(*GetProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_UpdateProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).UpdateProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_UpdateProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).UpdateProfile(ctx, req.(*UpdateProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IMCore_CreateGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateGroupRequest)
 	if err := dec(in); err != nil {
@@ -500,6 +710,24 @@ func _IMCore_GetGroup_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_UpdateGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).UpdateGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_UpdateGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).UpdateGroup(ctx, req.(*UpdateGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IMCore_Recall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RecallMessageRequest)
 	if err := dec(in); err != nil {
@@ -554,6 +782,42 @@ func _IMCore_FanoutTyping_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_SetMute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMuteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetMute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetMute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetMute(ctx, req.(*SetMuteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListMutes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMutesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListMutes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListMutes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListMutes(ctx, req.(*ListMutesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -594,6 +858,26 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IMCore_LookupUser_Handler,
 		},
 		{
+			MethodName: "SearchUsers",
+			Handler:    _IMCore_SearchUsers_Handler,
+		},
+		{
+			MethodName: "Register",
+			Handler:    _IMCore_Register_Handler,
+		},
+		{
+			MethodName: "VerifyPassword",
+			Handler:    _IMCore_VerifyPassword_Handler,
+		},
+		{
+			MethodName: "GetProfile",
+			Handler:    _IMCore_GetProfile_Handler,
+		},
+		{
+			MethodName: "UpdateProfile",
+			Handler:    _IMCore_UpdateProfile_Handler,
+		},
+		{
 			MethodName: "CreateGroup",
 			Handler:    _IMCore_CreateGroup_Handler,
 		},
@@ -610,6 +894,10 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IMCore_GetGroup_Handler,
 		},
 		{
+			MethodName: "UpdateGroup",
+			Handler:    _IMCore_UpdateGroup_Handler,
+		},
+		{
 			MethodName: "Recall",
 			Handler:    _IMCore_Recall_Handler,
 		},
@@ -620,6 +908,14 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FanoutTyping",
 			Handler:    _IMCore_FanoutTyping_Handler,
+		},
+		{
+			MethodName: "SetMute",
+			Handler:    _IMCore_SetMute_Handler,
+		},
+		{
+			MethodName: "ListMutes",
+			Handler:    _IMCore_ListMutes_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

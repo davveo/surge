@@ -142,6 +142,8 @@ func (s *server) AddFriend(ctx context.Context, req *imv1.AddFriendRequest) (*im
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	_ = s.store.EnsureUser(ctx, req.GetUid())
+	_ = s.store.EnsureUser(ctx, req.GetPeerUid())
 	return &imv1.AddFriendResponse{PeerUid: req.GetPeerUid(), Already: already}, nil
 }
 
@@ -157,12 +159,85 @@ func (s *server) ListFriends(ctx context.Context, req *imv1.ListFriendsRequest) 
 	return &imv1.ListFriendsResponse{Friends: out}, nil
 }
 
-func (s *server) LookupUser(_ context.Context, req *imv1.LookupUserRequest) (*imv1.LookupUserResponse, error) {
+func (s *server) LookupUser(ctx context.Context, req *imv1.LookupUserRequest) (*imv1.LookupUserResponse, error) {
 	q := strings.TrimSpace(req.GetQuery())
 	if q == "" {
 		return nil, mapErr(fmt.Errorf("%w: query required", errInvalid))
 	}
-	return &imv1.LookupUserResponse{Uid: q, Found: true}, nil
+	p, err := s.store.GetProfile(ctx, q)
+	if err != nil {
+		if errors.Is(err, errInvalid) {
+			return &imv1.LookupUserResponse{Uid: q, Found: false}, nil
+		}
+		return nil, mapErr(err)
+	}
+	return &imv1.LookupUserResponse{Uid: p.Uid, Found: true}, nil
+}
+
+func (s *server) SearchUsers(ctx context.Context, req *imv1.SearchUsersRequest) (*imv1.SearchUsersResponse, error) {
+	users, err := s.store.SearchUsers(ctx, req.GetQuery(), int(req.GetLimit()))
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &imv1.SearchUsersResponse{Users: users}, nil
+}
+
+func (s *server) Register(ctx context.Context, req *imv1.RegisterRequest) (*imv1.UserProfile, error) {
+	p, err := s.store.Register(ctx, req.GetUid(), req.GetPassword())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return p, nil
+}
+
+func (s *server) VerifyPassword(ctx context.Context, req *imv1.LoginRequest) (*imv1.UserProfile, error) {
+	p, err := s.store.VerifyPassword(ctx, req.GetUid(), req.GetPassword())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return p, nil
+}
+
+func (s *server) GetProfile(ctx context.Context, req *imv1.GetProfileRequest) (*imv1.UserProfile, error) {
+	p, err := s.store.GetProfile(ctx, req.GetUid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return p, nil
+}
+
+func (s *server) UpdateProfile(ctx context.Context, req *imv1.UpdateProfileRequest) (*imv1.UserProfile, error) {
+	p, err := s.store.UpdateProfile(ctx, req.GetUid(), req.GetDisplayName(), req.GetAvatarUrl())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return p, nil
+}
+
+func (s *server) UpdateGroup(ctx context.Context, req *imv1.UpdateGroupRequest) (*imv1.GroupResponse, error) {
+	g, err := s.store.UpdateGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetName(), req.GetAvatarUrl())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if n := strings.TrimSpace(req.GetName()); n != "" {
+		s.notifyGroup(ctx, req.GetOperatorUid(), g.CID, req.GetOperatorUid()+" 将群名改为「"+g.Name+"」")
+	}
+	return protoGroup(g), nil
+}
+
+func (s *server) SetMute(ctx context.Context, req *imv1.SetMuteRequest) (*imv1.MuteState, error) {
+	if err := s.store.SetMute(ctx, req.GetUid(), req.GetCid(), req.GetMuted()); err != nil {
+		return nil, mapErr(err)
+	}
+	return &imv1.MuteState{Cid: req.GetCid(), Muted: req.GetMuted()}, nil
+}
+
+func (s *server) ListMutes(ctx context.Context, req *imv1.ListMutesRequest) (*imv1.ListMutesResponse, error) {
+	cids, err := s.store.ListMutes(ctx, req.GetUid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &imv1.ListMutesResponse{Cids: cids}, nil
 }
 
 func (s *server) CreateGroup(ctx context.Context, req *imv1.CreateGroupRequest) (*imv1.CreateGroupResponse, error) {
@@ -315,6 +390,9 @@ func mapErr(err error) error {
 	}
 	if errors.Is(err, errTooLarge) {
 		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	if errors.Is(err, errAuth) {
+		return status.Error(codes.Unauthenticated, err.Error())
 	}
 	return status.Error(codes.Internal, err.Error())
 }

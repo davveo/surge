@@ -169,3 +169,88 @@ func TestAddFriendIdempotent(t *testing.T) {
 		t.Fatal("not mutual")
 	}
 }
+
+func TestRegisterAndSearch(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := srv.Register(ctx, &imv1.RegisterRequest{Uid: "alice", Password: "secret1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.VerifyPassword(ctx, &imv1.LoginRequest{Uid: "alice", Password: "wrong"}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("want unauthenticated, got %v", err)
+	}
+	if _, err := srv.VerifyPassword(ctx, &imv1.LoginRequest{Uid: "alice", Password: "secret1"}); err != nil {
+		t.Fatal(err)
+	}
+	lu, err := srv.LookupUser(ctx, &imv1.LookupUserRequest{Query: "nobody"})
+	if err != nil || lu.Found {
+		t.Fatalf("lookup nobody: %+v %v", lu, err)
+	}
+	found, err := srv.LookupUser(ctx, &imv1.LookupUserRequest{Query: "alice"})
+	if err != nil || !found.Found {
+		t.Fatalf("lookup alice: %+v %v", found, err)
+	}
+	sr, err := srv.SearchUsers(ctx, &imv1.SearchUsersRequest{Query: "ali"})
+	if err != nil || len(sr.Users) == 0 {
+		t.Fatalf("search: %+v %v", sr, err)
+	}
+}
+
+func TestQuoteMentionsAndMute(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := st.Send(ctx, "u1", "q1", "", "u2", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "origin line"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted, err := st.Send(ctx, "u2", "q2", "", "u1", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "reply @u1 see"}, first.ack.MsgId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, msgs, err := st.Timeline(ctx, "u1", first.ack.Cid, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hit *imv1.TimelineMessage
+	for _, m := range msgs {
+		if m.MsgId == quoted.ack.MsgId {
+			hit = m
+		}
+	}
+	if hit == nil || hit.Payload.QuoteText != "origin line" {
+		t.Fatalf("quote text %+v", hit)
+	}
+	if len(hit.Payload.MentionUids) == 0 || hit.Payload.MentionUids[0] != "u1" {
+		t.Fatalf("mentions %+v", hit.Payload.MentionUids)
+	}
+	if err := st.SetMute(ctx, "u1", first.ack.Cid, true); err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListConversations(ctx, "u1")
+	if err != nil || len(list) == 0 || !list[0].Muted {
+		t.Fatalf("muted conv %+v %v", list, err)
+	}
+}
+
+func TestUpdateGroupOwnerOnly(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	g, err := st.CreateGroup(ctx, "u1", "old", []string{"u2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "new", ""); err == nil {
+		t.Fatal("member should not rename")
+	}
+	out, err := st.UpdateGroup(ctx, "u1", g.CID, "new", "http://x/a.png")
+	if err != nil || out.Name != "new" || out.AvatarURL == "" {
+		t.Fatalf("update %+v %v", out, err)
+	}
+}

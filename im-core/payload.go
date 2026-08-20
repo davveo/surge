@@ -3,11 +3,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
+	"google.golang.org/protobuf/proto"
 )
+
+var mentionRe = regexp.MustCompile(`@([A-Za-z0-9._@+-]{1,64})`)
 
 func validateSend(fromUID, clientMsgID string, payload *imv1.Payload) error {
 	if fromUID == "" || clientMsgID == "" {
@@ -63,61 +67,134 @@ func previewOf(p *imv1.Payload) string {
 	}
 }
 
-func marshalMedia(m *imv1.Media) string {
-	if m == nil || m.ObjectKey == "" {
+func extractMentions(text string) []string {
+	matches := mentionRe.FindAllStringSubmatch(text, 20)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, m := range matches {
+		uid := strings.TrimSpace(m[1])
+		if uid == "" {
+			continue
+		}
+		if _, ok := seen[uid]; ok {
+			continue
+		}
+		seen[uid] = struct{}{}
+		out = append(out, uid)
+	}
+	return out
+}
+
+func enrichPayload(p *imv1.Payload, quoteText string) *imv1.Payload {
+	if p == nil {
+		return nil
+	}
+	out := proto.Clone(p).(*imv1.Payload)
+	if quoteText != "" && strings.TrimSpace(out.QuoteText) == "" {
+		out.QuoteText = clipText(quoteText, 200)
+	}
+	if len(out.MentionUids) == 0 {
+		out.MentionUids = extractMentions(out.Text)
+	}
+	return out
+}
+
+func marshalPayloadBlob(p *imv1.Payload) string {
+	if p == nil {
 		return ""
 	}
-	b, err := json.Marshal(mediaJSON{
-		ObjectKey:   m.ObjectKey,
-		ThumbKey:    m.ThumbKey,
-		ContentType: m.ContentType,
-		Filename:    m.Filename,
-		Size:        m.Size,
-		Width:       m.Width,
-		Height:      m.Height,
-		URL:         m.Url,
-		ThumbURL:    m.ThumbUrl,
-	})
+	blob := payloadBlob{}
+	if m := p.Media; m != nil && m.ObjectKey != "" {
+		blob.ObjectKey = m.ObjectKey
+		blob.ThumbKey = m.ThumbKey
+		blob.ContentType = m.ContentType
+		blob.Filename = m.Filename
+		blob.Size = m.Size
+		blob.Width = m.Width
+		blob.Height = m.Height
+		blob.URL = m.Url
+		blob.ThumbURL = m.ThumbUrl
+	}
+	if l := p.Link; l != nil && strings.TrimSpace(l.Url) != "" {
+		blob.Link = &linkJSON{
+			URL:         l.Url,
+			Title:       l.Title,
+			Description: l.Description,
+			Image:       l.Image,
+		}
+	}
+	blob.Mentions = p.MentionUids
+	blob.QuoteText = p.QuoteText
+	if blob.ObjectKey == "" && blob.Link == nil && len(blob.Mentions) == 0 && blob.QuoteText == "" {
+		return ""
+	}
+	b, err := json.Marshal(blob)
 	if err != nil {
 		return ""
 	}
 	return string(b)
 }
 
-func unmarshalMedia(raw string) *imv1.Media {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	var m mediaJSON
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return nil
-	}
-	if m.ObjectKey == "" {
-		return nil
-	}
-	return &imv1.Media{
-		ObjectKey:   m.ObjectKey,
-		ThumbKey:    m.ThumbKey,
-		ContentType: m.ContentType,
-		Filename:    m.Filename,
-		Size:        m.Size,
-		Width:       m.Width,
-		Height:      m.Height,
-		Url:         m.URL,
-		ThumbUrl:    m.ThumbURL,
-	}
-}
-
 func payloadFromCols(ptype int32, text, mediaJSON string, recalled bool) *imv1.Payload {
 	if recalled {
 		return &imv1.Payload{Type: imv1.Payload_RECALL}
 	}
-	return &imv1.Payload{
-		Type:  imv1.Payload_Type(ptype),
-		Text:  text,
-		Media: unmarshalMedia(mediaJSON),
+	p := &imv1.Payload{
+		Type: imv1.Payload_Type(ptype),
+		Text: text,
 	}
+	blob := unmarshalPayloadBlob(mediaJSON)
+	if blob.ObjectKey != "" {
+		p.Media = &imv1.Media{
+			ObjectKey:   blob.ObjectKey,
+			ThumbKey:    blob.ThumbKey,
+			ContentType: blob.ContentType,
+			Filename:    blob.Filename,
+			Size:        blob.Size,
+			Width:       blob.Width,
+			Height:      blob.Height,
+			Url:         blob.URL,
+			ThumbUrl:    blob.ThumbURL,
+		}
+	}
+	if blob.Link != nil && blob.Link.URL != "" {
+		p.Link = &imv1.LinkPreview{
+			Url:         blob.Link.URL,
+			Title:       blob.Link.Title,
+			Description: blob.Link.Description,
+			Image:       blob.Link.Image,
+		}
+	}
+	p.MentionUids = blob.Mentions
+	p.QuoteText = blob.QuoteText
+	return p
+}
+
+func unmarshalPayloadBlob(raw string) payloadBlob {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return payloadBlob{}
+	}
+	var blob payloadBlob
+	_ = json.Unmarshal([]byte(raw), &blob)
+	return blob
+}
+
+type payloadBlob struct {
+	mediaJSON
+	Link      *linkJSON `json:"link,omitempty"`
+	Mentions  []string  `json:"mentions,omitempty"`
+	QuoteText string    `json:"quoteText,omitempty"`
+}
+
+type linkJSON struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Image       string `json:"image"`
 }
 
 type mediaJSON struct {

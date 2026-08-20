@@ -20,6 +20,7 @@ var errNotFriends = errors.New("not friends")
 var errNotMember = errors.New("not a group member")
 var errNotOwner = errors.New("not group owner")
 var errTooLarge = errors.New("group too large")
+var errAuth = errors.New("unauthorized")
 
 const maxGroupMembers = 200
 const recallWindowMS int64 = 2 * 60 * 1000
@@ -49,10 +50,11 @@ type timelineRow struct {
 }
 
 type groupInfo struct {
-	CID      string
-	Name     string
-	OwnerUID string
-	Members  []groupMember
+	CID       string
+	Name      string
+	OwnerUID  string
+	AvatarURL string
+	Members   []groupMember
 }
 
 type groupMember struct {
@@ -76,6 +78,15 @@ type Store interface {
 	GroupMembers(ctx context.Context, cid string) ([]string, error)
 	Recall(ctx context.Context, uid, cid, msgID string) (*imv1.RecallNotify, []string, error)
 	MarkRead(ctx context.Context, uid, cid string, convSeq uint64) error
+	EnsureUser(ctx context.Context, uid string) error
+	Register(ctx context.Context, uid, password string) (*imv1.UserProfile, error)
+	VerifyPassword(ctx context.Context, uid, password string) (*imv1.UserProfile, error)
+	GetProfile(ctx context.Context, uid string) (*imv1.UserProfile, error)
+	UpdateProfile(ctx context.Context, uid, displayName, avatarURL string) (*imv1.UserProfile, error)
+	SearchUsers(ctx context.Context, query string, limit int) ([]*imv1.UserProfile, error)
+	UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL string) (*groupInfo, error)
+	SetMute(ctx context.Context, uid, cid string, muted bool) error
+	ListMutes(ctx context.Context, uid string) ([]string, error)
 }
 
 func clipText(s string, max int) string {
@@ -103,6 +114,8 @@ type memoryStore struct {
 	friends map[string]map[string]struct{}
 	groups  map[string]*groupInfo
 	reads   map[string]map[string]uint64
+	users   map[string]*userRec
+	mutes   map[string]map[string]bool
 }
 
 func newMemoryStore(seq Seq) *memoryStore {
@@ -119,6 +132,8 @@ func newMemoryStore(seq Seq) *memoryStore {
 		friends: map[string]map[string]struct{}{},
 		groups:  map[string]*groupInfo{},
 		reads:   map[string]map[string]uint64{},
+		users:   map[string]*userRec{},
+		mutes:   map[string]map[string]bool{},
 	}
 }
 
@@ -162,6 +177,7 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 	}
 	now := time.Now().UnixMilli()
 	msgID := uuid.NewString()
+	payload = enrichPayload(payload, s.lookupQuoteTextLocked(canonical, quoteMsgID))
 	row := &timelineRow{
 		msgID:      msgID,
 		convSeq:    convSeq,
@@ -340,7 +356,9 @@ func (s *memoryStore) ListConversations(_ context.Context, uid string) ([]*imv1.
 	m := s.convs[uid]
 	out := make([]*imv1.Conversation, 0, len(m))
 	for _, c := range m {
-		out = append(out, c)
+		cp := *c
+		cp.Muted = s.mutes[uid][c.Cid]
+		out = append(out, &cp)
 	}
 	for i := 0; i < len(out); i++ {
 		for j := i + 1; j < len(out); j++ {
@@ -414,6 +432,12 @@ func (s *memoryStore) AddFriend(_ context.Context, uid, peerUID string) (bool, e
 	already := s.hasFriend(uid, peerUID)
 	s.putFriend(uid, peerUID)
 	s.putFriend(peerUID, uid)
+	if s.users[uid] == nil {
+		s.users[uid] = &userRec{UID: uid, DisplayName: uid}
+	}
+	if s.users[peerUID] == nil {
+		s.users[peerUID] = &userRec{UID: peerUID, DisplayName: peerUID}
+	}
 	return already, nil
 }
 
@@ -479,7 +503,7 @@ func protoGroup(g *groupInfo) *imv1.GroupResponse {
 	if g == nil {
 		return nil
 	}
-	out := &imv1.GroupResponse{Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID}
+	out := &imv1.GroupResponse{Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL}
 	for _, m := range g.Members {
 		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role})
 	}
