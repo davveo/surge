@@ -5,25 +5,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/davveo/surge/pkg/route"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
-
-func (a *httpAPI) tooMany(r *http.Request, key string, n int64, window time.Duration) bool {
-	if a.rdb == nil {
-		return false
-	}
-	v, err := a.rdb.Incr(r.Context(), key).Result()
-	if err != nil {
-		return false
-	}
-	if v == 1 {
-		_ = a.rdb.Expire(r.Context(), key, window).Err()
-	}
-	return v > n
-}
 
 func clientIP(r *http.Request) string {
 	if x := r.Header.Get("X-Forwarded-For"); x != "" {
@@ -34,22 +18,6 @@ func clientIP(r *http.Request) string {
 		return host[:i]
 	}
 	return host
-}
-
-func (a *httpAPI) presence(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.uidFromAuth(w, r); !ok {
-		return
-	}
-	raw := strings.TrimSpace(r.URL.Query().Get("uids"))
-	uids := strings.FieldsFunc(raw, func(c rune) bool { return c == ',' || c == ' ' })
-	online := map[string]bool{}
-	if a.rdb != nil {
-		for _, uid := range uids {
-			n, err := a.rdb.Exists(r.Context(), route.Key(uid)).Result()
-			online[uid] = err == nil && n > 0
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"online": online})
 }
 
 func (a *httpAPI) profiles(w http.ResponseWriter, r *http.Request) {

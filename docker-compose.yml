@@ -39,12 +39,17 @@ services:
       target: im-core
       args:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GO_IMAGE: ${GO_IMAGE:-docker.m.daocloud.io/library/golang:1.20-alpine}
+        ALPINE_IMAGE: ${ALPINE_IMAGE:-docker.m.daocloud.io/library/alpine:3.20}
     environment:
       IMCORE_ADDR: ":9000"
       MYSQL_DSN: surge:surge@tcp(mysql:3306)/surge?parseTime=true&charset=utf8mb4
       REDIS_ADDR: redis:6379
       REDIS_PASS: ${REDIS_PASS:-}
       REDIS_DB: ${REDIS_DB:-0}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMS_WEBHOOK: ${SMS_WEBHOOK:-}
     ports:
       - "9000:9000"
     expose:
@@ -69,6 +74,8 @@ services:
       target: gateway
       args:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GO_IMAGE: ${GO_IMAGE:-docker.m.daocloud.io/library/golang:1.20-alpine}
+        ALPINE_IMAGE: ${ALPINE_IMAGE:-docker.m.daocloud.io/library/alpine:3.20}
     environment:
       GATEWAY_ADDR: ":8080"
       GATEWAY_ID: ${GATEWAY_ID:-gw-1}
@@ -78,6 +85,10 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
       JWT_SECRET: ${JWT_SECRET:-surge-dev-secret}
       WEB_DIR: /app/web
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL:-http://127.0.0.1:8080/v1/auth/oauth/github/callback}
+      # SDK inside the compose network; MINIO_PUBLIC_URL is the browser-facing host:port.
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: surge
       MINIO_SECRET_KEY: surge-minio

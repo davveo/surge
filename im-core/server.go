@@ -42,6 +42,7 @@ type server struct {
 	store  Store
 	router Router
 	locks  *locker
+	notify *mailer
 }
 
 func newServer(store Store, router Router) *server {
@@ -93,23 +94,33 @@ func (s *server) Send(ctx context.Context, req *imv1.SendMessageRequest) (*imv1.
 
 func (s *server) publish(ctx context.Context, uid string, gp *imv1.GatewayPush) *imv1.RecipientHint {
 	if s.router == nil || gp == nil {
+		s.notifyOffline(ctx, uid, gp)
 		return nil
 	}
-	rt, err := s.router.Lookup(ctx, uid)
+	rts, err := s.router.LookupAll(ctx, uid)
 	if err != nil {
 		log.Printf("route lookup %s: %v", uid, err)
 		return nil
 	}
-	if rt == nil {
+	if len(rts) == 0 {
+		s.notifyOffline(ctx, uid, gp)
 		return nil
 	}
-	gp.Uid = uid
-	gp.ConnId = rt.ConnID
-	if err := s.router.Publish(ctx, rt.GatewayID, gp); err != nil {
-		log.Printf("publish %s: %v", uid, err)
-		return nil
+	var first *imv1.RecipientHint
+	for i := range rts {
+		rt := rts[i]
+		msg := *gp
+		msg.Uid = uid
+		msg.ConnId = rt.ConnID
+		if err := s.router.Publish(ctx, rt.GatewayID, &msg); err != nil {
+			log.Printf("publish %s: %v", uid, err)
+			continue
+		}
+		if first == nil {
+			first = &imv1.RecipientHint{Uid: uid, GatewayId: rt.GatewayID, ConnId: rt.ConnID}
+		}
 	}
-	return &imv1.RecipientHint{Uid: uid, GatewayId: rt.GatewayID, ConnId: rt.ConnID}
+	return first
 }
 
 func (s *server) Sync(ctx context.Context, req *imv1.SyncInboxRequest) (*imv1.SyncInboxResponse, error) {
@@ -197,6 +208,9 @@ func (s *server) ListFriends(ctx context.Context, req *imv1.ListFriendsRequest) 
 			f.Remark = remark
 			f.DisplayName = remark
 		}
+		if tags, _ := s.store.FriendTagsOf(ctx, req.GetUid(), id); len(tags) > 0 {
+			f.Tags = tags
+		}
 		out = append(out, f)
 	}
 	return &imv1.ListFriendsResponse{Friends: out}, nil
@@ -226,15 +240,36 @@ func (s *server) SearchUsers(ctx context.Context, req *imv1.SearchUsersRequest) 
 }
 
 func (s *server) Register(ctx context.Context, req *imv1.RegisterRequest) (*imv1.UserProfile, error) {
-	p, err := s.store.Register(ctx, req.GetUid(), req.GetPassword())
+	uid := strings.TrimSpace(req.GetUid())
+	if uid == "" {
+		if e := strings.TrimSpace(req.GetEmail()); e != "" {
+			uid = strings.Split(e, "@")[0]
+		} else if p := strings.TrimSpace(req.GetPhone()); p != "" {
+			uid = "p" + p
+		}
+	}
+	if len(uid) < 2 {
+		uid = uid + "user"
+	}
+	p, err := s.store.Register(ctx, uid, req.GetPassword())
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if req.GetEmail() != "" || req.GetPhone() != "" {
+		_ = s.store.SetContacts(ctx, p.Uid, req.GetEmail(), req.GetPhone())
+		if np, err := s.store.GetProfile(ctx, p.Uid); err == nil {
+			p = np
+		}
 	}
 	return p, nil
 }
 
 func (s *server) VerifyPassword(ctx context.Context, req *imv1.LoginRequest) (*imv1.UserProfile, error) {
-	p, err := s.store.VerifyPassword(ctx, req.GetUid(), req.GetPassword())
+	uid, err := s.store.ResolveLogin(ctx, req.GetUid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	p, err := s.store.VerifyPassword(ctx, uid, req.GetPassword())
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -253,6 +288,12 @@ func (s *server) UpdateProfile(ctx context.Context, req *imv1.UpdateProfileReque
 	p, err := s.store.UpdateProfile(ctx, req.GetUid(), req.GetDisplayName(), req.GetAvatarUrl())
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if req.GetEmail() != "" || req.GetPhone() != "" {
+		_ = s.store.SetContacts(ctx, req.GetUid(), req.GetEmail(), req.GetPhone())
+		if np, err := s.store.GetProfile(ctx, req.GetUid()); err == nil {
+			p = np
+		}
 	}
 	return p, nil
 }
@@ -437,7 +478,7 @@ func mapErr(err error) error {
 	if errors.Is(err, errAuth) {
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
-	if errors.Is(err, errBlocked) {
+	if errors.Is(err, errBlocked) || errors.Is(err, errMutedAll) {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	return status.Error(codes.Internal, err.Error())

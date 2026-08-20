@@ -57,6 +57,9 @@ message Payload {
   LinkPreview link = 4;
   repeated string mention_uids = 5;
   string quote_text = 6;
+  bool ephemeral = 7;
+  bool e2ee = 8;
+  string sticker_id = 9;
 }
 
 message LinkPreview {

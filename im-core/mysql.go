@@ -41,6 +41,10 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE im_groups ADD COLUMN avatar_url VARCHAR(512) NOT NULL DEFAULT ''`,
 		`ALTER TABLE conversations ADD COLUMN hidden TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE conversations ADD COLUMN pinned TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN email VARCHAR(128) NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN phone VARCHAR(32) NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN public_key TEXT`,
+		`ALTER TABLE im_groups ADD COLUMN muted_all TINYINT NOT NULL DEFAULT 0`,
 	}
 	for _, a := range alters {
 		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") {
@@ -159,6 +163,9 @@ func (s *mysqlStore) targets(ctx context.Context, fromUID, cid, peer string) (ti
 		}
 		if !ok {
 			return "", "", nil, errNotMember
+		}
+		if g.MutedAll && fromUID != g.OwnerUID {
+			return "", "", nil, errMutedAll
 		}
 		return g.Name, conv.KindGroup, members, nil
 	}

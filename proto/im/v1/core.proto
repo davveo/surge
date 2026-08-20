@@ -47,6 +47,15 @@ service IMCore {
   rpc HideConversation(HideConversationRequest) returns (HideConversationResponse);
   rpc SetPin(SetMuteRequest) returns (MuteState);
   rpc GetReadState(GetReadStateRequest) returns (GetReadStateResponse);
+  rpc SearchMessages(SearchMessagesRequest) returns (SearchMessagesResponse);
+  rpc SetGroupMuteAll(SetMuteRequest) returns (GroupResponse);
+  rpc SetFriendTags(SetFriendTagsRequest) returns (Friend);
+  rpc ListFriendTags(ListFriendsRequest) returns (ListFriendTagsResponse);
+  rpc SetPublicKey(SetPublicKeyRequest) returns (UserProfile);
+  rpc GetPublicKeys(GetProfilesRequest) returns (GetProfilesResponse);
+  rpc ConsumeEphemeral(RecallMessageRequest) returns (RecallNotify);
+  rpc AddSticker(AddStickerRequest) returns (Sticker);
+  rpc ListStickers(ListFriendsRequest) returns (ListStickersResponse);
 }
 
 message WatermarkRequest {
@@ -164,6 +173,7 @@ message Friend {
   string display_name = 2;
   string avatar_url = 3;
   string remark = 4;
+  repeated string tags = 5;
 }
 
 message ListFriendsRequest {
@@ -195,6 +205,8 @@ message SearchUsersResponse {
 message RegisterRequest {
   string uid = 1;
   string password = 2;
+  string email = 3;
+  string phone = 4;
 }
 
 message LoginRequest {
@@ -210,12 +222,17 @@ message UpdateProfileRequest {
   string uid = 1;
   string display_name = 2;
   string avatar_url = 3;
+  string email = 4;
+  string phone = 5;
 }
 
 message UserProfile {
   string uid = 1;
   string display_name = 2;
   string avatar_url = 3;
+  string email = 4;
+  string phone = 5;
+  string public_key = 6;
 }
 
 message UpdateGroupRequest {
@@ -283,6 +300,7 @@ message GroupResponse {
   string owner_uid = 3;
   repeated GroupMember members = 4;
   string avatar_url = 5;
+  bool muted_all = 6;
 }
 
 message RecallMessageRequest {
@@ -376,4 +394,62 @@ message GetReadStateResponse {
   uint32 read_count = 2;
   repeated string reader_uids = 3;
   uint32 member_count = 4;
+  repeated ReadCursor cursors = 5;
+}
+
+message ReadCursor {
+  string uid = 1;
+  uint64 conv_seq = 2;
+}
+
+message SearchMessagesRequest {
+  string uid = 1;
+  string query = 2;
+  uint32 limit = 3;
+}
+
+message SearchHit {
+  string cid = 1;
+  string title = 2;
+  TimelineMessage message = 3;
+}
+
+message SearchMessagesResponse {
+  repeated SearchHit hits = 1;
+}
+
+message SetFriendTagsRequest {
+  string uid = 1;
+  string peer_uid = 2;
+  repeated string tags = 3;
+}
+
+message TagGroup {
+  string name = 1;
+  repeated string uids = 2;
+}
+
+message ListFriendTagsResponse {
+  repeated TagGroup tags = 1;
+}
+
+message SetPublicKeyRequest {
+  string uid = 1;
+  string public_key = 2;
+}
+
+message AddStickerRequest {
+  string uid = 1;
+  string url = 2;
+  string pack = 3;
+}
+
+message Sticker {
+  string id = 1;
+  string url = 2;
+  string pack = 3;
+}
+
+message ListStickersResponse {
+  repeated Sticker stickers = 1;
 }

@@ -52,8 +52,10 @@ func main() {
 	cancel()
 
 	store := newMySQLStore(db, newRedisSeq(rdb))
+	srvImpl := newServer(store, newRedisRouter(rdb))
+	srvImpl.notify = newMailer(store)
 	srv := grpc.NewServer()
-	imv1.RegisterIMCoreServer(srv, newServer(store, newRedisRouter(rdb)))
+	imv1.RegisterIMCoreServer(srv, srvImpl)
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
 	if err != nil {

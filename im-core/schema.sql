@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS im_groups (
   owner_uid VARCHAR(64) NOT NULL,
   created_at_ms BIGINT NOT NULL,
   avatar_url VARCHAR(512) NOT NULL DEFAULT '',
+  muted_all TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (cid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -83,6 +84,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL DEFAULT '',
   display_name VARCHAR(64) NOT NULL DEFAULT '',
   avatar_url VARCHAR(512) NOT NULL DEFAULT '',
+  email VARCHAR(128) NOT NULL DEFAULT '',
+  phone VARCHAR(32) NOT NULL DEFAULT '',
+  public_key TEXT,
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -114,4 +118,23 @@ CREATE TABLE IF NOT EXISTS friend_remarks (
   peer_uid VARCHAR(64) NOT NULL,
   remark VARCHAR(64) NOT NULL,
   PRIMARY KEY (uid, peer_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS friend_tags (
+  uid VARCHAR(64) NOT NULL,
+  peer_uid VARCHAR(64) NOT NULL,
+  tag VARCHAR(32) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (uid, peer_uid, tag),
+  KEY idx_uid_tag (uid, tag)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stickers (
+  id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  url VARCHAR(512) NOT NULL,
+  pack VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_uid (uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

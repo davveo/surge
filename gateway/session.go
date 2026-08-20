@@ -57,17 +57,20 @@ func (a *httpAPI) register(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		UID      string `json:"uid"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
 		DeviceID string `json:"device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
 		return
 	}
-	if _, err := a.core.Register(r.Context(), &imv1.RegisterRequest{Uid: body.UID, Password: body.Password}); err != nil {
+	prof, err := a.core.Register(r.Context(), &imv1.RegisterRequest{Uid: body.UID, Password: body.Password, Email: body.Email, Phone: body.Phone})
+	if err != nil {
 		writeRPCError(w, err)
 		return
 	}
-	sess, err := a.issueSession(r.Context(), body.UID, body.DeviceID, accessTTL)
+	sess, err := a.issueSession(r.Context(), prof.GetUid(), body.DeviceID, accessTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -93,11 +96,12 @@ func (a *httpAPI) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
 		return
 	}
-	if _, err := a.core.VerifyPassword(r.Context(), &imv1.LoginRequest{Uid: body.UID, Password: body.Password}); err != nil {
+	prof, err := a.core.VerifyPassword(r.Context(), &imv1.LoginRequest{Uid: body.UID, Password: body.Password})
+	if err != nil {
 		writeRPCError(w, err)
 		return
 	}
-	sess, err := a.issueSession(r.Context(), body.UID, body.DeviceID, accessTTL)
+	sess, err := a.issueSession(r.Context(), prof.GetUid(), body.DeviceID, accessTTL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

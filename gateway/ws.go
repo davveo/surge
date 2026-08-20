@@ -26,6 +26,7 @@ type wsServer struct {
 	core   imv1.IMCoreClient
 	secret string
 	idle   time.Duration
+	limit  *memLimiter
 }
 
 func (s *wsServer) handleWS(w http.ResponseWriter, r *http.Request) {
@@ -155,6 +156,9 @@ func (s *wsServer) onSend(c *Conn, reqID uint64, req *imv1.SendRequest) {
 				return
 			}
 		}
+	} else if s.limit != nil && s.limit.hit("rl:send:"+c.uid, 40, 10*time.Second) {
+		c.enqueue(errEnv(reqID, 429, "too many messages", req.GetClientMsgId()))
+		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

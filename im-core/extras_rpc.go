@@ -142,7 +142,13 @@ func (s *server) GetReadState(ctx context.Context, req *imv1.GetReadStateRequest
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	return &imv1.GetReadStateResponse{
+	resp := &imv1.GetReadStateResponse{
 		Cid: req.GetCid(), ReadCount: uint32(n), ReaderUids: readers, MemberCount: uint32(members),
-	}, nil
+	}
+	if cursors, _, err := s.store.ListReadCursors(ctx, req.GetUid(), req.GetCid()); err == nil {
+		for uid, seq := range cursors {
+			resp.Cursors = append(resp.Cursors, &imv1.ReadCursor{Uid: uid, ConvSeq: seq})
+		}
+	}
+	return resp, nil
 }

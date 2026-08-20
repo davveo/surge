@@ -22,6 +22,7 @@ var errNotOwner = errors.New("not group owner")
 var errTooLarge = errors.New("group too large")
 var errAuth = errors.New("unauthorized")
 var errBlocked = errors.New("blocked")
+var errMutedAll = errors.New("group muted")
 
 const maxGroupMembers = 200
 const recallWindowMS int64 = 2 * 60 * 1000
@@ -55,6 +56,7 @@ type groupInfo struct {
 	Name      string
 	OwnerUID  string
 	AvatarURL string
+	MutedAll  bool
 	Members   []groupMember
 }
 
@@ -107,6 +109,18 @@ type Store interface {
 	SetPin(ctx context.Context, uid, cid string, pinned bool) error
 	TimelineQuery(ctx context.Context, uid, cid string, afterSeq, beforeSeq uint64, limit int, query string) (string, []*imv1.TimelineMessage, bool, error)
 	GetReadState(ctx context.Context, uid, cid string, convSeq uint64) (readCount, memberCount int, readers []string, err error)
+	ListReadCursors(ctx context.Context, uid, cid string) (map[string]uint64, int, error)
+	ResolveLogin(ctx context.Context, identifier string) (string, error)
+	SetContacts(ctx context.Context, uid, email, phone string) error
+	SetPublicKey(ctx context.Context, uid, publicKey string) error
+	SearchMessages(ctx context.Context, uid, query string, limit int) ([]*imv1.SearchHit, error)
+	SetGroupMuteAll(ctx context.Context, operatorUID, cid string, muted bool) (*groupInfo, error)
+	SetFriendTags(ctx context.Context, uid, peerUID string, tags []string) error
+	ListFriendTags(ctx context.Context, uid string) ([]*imv1.TagGroup, error)
+	FriendTagsOf(ctx context.Context, uid, peerUID string) ([]string, error)
+	ConsumeEphemeral(ctx context.Context, uid, cid, msgID string) (*imv1.RecallNotify, []string, error)
+	AddSticker(ctx context.Context, uid, url, pack string) (*imv1.Sticker, error)
+	ListStickers(ctx context.Context, uid string) ([]*imv1.Sticker, error)
 }
 
 func clipText(s string, max int) string {
@@ -124,16 +138,16 @@ func clipText(s string, max int) string {
 }
 
 type memoryStore struct {
-	mu      sync.Mutex
-	seq     Seq
-	byID    map[string]*timelineRow
-	byDup   map[string]*timelineRow
-	byCID   map[string][]*timelineRow
-	inbox   map[string][]*imv1.InboxEvent
-	convs   map[string]map[string]*imv1.Conversation
-	friends map[string]map[string]struct{}
-	groups  map[string]*groupInfo
-	reads   map[string]map[string]uint64
+	mu       sync.Mutex
+	seq      Seq
+	byID     map[string]*timelineRow
+	byDup    map[string]*timelineRow
+	byCID    map[string][]*timelineRow
+	inbox    map[string][]*imv1.InboxEvent
+	convs    map[string]map[string]*imv1.Conversation
+	friends  map[string]map[string]struct{}
+	groups   map[string]*groupInfo
+	reads    map[string]map[string]uint64
 	users    map[string]*userRec
 	mutes    map[string]map[string]bool
 	hidden   map[string]map[string]bool
@@ -141,6 +155,8 @@ type memoryStore struct {
 	blocks   map[string]map[string]struct{}
 	requests map[string]map[string]struct{} // toUID -> fromUID
 	remarks  map[string]map[string]string
+	tags     map[string]map[string][]string // uid -> peer -> tags
+	stickers map[string][]*imv1.Sticker
 }
 
 func newMemoryStore(seq Seq) *memoryStore {
@@ -148,15 +164,15 @@ func newMemoryStore(seq Seq) *memoryStore {
 		seq = newMemSeq()
 	}
 	return &memoryStore{
-		seq:     seq,
-		byID:    map[string]*timelineRow{},
-		byDup:   map[string]*timelineRow{},
-		byCID:   map[string][]*timelineRow{},
-		inbox:   map[string][]*imv1.InboxEvent{},
-		convs:   map[string]map[string]*imv1.Conversation{},
-		friends: map[string]map[string]struct{}{},
-		groups:  map[string]*groupInfo{},
-		reads:   map[string]map[string]uint64{},
+		seq:      seq,
+		byID:     map[string]*timelineRow{},
+		byDup:    map[string]*timelineRow{},
+		byCID:    map[string][]*timelineRow{},
+		inbox:    map[string][]*imv1.InboxEvent{},
+		convs:    map[string]map[string]*imv1.Conversation{},
+		friends:  map[string]map[string]struct{}{},
+		groups:   map[string]*groupInfo{},
+		reads:    map[string]map[string]uint64{},
 		users:    map[string]*userRec{},
 		mutes:    map[string]map[string]bool{},
 		hidden:   map[string]map[string]bool{},
@@ -164,6 +180,8 @@ func newMemoryStore(seq Seq) *memoryStore {
 		blocks:   map[string]map[string]struct{}{},
 		requests: map[string]map[string]struct{}{},
 		remarks:  map[string]map[string]string{},
+		tags:     map[string]map[string][]string{},
+		stickers: map[string][]*imv1.Sticker{},
 	}
 }
 
@@ -290,6 +308,9 @@ func (s *memoryStore) targetsLocked(fromUID, cid, peer string) (title, kind stri
 		}
 		if !ok {
 			return "", "", nil, errNotMember
+		}
+		if g.MutedAll && fromUID != g.OwnerUID {
+			return "", "", nil, errMutedAll
 		}
 		return g.Name, conv.KindGroup, members, nil
 	}
@@ -547,7 +568,7 @@ func protoGroup(g *groupInfo) *imv1.GroupResponse {
 	if g == nil {
 		return nil
 	}
-	out := &imv1.GroupResponse{Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL}
+	out := &imv1.GroupResponse{Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL, MutedAll: g.MutedAll}
 	for _, m := range g.Members {
 		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role})
 	}

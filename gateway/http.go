@@ -25,6 +25,7 @@ type httpAPI struct {
 	webDir string
 	rdb    *redis.Client
 	media  *mediaStore
+	limit  *memLimiter
 }
 
 func (a *httpAPI) routes() http.Handler {
@@ -63,6 +64,15 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/group-transfer", a.groupTransfer)
 	mux.HandleFunc("/v1/conversation-hide", a.hideConv)
 	mux.HandleFunc("/v1/read-state", a.readState)
+	mux.HandleFunc("/v1/search", a.searchAll)
+	mux.HandleFunc("/v1/group-mute-all", a.groupMuteAll)
+	mux.HandleFunc("/v1/friend-tags", a.friendTags)
+	mux.HandleFunc("/v1/e2ee/keys", a.e2eeKey)
+	mux.HandleFunc("/v1/ephemeral/consume", a.consume)
+	mux.HandleFunc("/v1/stickers", a.stickers)
+	mux.HandleFunc("/v1/auth/oauth/demo", a.oauthDemo)
+	mux.HandleFunc("/v1/auth/oauth/github", a.oauthGithubStart)
+	mux.HandleFunc("/v1/auth/oauth/github/callback", a.oauthGithubCallback)
 	mux.HandleFunc("/v1/link-preview", a.linkPreview)
 	mux.HandleFunc("/v1/media/presign", a.mediaPresign)
 	mux.HandleFunc("/v1/media/complete", a.mediaComplete)

@@ -1,4 +1,7 @@
-FROM golang:1.20-alpine AS builder
+# Default to DaoCloud so builds work when docker.io / baidubce mirrors are down.
+ARG GO_IMAGE=docker.m.daocloud.io/library/golang:1.20-alpine
+ARG ALPINE_IMAGE=docker.m.daocloud.io/library/alpine:3.20
+FROM ${GO_IMAGE} AS builder
 WORKDIR /src
 
 ARG GOPROXY=https://goproxy.cn,direct
@@ -20,14 +23,14 @@ COPY gateway ./gateway
 RUN go build -trimpath -ldflags="-s -w" -o /out/im-core ./im-core \
  && go build -trimpath -ldflags="-s -w" -o /out/gateway ./gateway
 
-FROM alpine:3.20 AS im-core
+FROM ${ALPINE_IMAGE} AS im-core
 RUN apk add --no-cache ca-certificates tzdata netcat-openbsd
 WORKDIR /app
 COPY --from=builder /out/im-core /app/im-core
 EXPOSE 9000
 ENTRYPOINT ["/app/im-core"]
 
-FROM alpine:3.20 AS gateway
+FROM ${ALPINE_IMAGE} AS gateway
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /out/gateway /app/gateway

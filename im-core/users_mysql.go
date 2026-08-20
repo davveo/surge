@@ -13,14 +13,20 @@ import (
 
 func scanUser(row interface{ Scan(dest ...any) error }) (*userRec, error) {
 	u := &userRec{}
-	if err := row.Scan(&u.UID, &u.PasswordHash, &u.DisplayName, &u.AvatarURL); err != nil {
+	var email, phone, pub sql.NullString
+	if err := row.Scan(&u.UID, &u.PasswordHash, &u.DisplayName, &u.AvatarURL, &email, &phone, &pub); err != nil {
 		return nil, err
 	}
+	u.Email = email.String
+	u.Phone = phone.String
+	u.PublicKey = pub.String
 	return u, nil
 }
 
+const userCols = `uid, password_hash, display_name, avatar_url, IFNULL(email,''), IFNULL(phone,''), IFNULL(public_key,'')`
+
 func (s *mysqlStore) loadUser(ctx context.Context, uid string) (*userRec, error) {
-	u, err := scanUser(s.db.QueryRowContext(ctx, `SELECT uid, password_hash, display_name, avatar_url FROM users WHERE uid = ?`, uid))
+	u, err := scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE uid = ?`, uid))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -138,9 +144,9 @@ func (s *mysqlStore) SearchUsers(ctx context.Context, query string, limit int) (
 	}
 	like := strings.NewReplacer("%", "", "_", "").Replace(query) + "%"
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT uid, password_hash, display_name, avatar_url FROM users
-		WHERE uid LIKE ? OR display_name LIKE ?
-		ORDER BY uid ASC LIMIT ?`, like, "%"+strings.TrimSuffix(like, "%")+"%", limit)
+		SELECT `+userCols+` FROM users
+		WHERE uid LIKE ? OR display_name LIKE ? OR email LIKE ? OR phone LIKE ?
+		ORDER BY uid ASC LIMIT ?`, like, "%"+strings.TrimSuffix(like, "%")+"%", "%"+strings.TrimSuffix(like, "%")+"%", "%"+strings.TrimSuffix(like, "%")+"%", limit)
 	if err != nil {
 		return nil, err
 	}

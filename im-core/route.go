@@ -13,6 +13,7 @@ import (
 
 type Router interface {
 	Lookup(ctx context.Context, uid string) (*route.Record, error)
+	LookupAll(ctx context.Context, uid string) ([]route.Record, error)
 	Publish(ctx context.Context, gatewayID string, push *imv1.GatewayPush) error
 }
 
@@ -25,6 +26,15 @@ func newRedisRouter(rdb *redis.Client) *redisRouter {
 }
 
 func (r *redisRouter) Lookup(ctx context.Context, uid string) (*route.Record, error) {
+	rs, err := r.LookupAll(ctx, uid)
+	if err != nil || len(rs) == 0 {
+		return nil, err
+	}
+	r0 := rs[0]
+	return &r0, nil
+}
+
+func (r *redisRouter) LookupAll(ctx context.Context, uid string) ([]route.Record, error) {
 	raw, err := r.rdb.Get(ctx, route.Key(uid)).Bytes()
 	if err == redis.Nil {
 		return nil, nil
@@ -32,7 +42,7 @@ func (r *redisRouter) Lookup(ctx context.Context, uid string) (*route.Record, er
 	if err != nil {
 		return nil, fmt.Errorf("route get: %w", err)
 	}
-	return route.Decode(raw)
+	return route.DecodeAll(raw)
 }
 
 func (r *redisRouter) Publish(ctx context.Context, gatewayID string, push *imv1.GatewayPush) error {

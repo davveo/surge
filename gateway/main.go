@@ -28,7 +28,9 @@ func main() {
 	defer rdb.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatalf("redis ping: %v", err)
+		log.Printf("redis unavailable, falling back to in-memory presence/limits: %v", err)
+		_ = rdb.Close()
+		rdb = nil
 	}
 	cancel()
 
@@ -39,10 +41,13 @@ func main() {
 	defer conn.Close()
 	core := imv1.NewIMCoreClient(conn)
 
+	lim := newMemLimiter()
 	hub := newHub(rdb, cfg.GatewayID)
 	subCtx, subCancel := context.WithCancel(context.Background())
 	defer subCancel()
-	go hub.listenPushes(subCtx)
+	if rdb != nil {
+		go hub.listenPushes(subCtx)
+	}
 
 	media, err := newMediaStore(cfg)
 	if err != nil {
@@ -55,11 +60,13 @@ func main() {
 		webDir: cfg.WebDir,
 		rdb:    rdb,
 		media:  media,
+		limit:  lim,
 		ws: &wsServer{
 			hub:    hub,
 			core:   core,
 			secret: cfg.JWTSecret,
 			idle:   cfg.IdleTimeout,
+			limit:  lim,
 		},
 	}
 

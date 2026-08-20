@@ -427,3 +427,72 @@ func TestUpdateGroupOwnerOnly(t *testing.T) {
 		t.Fatalf("update %+v %v", out, err)
 	}
 }
+
+func TestEmailLoginMuteAllEphemeralSearchTags(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	p, err := srv.Register(ctx, &imv1.RegisterRequest{Password: "secret1", Email: "alice@x.com"})
+	if err != nil || p.Uid == "" {
+		t.Fatalf("register %+v %v", p, err)
+	}
+	if _, err := st.Register(ctx, "u2", "secret1"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := srv.VerifyPassword(ctx, &imv1.LoginRequest{Uid: "alice@x.com", Password: "secret1"})
+	if err != nil || got.GetUid() != p.Uid {
+		t.Fatalf("login email %+v %v", got, err)
+	}
+	if _, err := st.AddFriend(ctx, p.Uid, "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetFriendTags(ctx, p.Uid, "u2", []string{"同事"}); err != nil {
+		t.Fatal(err)
+	}
+	tags, _ := st.FriendTagsOf(ctx, p.Uid, "u2")
+	if len(tags) != 1 || tags[0] != "同事" {
+		t.Fatalf("tags %v", tags)
+	}
+	g, err := st.CreateGroup(ctx, p.Uid, "g", []string{"u2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetGroupMuteAll(ctx, p.Uid, g.CID, true); err != nil {
+		t.Fatal(err)
+	}
+	_, err = srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u2", ClientMsgId: "m1", Cid: g.CID,
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "nope"},
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("want muted, got %v", err)
+	}
+	ack, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: p.Uid, ClientMsgId: "m2", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "secret-hello", Ephemeral: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.ConsumeEphemeral(ctx, &imv1.RecallMessageRequest{Uid: "u2", Cid: ack.Ack.Cid, MsgId: ack.Ack.MsgId}); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := st.SearchMessages(ctx, p.Uid, "secret-hello", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 0 {
+		t.Fatalf("burned still searchable %+v", hits)
+	}
+	_, err = srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: p.Uid, ClientMsgId: "m3", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "find-me"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, err = st.SearchMessages(ctx, p.Uid, "find-me", 10)
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("search %+v %v", hits, err)
+	}
+}

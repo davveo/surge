@@ -35,7 +35,8 @@
     hasMore: false,
     loadingMore: false,
     searchQ: "",
-    readInfo: null,
+    readCursors: {},
+    e2eeOn: false,
     presenceTimer: null,
     forwarding: null,
   };
@@ -84,7 +85,7 @@
     const r = await fetch("/v1/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: state.refresh, device_id: "web" }),
+      body: JSON.stringify({ refresh_token: state.refresh, device_id: deviceId() }),
     });
     const text = await r.text();
     if (!r.ok) throw new Error(text || "refresh failed");
@@ -97,6 +98,14 @@
 
   function uuid() {
     return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random();
+  }
+  function deviceId() {
+    let id = localStorage.getItem("surge:device");
+    if (!id) {
+      id = uuid();
+      localStorage.setItem("surge:device", id);
+    }
+    return id;
   }
 
   function cidOf(a, b) {
@@ -202,6 +211,7 @@
     $("send-btn").disabled = !on;
     $("attach-btn").disabled = !on;
     if ($("emoji-btn")) $("emoji-btn").disabled = !on;
+    if ($("rec-btn")) $("rec-btn").disabled = !on;
     if (on) fitDraft();
   }
 
@@ -246,7 +256,7 @@
         const active = uid === state.activePeer ? " active" : "";
         return `<div class="row${active}" data-peer="${uid}">
           ${avatarHTML(friendAvatar(f), name, uid)}
-          <div class="row-main"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}</div></div>
+          <div class="row-main"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}${(f.tags || []).length ? " · " + escapeHtml((f.tags || []).join(" / ")) : ""}</div></div>
           <div class="row-actions"><button type="button" class="danger" data-act="del">删除</button></div>
         </div>`;
       })
@@ -390,6 +400,16 @@
     return linkify(text);
   }
 
+  function groupReadCount(seq) {
+    let n = 0;
+    const cursors = state.readCursors || {};
+    Object.keys(cursors).forEach((uid) => {
+      if (uid === state.uid) return;
+      if (Number(cursors[uid]) >= seq) n++;
+    });
+    return n;
+  }
+
   function lastMineSeq() {
     let seq = 0;
     for (const m of state.messages) {
@@ -411,6 +431,7 @@
       .map((m) => {
         const mine = field(m, "fromUid", "from_uid") === state.uid;
         const recalled = m.recalled || (m.payload && (m.payload.type === "RECALL" || m.payload.type === 2));
+        const burned = recalled && ((m.payload && m.payload.text) === "已销毁");
         if (isSystemMsg(m) && !recalled) {
           return `<div class="msg-row system"><div class="bubble system">${escapeHtml((m.payload && m.payload.text) || "")}</div></div>`;
         }
@@ -421,7 +442,7 @@
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
         const who = group && !mine ? `<div class="meta">${escapeHtml(from)}</div>` : "";
         const quote = quoteBlock(m);
-        const body = recalled ? "已撤回一条消息" : renderBody(m) + (recalled ? "" : linkCard(m));
+        const body = recalled ? (burned ? "已销毁" : "已撤回一条消息") : renderBody(m) + (recalled ? "" : linkCard(m));
         const recallBtn = canRecall(m)
           ? `<button type="button" class="recall-btn ok" data-id="${id}">撤回</button>`
           : "";
@@ -441,11 +462,11 @@
           mine &&
           group &&
           !recalled &&
-          seq &&
-          state.readInfo &&
-          Number(state.readInfo.seq) === seq &&
-          state.readInfo.count > 0
-            ? `<div class="read-mark">${state.readInfo.count} 人已读</div>`
+          seq
+            ? (function () {
+                const n = groupReadCount(seq);
+                return n > 0 ? `<div class="read-mark">${n} 人已读</div>` : "";
+              })()
             : "";
         return `<div class="msg-row${mine ? " me" : " peer"}"><div class="bubble${mine ? " me" : " peer"}${st}${recCls}" data-id="${id}">${who}${quote}${recalled ? escapeHtml(body) : body}${fwdBtn}${recallBtn}${read}${gRead}</div></div>`;
       })
@@ -679,18 +700,14 @@
 
   async function refreshGroupRead() {
     if (!isGroup(state.activeCid)) return;
-    const seq = lastMineSeq();
-    if (!seq) return;
     try {
-      const data = await api(
-        "/v1/read-state?cid=" + encodeURIComponent(state.activeCid) + "&seq=" + seq
-      );
-      const count = Number(field(data, "readCount", "read_count") || 0);
-      const prev = state.readInfo;
-      state.readInfo = { seq, count, readers: data.readerUids || data.reader_uids || [] };
-      if (!prev || prev.seq !== seq || prev.count !== count) {
-        if (count > 0 || (prev && prev.count > 0)) renderMsgs({ stick: false });
-      }
+      const data = await api("/v1/read-state?cid=" + encodeURIComponent(state.activeCid));
+      const next = {};
+      (data.cursors || []).forEach((c) => {
+        next[c.uid] = Number(c.convSeq || c.conv_seq || 0);
+      });
+      state.readCursors = next;
+      renderMsgs({ stick: false });
     } catch (_) {}
   }
 
@@ -726,6 +743,11 @@
       const isOwner = owner === state.uid;
       $("transfer-btn").classList.toggle("hidden", !isOwner);
       $("dissolve-btn").classList.toggle("hidden", !isOwner);
+      if ($("mute-all-btn")) {
+        $("mute-all-btn").classList.toggle("hidden", !isOwner);
+        const mutedAll = !!(g.mutedAll || g.muted_all);
+        $("mute-all-btn").textContent = mutedAll ? "解除禁言" : "全员禁言";
+      }
       let names = {};
       try {
         const pr = await api("/v1/profiles?uids=" + encodeURIComponent(members.map((m) => m.uid).join(",")));
@@ -767,7 +789,7 @@
     state.peerReadSeq = 0;
     state.hasMore = false;
     state.searchQ = "";
-    state.readInfo = null;
+    state.readCursors = {};
     if ($("chat-search")) $("chat-search").value = "";
     $("chat-search-bar").classList.remove("hidden");
     const conv = state.convs.find((c) => c.cid === cid);
@@ -782,6 +804,9 @@
     $("pin-btn").classList.remove("hidden");
     $("hide-btn").classList.remove("hidden");
     $("remark-btn").classList.toggle("hidden", isGroup(cid));
+    $("tag-btn").classList.toggle("hidden", isGroup(cid));
+    $("e2ee-btn").classList.toggle("hidden", isGroup(cid));
+    $("e2ee-btn").textContent = state.e2eeOn ? "加密中" : "加密";
     $("block-btn").classList.toggle("hidden", isGroup(cid));
     $("block-btn").textContent = isBlocked(peer) ? "取消拉黑" : "拉黑";
     $("mute-btn").textContent = isMuted(cid) ? "已免打扰" : "免打扰";
@@ -802,10 +827,14 @@
     const q = state.searchQ ? "&q=" + encodeURIComponent(state.searchQ) : "";
     const data = await api("/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&limit=50" + q);
     state.messages = data.messages || [];
+    for (const m of state.messages) {
+      await decodeIncoming(m);
+    }
     state.hasMore = !state.searchQ && !!(data.hasMore || data.has_more);
     const pending = state.outbox.filter((m) => m.cid === state.activeCid && m.status !== "acked");
     if (!state.searchQ) state.messages = state.messages.concat(pending);
     renderMsgs();
+    watchEphemeral();
   }
 
   async function loadOlder() {
@@ -913,11 +942,11 @@
     setConn("跟随标签页", true);
   }
 
-  function applyRecall(cid, msgId) {
+  function applyRecall(cid, msgId, burned) {
     const hit = (m) => field(m, "msgId", "msg_id") === msgId;
     state.messages.filter(hit).forEach((m) => {
       m.recalled = true;
-      m.payload = { type: "RECALL", text: "" };
+      m.payload = { type: "RECALL", text: burned ? "已销毁" : "" };
     });
     if (cid === state.activeCid) renderMsgs();
     loadConvs();
@@ -1034,14 +1063,18 @@
     if (seq > state.lastSyncSeq) state.lastSyncSeq = seq;
     if (cid === state.activeCid) {
       if (!state.messages.some((m) => field(m, "msgId", "msg_id") === msgId)) {
-        state.messages.push({
+        const row = {
           msgId,
           fromUid: from,
           payload: ev.payload,
           convSeq: Number(ev.convSeq || ev.conv_seq || 0),
           createdAtMs: Number(ev.createdAtMs || ev.created_at_ms || Date.now()),
+        };
+        state.messages.push(row);
+        decodeIncoming(row).then(() => {
+          renderMsgs();
+          watchEphemeral();
         });
-        renderMsgs();
         markRead();
         refreshGroupRead();
       }
@@ -1074,7 +1107,7 @@
     setConn("连接中…", false);
     ws.onopen = () => {
       setConn("已连接", true);
-      sendFrame({ auth: { accessToken: state.token, deviceId: "web" } });
+      sendFrame({ auth: { accessToken: state.token, deviceId: deviceId() } });
     };
     ws.onmessage = (e) => {
       try {
@@ -1143,6 +1176,7 @@
     startPresencePoll();
     startWSElection();
     maybeApproveTicket();
+    e2eePair().catch(() => {});
   }
 
   function maybeApproveTicket() {
@@ -1186,6 +1220,86 @@
     return out;
   }
 
+  function b64(buf) {
+    return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+  }
+  function unb64(s) {
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function e2eePair() {
+    const raw = await kvGet(state.uid + ":e2ee");
+    if (raw && raw.pub && raw.priv) {
+      return {
+        pub: raw.pub,
+        priv: await crypto.subtle.importKey("jwk", raw.priv, { name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]),
+      };
+    }
+    const kp = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+    const pubBuf = await crypto.subtle.exportKey("raw", kp.publicKey);
+    const privJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
+    const pub = b64(pubBuf);
+    await kvSet(state.uid + ":e2ee", { pub, priv: privJwk });
+    await api("/v1/e2ee/keys", { method: "POST", body: JSON.stringify({ public_key: pub }) });
+    return { pub, priv: kp.privateKey };
+  }
+  async function peerPubKey(uid) {
+    const data = await api("/v1/e2ee/keys?uids=" + encodeURIComponent(uid));
+    const u = (data.users || []).find((x) => x.uid === uid);
+    const k = u && (u.publicKey || u.public_key);
+    if (!k) throw new Error("对方未开启加密");
+    return crypto.subtle.importKey("raw", unb64(k), { name: "ECDH", namedCurve: "P-256" }, true, []);
+  }
+  async function aesFromPeer(peerUid) {
+    const mine = await e2eePair();
+    const theirs = await peerPubKey(peerUid);
+    const bits = await crypto.subtle.deriveBits({ name: "ECDH", public: theirs }, mine.priv, 256);
+    return crypto.subtle.importKey("raw", bits, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  }
+  async function encryptPayload(payload, peerUid) {
+    const key = await aesFromPeer(peerUid);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(payload.text || ""));
+    payload.text = b64(iv) + "." + b64(ct);
+    payload.e2ee = true;
+    return payload;
+  }
+  async function decodeIncoming(m) {
+    const p = m.payload;
+    if (!p || !(p.e2ee || p.e2Ee)) return m;
+    const from = field(m, "fromUid", "from_uid");
+    const peer = from === state.uid ? state.activePeer : from;
+    try {
+      const key = await aesFromPeer(peer);
+      const parts = String(p.text || "").split(".");
+      if (parts.length !== 2) throw new Error("bad cipher");
+      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(parts[0]) }, key, unb64(parts[1]));
+      p.text = new TextDecoder().decode(pt);
+      p.e2ee = false;
+    } catch (_) {
+      p.text = "[无法解密]";
+    }
+    return m;
+  }
+  function watchEphemeral() {
+    state.messages.forEach((m) => {
+      if (m._burnQueued) return;
+      const p = m.payload || {};
+      if (!(p.ephemeral || p.Ephemeral)) return;
+      if (field(m, "fromUid", "from_uid") === state.uid) return;
+      const id = field(m, "msgId", "msg_id");
+      if (!id) return;
+      m._burnQueued = true;
+      setTimeout(() => {
+        api("/v1/ephemeral/consume", { method: "POST", body: JSON.stringify({ cid: state.activeCid, msg_id: id }) })
+          .then(() => applyRecall(state.activeCid, id, true))
+          .catch(() => {});
+      }, 1600);
+    });
+  }
+
   async function attachLinkPreview(payload) {
     const text = payload.text || "";
     const m = text.match(/https?:\/\/[^\s]+/);
@@ -1208,6 +1322,15 @@
     if (!(dest && dest.forward)) {
       payload.mentionUids = mentionUidsOf(payload.text || "");
       payload = await attachLinkPreview(payload);
+      if ($("burn-toggle") && $("burn-toggle").checked) payload.ephemeral = true;
+      if (state.e2eeOn && !isGroup(cid) && payload.text && !payload.e2ee) {
+        try {
+          payload = await encryptPayload(payload, peerUid);
+        } catch (err) {
+          toast("加密失败：" + (err.message || err));
+          return;
+        }
+      }
     }
     const item = {
       clientMsgId: uuid(),
@@ -1292,12 +1415,12 @@
     if (password) {
       data = await api("/v1/auth/login", {
         method: "POST",
-        body: JSON.stringify({ uid, password, device_id: "web" }),
+        body: JSON.stringify({ uid, password, device_id: deviceId() }),
       });
     } else {
       data = await api("/v1/auth/dev-login", {
         method: "POST",
-        body: JSON.stringify({ uid, device_id: "web" }),
+        body: JSON.stringify({ uid, device_id: deviceId() }),
       });
     }
     await sessionEnter(data.uid, data.access_token, data.refresh_token);
@@ -1306,7 +1429,13 @@
   async function register(uid, password) {
     const data = await api("/v1/auth/register", {
       method: "POST",
-      body: JSON.stringify({ uid, password, device_id: "web" }),
+      body: JSON.stringify({
+        uid,
+        password,
+        email: $("login-email") ? $("login-email").value.trim() : "",
+        phone: $("login-phone") ? $("login-phone").value.trim() : "",
+        device_id: deviceId(),
+      }),
     });
     await sessionEnter(data.uid, data.access_token, data.refresh_token);
   }
@@ -1320,12 +1449,26 @@
   $("register-btn").onclick = () => {
     const uid = $("login-uid").value.trim();
     const password = $("login-pass").value;
-    if (!uid || !password) {
-      alert("注册需要 uid 和至少 6 位密码");
+    const email = $("login-email") ? $("login-email").value.trim() : "";
+    const phone = $("login-phone") ? $("login-phone").value.trim() : "";
+    if ((!uid && !email && !phone) || !password) {
+      alert("注册需要密码，以及 uid / 邮箱 / 手机号 至少一项");
       return;
     }
     register(uid, password).catch((e) => alert(e.message));
   };
+  if ($("oauth-demo-btn")) {
+    $("oauth-demo-btn").onclick = () => {
+      const subject = prompt("第三方账号（演示，如 github 用户名）");
+      if (!subject) return;
+      api("/v1/auth/oauth/demo", {
+        method: "POST",
+        body: JSON.stringify({ provider: "github", subject, device_id: deviceId() }),
+      })
+        .then((data) => sessionEnter(data.uid, data.access_token, data.refresh_token))
+        .catch((e) => alert(e.message));
+    };
+  }
   $("login-uid").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("login-btn").click();
   });
@@ -1498,6 +1641,125 @@
   };
 
   $("attach-btn").onclick = () => $("file").click();
+  if ($("mute-all-btn")) {
+    $("mute-all-btn").onclick = async () => {
+      if (!state.group) return;
+      const cur = !!(state.group.mutedAll || state.group.muted_all);
+      try {
+        const g = await api("/v1/group-mute-all", {
+          method: "POST",
+          body: JSON.stringify({ cid: state.activeCid, muted: !cur }),
+        });
+        state.group = g;
+        $("mute-all-btn").textContent = g.mutedAll || g.muted_all ? "解除禁言" : "全员禁言";
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+  if ($("tag-btn")) {
+    $("tag-btn").onclick = async () => {
+      if (!state.activePeer) return;
+      const cur = (state.friends.find((f) => friendUid(f) === state.activePeer) || {}).tags || [];
+      const raw = prompt("好友标签，逗号分隔", cur.join(","));
+      if (raw == null) return;
+      const tags = raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+      try {
+        await api("/v1/friend-tags", { method: "POST", body: JSON.stringify({ peer_uid: state.activePeer, tags }) });
+        await loadFriends();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+  if ($("e2ee-btn")) {
+    $("e2ee-btn").onclick = async () => {
+      try {
+        await e2eePair();
+        state.e2eeOn = !state.e2eeOn;
+        $("e2ee-btn").textContent = state.e2eeOn ? "加密中" : "加密";
+        toast(state.e2eeOn ? "本会话已开启端到端加密" : "已关闭加密");
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+  let recMedia = null;
+  let recChunks = [];
+  if ($("rec-btn")) {
+    const recBtn = $("rec-btn");
+    recBtn.onpointerdown = async (e) => {
+      e.preventDefault();
+      if (recBtn.disabled) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recChunks = [];
+        recMedia = new MediaRecorder(stream);
+        recMedia.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size) recChunks.push(ev.data);
+        };
+        recMedia.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          recBtn.classList.remove("rec-on");
+          const blob = new Blob(recChunks, { type: recMedia.mimeType || "audio/webm" });
+          recMedia = null;
+          if (blob.size < 256) return;
+          const file = new File([blob], "voice.webm", { type: blob.type || "audio/webm" });
+          try {
+            await uploadFile(file);
+          } catch (err) {
+            alert(err.message);
+          }
+        };
+        recMedia.start();
+        recBtn.classList.add("rec-on");
+      } catch (err) {
+        alert("无法录音：" + (err.message || err));
+      }
+    };
+    const stopRec = () => {
+      if (recMedia && recMedia.state === "recording") recMedia.stop();
+    };
+    recBtn.onpointerup = stopRec;
+    recBtn.onpointerleave = stopRec;
+  }
+  if ($("global-search")) {
+    let gsT = null;
+    $("global-search").oninput = () => {
+      clearTimeout(gsT);
+      gsT = setTimeout(async () => {
+        const q = $("global-search").value.trim();
+        const box = $("global-hits");
+        if (!q) {
+          box.classList.add("hidden");
+          box.innerHTML = "";
+          return;
+        }
+        try {
+          const data = await api("/v1/search?q=" + encodeURIComponent(q));
+          const hits = data.hits || [];
+          box.classList.remove("hidden");
+          box.innerHTML = hits.length
+            ? hits
+                .map((h) => {
+                  const msg = h.message || {};
+                  const text = (msg.payload && msg.payload.text) || "";
+                  return `<div class="row" data-cid="${h.cid}"><div class="row-main"><div class="row-title">${escapeHtml(h.title || h.cid)}</div><div class="row-sub">${escapeHtml(text)}</div></div></div>`;
+                })
+                .join("")
+            : `<div class="row"><div class="row-sub">没有匹配的聊天记录</div></div>`;
+          box.querySelectorAll(".row[data-cid]").forEach((row) => {
+            row.onclick = () => {
+              const c = state.convs.find((x) => x.cid === row.dataset.cid);
+              openChat((c && (c.peerUid || c.peer_uid)) || "", row.dataset.cid);
+            };
+          });
+        } catch (err) {
+          toast(err.message);
+        }
+      }, 250);
+    };
+  }
   $("file").onchange = () => {
     const f = $("file").files && $("file").files[0];
     $("file").value = "";
@@ -1666,18 +1928,79 @@
     fitDraft();
     saveDraft();
   }
+  const KAWAII = ["(≧▽≦)", "(´・ω・`)", "(づ｡◕‿‿◕｡)づ", "(•̀ᴗ•́)و", "(╯°□°)╯", "¯\\_(ツ)_/¯", "(ง •̀_•́)ง", "(≧ω≦)"];
   function renderEmojiBox() {
     const box = $("emoji-box");
-    if (!box || box.dataset.ready) return;
-    box.textContent = "";
-    EMOJIS.forEach((e) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = e;
-      btn.onclick = () => insertDraft(e);
-      box.appendChild(btn);
+    if (!box) return;
+    box.innerHTML = "";
+    const tabs = document.createElement("div");
+    tabs.className = "emoji-tabs";
+    ["表情", "颜文字", "贴纸"].forEach((name, i) => {
+      const t = document.createElement("button");
+      t.type = "button";
+      t.textContent = name;
+      t.onclick = (e) => {
+        e.stopPropagation();
+        fillEmojiPack(box, i);
+      };
+      tabs.appendChild(t);
     });
-    box.dataset.ready = "1";
+    box.appendChild(tabs);
+    const inner = document.createElement("div");
+    inner.id = "emoji-inner";
+    box.appendChild(inner);
+    fillEmojiPack(box, 0);
+  }
+  function fillEmojiPack(box, idx) {
+    let inner = box.querySelector("#emoji-inner");
+    if (!inner) return;
+    inner.innerHTML = "";
+    if (idx === 0) {
+      EMOJIS.forEach((e) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = e;
+        btn.onclick = () => insertDraft(e);
+        inner.appendChild(btn);
+      });
+      return;
+    }
+    if (idx === 1) {
+      KAWAII.forEach((e) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = e;
+        btn.onclick = () => insertDraft(e);
+        inner.appendChild(btn);
+      });
+      return;
+    }
+    api("/v1/stickers")
+      .then((data) => {
+        (data.stickers || []).forEach((st) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const img = document.createElement("img");
+          img.src = st.url;
+          img.alt = "sticker";
+          img.style.width = "40px";
+          img.style.height = "40px";
+          btn.appendChild(img);
+          btn.onclick = () =>
+            sendPayload({
+              type: "IMAGE",
+              stickerId: st.id,
+              media: { objectKey: "sticker/" + st.id, url: st.url, filename: "sticker" },
+            });
+          inner.appendChild(btn);
+        });
+        const add = document.createElement("button");
+        add.type = "button";
+        add.textContent = "+";
+        add.onclick = () => $("file").click();
+        inner.appendChild(add);
+      })
+      .catch(() => {});
   }
   $("emoji-btn").onclick = () => {
     renderEmojiBox();
@@ -1809,6 +2132,17 @@
     }
   });
 
+  const oauthRaw = localStorage.getItem("surge:oauth");
+  if (oauthRaw) {
+    localStorage.removeItem("surge:oauth");
+    try {
+      const data = JSON.parse(oauthRaw);
+      if (data.access_token && data.uid) {
+        sessionEnter(data.uid, data.access_token, data.refresh_token).catch((e) => alert(e.message));
+      }
+    } catch (_) {}
+  }
+
   const params = new URLSearchParams(location.search);
   state.pendingTicket = params.get("ticket") || "";
 
@@ -1841,6 +2175,7 @@
         startPresencePoll();
         startWSElection();
         maybeApproveTicket();
+        e2eePair().catch(() => {});
       })
       .catch((e) => alert(e.message));
   } else {

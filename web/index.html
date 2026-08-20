@@ -31,9 +31,13 @@
       <h1 class="m-0 mb-2 text-[28px] font-semibold">Surge</h1>
       <p class="mb-4 text-[13px] text-zinc-500">Web 三栏 · 单聊 / 群聊</p>
       <input id="login-uid" class="mb-3 h-10 w-full rounded border border-zinc-300 px-3 text-sm outline-none focus:border-wechat" placeholder="uid / 邮箱 / 手机号" autofocus />
+      <input id="login-email" class="mb-3 h-10 w-full rounded border border-zinc-300 px-3 text-sm outline-none focus:border-wechat" placeholder="注册邮箱（可选）" />
+      <input id="login-phone" class="mb-3 h-10 w-full rounded border border-zinc-300 px-3 text-sm outline-none focus:border-wechat" placeholder="注册手机号（可选）" />
       <input id="login-pass" type="password" class="mb-3 h-10 w-full rounded border border-zinc-300 px-3 text-sm outline-none focus:border-wechat" placeholder="密码（可空则走开发登录）" />
       <button id="login-btn" type="button" class="h-10 w-full rounded bg-wechat text-sm text-white hover:bg-[#06ad56]">登录</button>
       <button id="register-btn" type="button" class="mt-2 h-10 w-full rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">注册</button>
+      <button id="oauth-demo-btn" type="button" class="mt-2 h-10 w-full rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">第三方登录（演示）</button>
+      <a id="oauth-github" href="/v1/auth/oauth/github" class="mt-2 flex h-10 w-full items-center justify-center rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">GitHub 登录</a>
       <div class="my-4 text-center">
         <img id="qr-img" class="mx-auto h-[180px] w-[180px] bg-zinc-100" alt="登录二维码" />
         <p id="qr-hint" class="mt-3 text-[13px] leading-relaxed text-zinc-500">已登录窗口打开本页扫码，或点确认登录</p>
@@ -62,7 +66,11 @@
 
     <section class="flex min-w-0 flex-col border-r border-zinc-300 bg-mid">
       <div id="pane-chats" class="flex min-h-0 flex-1 flex-col">
-        <header class="border-b border-zinc-300 px-4 py-4 font-semibold">会话</header>
+        <header class="border-b border-zinc-300 px-4 py-3 font-semibold">
+          会话
+          <input id="global-search" class="mt-2 h-8 w-full rounded border border-zinc-300 px-2 text-sm font-normal outline-none focus:border-wechat" placeholder="搜索全部聊天记录" />
+        </header>
+        <div id="global-hits" class="hidden max-h-52 overflow-auto border-b border-zinc-300"></div>
         <div id="conv-list" class="flex-1 overflow-auto"></div>
       </div>
       <div id="pane-contacts" class="hidden min-h-0 flex-1 flex-col">
@@ -99,7 +107,8 @@
           <button id="pin-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">置顶</button>
           <button id="mute-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">免打扰</button>
           <button id="hide-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">隐藏</button>
-          <button id="remark-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">备注</button>
+          <button id="tag-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">标签</button>
+          <button id="e2ee-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">加密</button>
           <button id="block-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-700">拉黑</button>
           <div id="conn-state" class="text-xs text-zinc-500">未连接</div>
         </div>
@@ -113,7 +122,7 @@
         <input id="group-avatar-file" type="file" accept="image/*" class="hidden" />
         <button id="leave-btn" type="button" class="h-7 rounded border border-zinc-300 bg-white px-2.5 text-sm text-zinc-700">退群</button>
         <button id="transfer-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2.5 text-sm text-zinc-700">转让群主</button>
-        <button id="dissolve-btn" type="button" class="hidden h-7 rounded border border-red-200 bg-white px-2.5 text-sm text-red-600">解散群</button>
+        <button id="mute-all-btn" type="button" class="hidden h-7 rounded border border-zinc-300 bg-white px-2.5 text-sm text-zinc-700">全员禁言</button>
         <div id="member-chips" class="flex flex-wrap gap-1.5"></div>
       </div>
       <div id="chat-search-bar" class="hidden shrink-0 border-b border-zinc-300 bg-white px-4 py-1.5">
@@ -131,6 +140,8 @@
         <button id="emoji-btn" type="button" class="h-9 w-9 shrink-0 rounded border border-zinc-300 bg-white text-base leading-none disabled:cursor-default disabled:opacity-40" disabled>😊</button>
         <div id="emoji-box" class="absolute bottom-full left-3 mb-1 hidden w-[280px] rounded-md border border-zinc-200 bg-white p-2 shadow"></div>
         <button id="attach-btn" type="button" class="h-9 w-9 shrink-0 rounded border border-dashed border-zinc-300 bg-white text-xl leading-none text-zinc-600 disabled:cursor-default disabled:opacity-40" disabled>+</button>
+        <button id="rec-btn" type="button" class="h-9 w-9 shrink-0 rounded border border-zinc-300 bg-white text-sm leading-none text-zinc-600 disabled:cursor-default disabled:opacity-40" disabled title="按住录音">🎤</button>
+        <label class="flex shrink-0 items-center gap-1 text-[11px] text-zinc-500"><input id="burn-toggle" type="checkbox" />阅后即焚</label>
         <input id="file" type="file" accept="image/*,audio/*,*/*" class="hidden" />
         <textarea id="draft" rows="1" placeholder="发消息…" disabled class="h-9 max-h-[72px] min-h-[36px] flex-1 resize-none overflow-y-auto rounded border border-zinc-300 bg-white px-2.5 py-1.5 text-sm leading-5 outline-none focus:border-wechat disabled:bg-zinc-50"></textarea>
         <button id="send-btn" type="submit" disabled class="h-9 w-[72px] shrink-0 rounded bg-wechat text-sm text-white hover:bg-[#06ad56] disabled:cursor-default disabled:bg-[#b5e6c8]">发送</button>

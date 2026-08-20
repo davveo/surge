@@ -15,6 +15,9 @@ type userRec struct {
 	PasswordHash string
 	DisplayName  string
 	AvatarURL    string
+	Email        string
+	Phone        string
+	PublicKey    string
 }
 
 func validUID(uid string) error {
@@ -42,7 +45,7 @@ func profileOf(u *userRec) *imv1.UserProfile {
 	if name == "" {
 		name = u.UID
 	}
-	return &imv1.UserProfile{Uid: u.UID, DisplayName: name, AvatarUrl: u.AvatarURL}
+	return &imv1.UserProfile{Uid: u.UID, DisplayName: name, AvatarUrl: u.AvatarURL, Email: u.Email, Phone: u.Phone, PublicKey: u.PublicKey}
 }
 
 func hashPassword(password string) (string, error) {
@@ -155,7 +158,8 @@ func (s *memoryStore) SearchUsers(_ context.Context, query string, limit int) ([
 	defer s.mu.Unlock()
 	var out []*imv1.UserProfile
 	for _, u := range s.users {
-		if strings.HasPrefix(strings.ToLower(u.UID), query) || strings.Contains(strings.ToLower(u.DisplayName), query) {
+		if strings.HasPrefix(strings.ToLower(u.UID), query) || strings.Contains(strings.ToLower(u.DisplayName), query) ||
+			strings.Contains(strings.ToLower(u.Email), query) || strings.Contains(u.Phone, query) {
 			out = append(out, profileOf(u))
 			if len(out) >= limit {
 				break

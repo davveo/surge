@@ -22,7 +22,7 @@ func (s *mysqlStore) GetProfiles(ctx context.Context, uids []string) ([]*imv1.Us
 	for _, u := range uids {
 		args = append(args, u)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT uid, password_hash, display_name, avatar_url FROM users WHERE uid IN (`+placeholders+`)`, args...)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+userCols+` FROM users WHERE uid IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, err
 	}

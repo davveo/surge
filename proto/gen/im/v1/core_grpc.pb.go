@@ -58,6 +58,15 @@ const (
 	IMCore_HideConversation_FullMethodName   = "/surge.im.v1.IMCore/HideConversation"
 	IMCore_SetPin_FullMethodName             = "/surge.im.v1.IMCore/SetPin"
 	IMCore_GetReadState_FullMethodName       = "/surge.im.v1.IMCore/GetReadState"
+	IMCore_SearchMessages_FullMethodName     = "/surge.im.v1.IMCore/SearchMessages"
+	IMCore_SetGroupMuteAll_FullMethodName    = "/surge.im.v1.IMCore/SetGroupMuteAll"
+	IMCore_SetFriendTags_FullMethodName      = "/surge.im.v1.IMCore/SetFriendTags"
+	IMCore_ListFriendTags_FullMethodName     = "/surge.im.v1.IMCore/ListFriendTags"
+	IMCore_SetPublicKey_FullMethodName       = "/surge.im.v1.IMCore/SetPublicKey"
+	IMCore_GetPublicKeys_FullMethodName      = "/surge.im.v1.IMCore/GetPublicKeys"
+	IMCore_ConsumeEphemeral_FullMethodName   = "/surge.im.v1.IMCore/ConsumeEphemeral"
+	IMCore_AddSticker_FullMethodName         = "/surge.im.v1.IMCore/AddSticker"
+	IMCore_ListStickers_FullMethodName       = "/surge.im.v1.IMCore/ListStickers"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -103,6 +112,15 @@ type IMCoreClient interface {
 	HideConversation(ctx context.Context, in *HideConversationRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
 	SetPin(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*MuteState, error)
 	GetReadState(ctx context.Context, in *GetReadStateRequest, opts ...grpc.CallOption) (*GetReadStateResponse, error)
+	SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error)
+	SetGroupMuteAll(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	SetFriendTags(ctx context.Context, in *SetFriendTagsRequest, opts ...grpc.CallOption) (*Friend, error)
+	ListFriendTags(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListFriendTagsResponse, error)
+	SetPublicKey(ctx context.Context, in *SetPublicKeyRequest, opts ...grpc.CallOption) (*UserProfile, error)
+	GetPublicKeys(ctx context.Context, in *GetProfilesRequest, opts ...grpc.CallOption) (*GetProfilesResponse, error)
+	ConsumeEphemeral(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error)
+	AddSticker(ctx context.Context, in *AddStickerRequest, opts ...grpc.CallOption) (*Sticker, error)
+	ListStickers(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListStickersResponse, error)
 }
 
 type iMCoreClient struct {
@@ -464,6 +482,87 @@ func (c *iMCoreClient) GetReadState(ctx context.Context, in *GetReadStateRequest
 	return out, nil
 }
 
+func (c *iMCoreClient) SearchMessages(ctx context.Context, in *SearchMessagesRequest, opts ...grpc.CallOption) (*SearchMessagesResponse, error) {
+	out := new(SearchMessagesResponse)
+	err := c.cc.Invoke(ctx, IMCore_SearchMessages_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetGroupMuteAll(ctx context.Context, in *SetMuteRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_SetGroupMuteAll_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetFriendTags(ctx context.Context, in *SetFriendTagsRequest, opts ...grpc.CallOption) (*Friend, error) {
+	out := new(Friend)
+	err := c.cc.Invoke(ctx, IMCore_SetFriendTags_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListFriendTags(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListFriendTagsResponse, error) {
+	out := new(ListFriendTagsResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListFriendTags_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetPublicKey(ctx context.Context, in *SetPublicKeyRequest, opts ...grpc.CallOption) (*UserProfile, error) {
+	out := new(UserProfile)
+	err := c.cc.Invoke(ctx, IMCore_SetPublicKey_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) GetPublicKeys(ctx context.Context, in *GetProfilesRequest, opts ...grpc.CallOption) (*GetProfilesResponse, error) {
+	out := new(GetProfilesResponse)
+	err := c.cc.Invoke(ctx, IMCore_GetPublicKeys_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ConsumeEphemeral(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error) {
+	out := new(RecallNotify)
+	err := c.cc.Invoke(ctx, IMCore_ConsumeEphemeral_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) AddSticker(ctx context.Context, in *AddStickerRequest, opts ...grpc.CallOption) (*Sticker, error) {
+	out := new(Sticker)
+	err := c.cc.Invoke(ctx, IMCore_AddSticker_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListStickers(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListStickersResponse, error) {
+	out := new(ListStickersResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListStickers_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -507,6 +606,15 @@ type IMCoreServer interface {
 	HideConversation(context.Context, *HideConversationRequest) (*HideConversationResponse, error)
 	SetPin(context.Context, *SetMuteRequest) (*MuteState, error)
 	GetReadState(context.Context, *GetReadStateRequest) (*GetReadStateResponse, error)
+	SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error)
+	SetGroupMuteAll(context.Context, *SetMuteRequest) (*GroupResponse, error)
+	SetFriendTags(context.Context, *SetFriendTagsRequest) (*Friend, error)
+	ListFriendTags(context.Context, *ListFriendsRequest) (*ListFriendTagsResponse, error)
+	SetPublicKey(context.Context, *SetPublicKeyRequest) (*UserProfile, error)
+	GetPublicKeys(context.Context, *GetProfilesRequest) (*GetProfilesResponse, error)
+	ConsumeEphemeral(context.Context, *RecallMessageRequest) (*RecallNotify, error)
+	AddSticker(context.Context, *AddStickerRequest) (*Sticker, error)
+	ListStickers(context.Context, *ListFriendsRequest) (*ListStickersResponse, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -630,6 +738,33 @@ func (UnimplementedIMCoreServer) SetPin(context.Context, *SetMuteRequest) (*Mute
 }
 func (UnimplementedIMCoreServer) GetReadState(context.Context, *GetReadStateRequest) (*GetReadStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetReadState not implemented")
+}
+func (UnimplementedIMCoreServer) SearchMessages(context.Context, *SearchMessagesRequest) (*SearchMessagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchMessages not implemented")
+}
+func (UnimplementedIMCoreServer) SetGroupMuteAll(context.Context, *SetMuteRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetGroupMuteAll not implemented")
+}
+func (UnimplementedIMCoreServer) SetFriendTags(context.Context, *SetFriendTagsRequest) (*Friend, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetFriendTags not implemented")
+}
+func (UnimplementedIMCoreServer) ListFriendTags(context.Context, *ListFriendsRequest) (*ListFriendTagsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFriendTags not implemented")
+}
+func (UnimplementedIMCoreServer) SetPublicKey(context.Context, *SetPublicKeyRequest) (*UserProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetPublicKey not implemented")
+}
+func (UnimplementedIMCoreServer) GetPublicKeys(context.Context, *GetProfilesRequest) (*GetProfilesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPublicKeys not implemented")
+}
+func (UnimplementedIMCoreServer) ConsumeEphemeral(context.Context, *RecallMessageRequest) (*RecallNotify, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConsumeEphemeral not implemented")
+}
+func (UnimplementedIMCoreServer) AddSticker(context.Context, *AddStickerRequest) (*Sticker, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddSticker not implemented")
+}
+func (UnimplementedIMCoreServer) ListStickers(context.Context, *ListFriendsRequest) (*ListStickersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListStickers not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -1346,6 +1481,168 @@ func _IMCore_GetReadState_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_SearchMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SearchMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SearchMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SearchMessages(ctx, req.(*SearchMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetGroupMuteAll_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetMuteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetGroupMuteAll(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetGroupMuteAll_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetGroupMuteAll(ctx, req.(*SetMuteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetFriendTags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetFriendTagsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetFriendTags(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetFriendTags_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetFriendTags(ctx, req.(*SetFriendTagsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListFriendTags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFriendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListFriendTags(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListFriendTags_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListFriendTags(ctx, req.(*ListFriendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetPublicKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPublicKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetPublicKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetPublicKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetPublicKey(ctx, req.(*SetPublicKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_GetPublicKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetPublicKeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetPublicKeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetPublicKeys(ctx, req.(*GetProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ConsumeEphemeral_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecallMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ConsumeEphemeral(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ConsumeEphemeral_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ConsumeEphemeral(ctx, req.(*RecallMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_AddSticker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddStickerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).AddSticker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_AddSticker_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).AddSticker(ctx, req.(*AddStickerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListStickers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFriendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListStickers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListStickers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListStickers(ctx, req.(*ListFriendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1508,6 +1805,42 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetReadState",
 			Handler:    _IMCore_GetReadState_Handler,
+		},
+		{
+			MethodName: "SearchMessages",
+			Handler:    _IMCore_SearchMessages_Handler,
+		},
+		{
+			MethodName: "SetGroupMuteAll",
+			Handler:    _IMCore_SetGroupMuteAll_Handler,
+		},
+		{
+			MethodName: "SetFriendTags",
+			Handler:    _IMCore_SetFriendTags_Handler,
+		},
+		{
+			MethodName: "ListFriendTags",
+			Handler:    _IMCore_ListFriendTags_Handler,
+		},
+		{
+			MethodName: "SetPublicKey",
+			Handler:    _IMCore_SetPublicKey_Handler,
+		},
+		{
+			MethodName: "GetPublicKeys",
+			Handler:    _IMCore_GetPublicKeys_Handler,
+		},
+		{
+			MethodName: "ConsumeEphemeral",
+			Handler:    _IMCore_ConsumeEphemeral_Handler,
+		},
+		{
+			MethodName: "AddSticker",
+			Handler:    _IMCore_AddSticker_Handler,
+		},
+		{
+			MethodName: "ListStickers",
+			Handler:    _IMCore_ListStickers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

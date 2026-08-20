@@ -50,6 +50,9 @@ func previewOf(p *imv1.Payload) string {
 	}
 	switch p.Type {
 	case imv1.Payload_IMAGE:
+		if p.StickerId != "" {
+			return "[表情]"
+		}
 		return "[图片]"
 	case imv1.Payload_FILE:
 		name := ""
@@ -63,6 +66,12 @@ func previewOf(p *imv1.Payload) string {
 	case imv1.Payload_RECALL:
 		return "已撤回一条消息"
 	default:
+		if p.E2Ee {
+			return "[加密消息]"
+		}
+		if p.Ephemeral {
+			return "[阅后即焚]"
+		}
 		return clipText(p.GetText(), 128)
 	}
 }
@@ -128,7 +137,11 @@ func marshalPayloadBlob(p *imv1.Payload) string {
 	}
 	blob.Mentions = p.MentionUids
 	blob.QuoteText = p.QuoteText
-	if blob.ObjectKey == "" && blob.Link == nil && len(blob.Mentions) == 0 && blob.QuoteText == "" {
+	blob.Ephemeral = p.Ephemeral
+	blob.E2EE = p.E2Ee
+	blob.StickerID = p.StickerId
+	blob.Burned = false
+	if blob.ObjectKey == "" && blob.Link == nil && len(blob.Mentions) == 0 && blob.QuoteText == "" && !blob.Ephemeral && !blob.E2EE && blob.StickerID == "" {
 		return ""
 	}
 	b, err := json.Marshal(blob)
@@ -139,14 +152,20 @@ func marshalPayloadBlob(p *imv1.Payload) string {
 }
 
 func payloadFromCols(ptype int32, text, mediaJSON string, recalled bool) *imv1.Payload {
+	blob := unmarshalPayloadBlob(mediaJSON)
 	if recalled {
+		if blob.Burned {
+			return &imv1.Payload{Type: imv1.Payload_RECALL, Text: "已销毁"}
+		}
 		return &imv1.Payload{Type: imv1.Payload_RECALL}
 	}
 	p := &imv1.Payload{
-		Type: imv1.Payload_Type(ptype),
-		Text: text,
+		Type:      imv1.Payload_Type(ptype),
+		Text:      text,
+		Ephemeral: blob.Ephemeral,
+		E2Ee:      blob.E2EE,
+		StickerId: blob.StickerID,
 	}
-	blob := unmarshalPayloadBlob(mediaJSON)
 	if blob.ObjectKey != "" {
 		p.Media = &imv1.Media{
 			ObjectKey:   blob.ObjectKey,
@@ -188,6 +207,10 @@ type payloadBlob struct {
 	Link      *linkJSON `json:"link,omitempty"`
 	Mentions  []string  `json:"mentions,omitempty"`
 	QuoteText string    `json:"quoteText,omitempty"`
+	Ephemeral bool      `json:"ephemeral,omitempty"`
+	E2EE      bool      `json:"e2ee,omitempty"`
+	StickerID string    `json:"stickerId,omitempty"`
+	Burned    bool      `json:"burned,omitempty"`
 }
 
 type linkJSON struct {

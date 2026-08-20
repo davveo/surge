@@ -309,7 +309,11 @@ func (s *memoryStore) TimelineQuery(_ context.Context, uid, cid string, afterSeq
 	for _, row := range matched {
 		p := row.payload
 		if row.recalled {
-			p = &imv1.Payload{Type: imv1.Payload_RECALL, Text: ""}
+			text := ""
+			if row.payload != nil {
+				text = row.payload.Text
+			}
+			p = &imv1.Payload{Type: imv1.Payload_RECALL, Text: text}
 		}
 		out = append(out, &imv1.TimelineMessage{
 			MsgId: row.msgID, ConvSeq: row.convSeq, FromUid: row.fromUID,
