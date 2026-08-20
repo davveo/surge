@@ -109,41 +109,18 @@
     </section>
 
     <section class="chat">
+      <div class="chat-main">
       <header class="chat-head">
         <div class="chat-head-main">
           <div id="chat-title">选择一个会话</div>
           <div id="chat-sub"></div>
         </div>
         <div class="chat-head-actions">
-          <button id="chat-menu-btn" type="button" title="更多">
+          <button id="chat-menu-btn" type="button" title="聊天信息">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>
           </button>
-          <div id="chat-menu" class="hidden">
-            <button id="chat-search-toggle" type="button" class="hidden">查找聊天记录</button>
-            <button id="pin-btn" type="button" class="hidden">置顶</button>
-            <button id="mute-btn" type="button" class="hidden">免打扰</button>
-            <button id="hide-btn" type="button" class="hidden">隐藏</button>
-            <button id="remark-btn" type="button" class="hidden">备注</button>
-            <button id="tag-btn" type="button" class="hidden">标签</button>
-            <button id="e2ee-btn" type="button" class="hidden">加密</button>
-            <button id="block-btn" type="button" class="hidden">拉黑</button>
-            <div id="conn-state" class="text-zinc-500">未连接</div>
-          </div>
         </div>
       </header>
-      <div id="group-bar" class="hidden">
-        <input id="invite-uid" placeholder="拉好友进群" />
-        <button id="invite-btn" type="button">邀请</button>
-        <input id="group-rename" placeholder="改群名" />
-        <button id="rename-btn" type="button">改名</button>
-        <button id="group-avatar-btn" type="button">群头像</button>
-        <input id="group-avatar-file" type="file" accept="image/*" class="hidden" />
-        <button id="leave-btn" type="button" class="ghost">退群</button>
-        <button id="transfer-btn" type="button" class="ghost hidden">转让群主</button>
-        <button id="dissolve-btn" type="button" class="ghost hidden">解散</button>
-        <button id="mute-all-btn" type="button" class="ghost hidden">全员禁言</button>
-        <div id="member-chips"></div>
-      </div>
       <div id="chat-search-bar" class="hidden">
         <input id="chat-search" placeholder="搜索聊天记录" />
       </div>
@@ -180,6 +157,69 @@
           <button id="send-btn" type="submit" disabled>发送</button>
         </div>
       </form>
+      </div>
+      <aside id="chat-side" class="hidden">
+        <div id="side-direct" class="hidden">
+          <div id="side-peer-card" class="side-profile"></div>
+        </div>
+        <div id="group-bar" class="hidden">
+          <div class="side-search">
+            <input id="member-search" placeholder="搜索群成员" autocomplete="off" />
+          </div>
+          <div id="member-chips" class="side-members"></div>
+          <div id="side-invite" class="side-invite hidden">
+            <input id="invite-uid" placeholder="输入好友账号" autocomplete="off" />
+            <button id="invite-btn" type="button">添加</button>
+          </div>
+          <div class="side-list">
+            <button type="button" class="side-row" id="rename-row">
+              <span>群聊名称</span>
+              <span class="side-val" id="side-group-name"></span>
+            </button>
+            <input id="group-rename" class="hidden" />
+            <button id="rename-btn" type="button" class="hidden">改名</button>
+            <button type="button" class="side-row" id="group-avatar-btn">
+              <span>群头像</span>
+              <span class="side-val" id="side-group-avatar"></span>
+            </button>
+            <input id="group-avatar-file" type="file" accept="image/*" class="hidden" />
+          </div>
+        </div>
+        <div id="side-shared" class="hidden">
+          <div class="side-list">
+            <button id="remark-btn" type="button" class="side-row hidden">
+              <span>备注</span>
+              <span class="side-val" id="side-remark-val"></span>
+            </button>
+            <button id="tag-btn" type="button" class="side-row hidden">
+              <span>标签</span>
+              <span class="side-val" id="side-tag-val"></span>
+            </button>
+            <button id="chat-search-toggle" type="button" class="side-row">查找聊天内容</button>
+            <button id="mute-btn" type="button" class="side-row">
+              <span>消息免打扰</span>
+              <span class="side-switch" id="mute-switch"></span>
+            </button>
+            <button id="pin-btn" type="button" class="side-row">
+              <span>置顶聊天</span>
+              <span class="side-switch" id="pin-switch"></span>
+            </button>
+            <button id="e2ee-btn" type="button" class="side-row hidden">
+              <span>端到端加密</span>
+              <span class="side-switch" id="e2ee-switch"></span>
+            </button>
+            <button id="hide-btn" type="button" class="side-row">隐藏会话</button>
+            <button id="block-btn" type="button" class="side-row danger hidden">加入黑名单</button>
+          </div>
+          <div id="side-group-admin" class="side-list hidden">
+            <button id="mute-all-btn" type="button" class="side-row hidden">全员禁言</button>
+            <button id="transfer-btn" type="button" class="side-row hidden">转让群主</button>
+            <button id="leave-btn" type="button" class="side-row danger">退出群聊</button>
+            <button id="dissolve-btn" type="button" class="side-row danger hidden">解散群聊</button>
+          </div>
+          <div id="conn-state" class="side-conn">未连接</div>
+        </div>
+      </aside>
     </section>
   </div>
   <div id="lightbox" class="overlay hidden">
