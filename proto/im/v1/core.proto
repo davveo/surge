@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package surge.im.v1;
+
+option go_package = "github.com/davveo/surge/proto/gen/im/v1;imv1";
+
+import "proto/im/v1/frame.proto";
+
+// IMCore is the stateless message service. Gateway holds TCP; this service persists.
+service IMCore {
+  rpc Send(SendMessageRequest) returns (SendMessageResponse);
+  rpc Sync(SyncInboxRequest) returns (SyncInboxResponse);
+  rpc Watermark(WatermarkRequest) returns (WatermarkResponse);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc GetTimeline(GetTimelineRequest) returns (GetTimelineResponse);
+  rpc AddFriend(AddFriendRequest) returns (AddFriendResponse);
+  rpc ListFriends(ListFriendsRequest) returns (ListFriendsResponse);
+  rpc LookupUser(LookupUserRequest) returns (LookupUserResponse);
+}
+
+message WatermarkRequest {
+  string uid = 1;
+}
+
+message WatermarkResponse {
+  uint64 last_sync_seq = 1;
+}
+
+message SendMessageRequest {
+  string from_uid = 1;
+  string client_msg_id = 2;
+  string cid = 3;
+  string peer_uid = 4;
+  Payload payload = 5;
+}
+
+message RecipientHint {
+  string uid = 1;
+  string gateway_id = 2;
+  string conn_id = 3;
+}
+
+message SendMessageResponse {
+  Ack ack = 1;
+  string peer_uid = 2;
+  Push peer_push = 3;
+  RecipientHint peer_route = 4;
+}
+
+message SyncInboxRequest {
+  string uid = 1;
+  uint64 last_sync_seq = 2;
+  uint32 limit = 3;
+}
+
+message SyncInboxResponse {
+  SyncResponse sync = 1;
+}
+
+message ListConversationsRequest {
+  string uid = 1;
+}
+
+message Conversation {
+  string cid = 1;
+  string peer_uid = 2;
+  string last_msg_id = 3;
+  uint64 last_conv_seq = 4;
+  uint32 unread = 5;
+  int64 updated_at_ms = 6;
+  string last_text = 7;
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+}
+
+message GetTimelineRequest {
+  string uid = 1;
+  string cid = 2;
+  uint64 after_conv_seq = 3;
+  uint32 limit = 4;
+}
+
+message TimelineMessage {
+  string msg_id = 1;
+  uint64 conv_seq = 2;
+  string from_uid = 3;
+  Payload payload = 4;
+  int64 created_at_ms = 5;
+}
+
+message GetTimelineResponse {
+  string cid = 1;
+  repeated TimelineMessage messages = 2;
+}
+
+// Published on Redis channel gw:{gateway_id} so the owning node can Push.
+message GatewayPush {
+  string uid = 1;
+  string conn_id = 2;
+  Push push = 3;
+}
+
+// P0: direct add, both sides become friends immediately. No request/accept.
+message AddFriendRequest {
+  string uid = 1;
+  string peer_uid = 2;
+}
+
+message AddFriendResponse {
+  string peer_uid = 1;
+  bool already = 2;
+}
+
+message Friend {
+  string uid = 1;
+}
+
+message ListFriendsRequest {
+  string uid = 1;
+}
+
+message ListFriendsResponse {
+  repeated Friend friends = 1;
+}
+
+message LookupUserRequest {
+  string query = 1;
+}
+
+message LookupUserResponse {
+  string uid = 1;
+  bool found = 2;
+}

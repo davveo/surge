@@ -1,0 +1,6 @@
+.git
+.idea
+bin
+docs
+*.md
+.env

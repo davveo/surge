@@ -1,0 +1,100 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: surge
+      MYSQL_USER: surge
+      MYSQL_PASSWORD: surge
+    ports:
+      - "3306:3306"
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-usurge", "-psurge"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  im-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: im-core
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+    environment:
+      IMCORE_ADDR: ":9000"
+      MYSQL_DSN: surge:surge@tcp(mysql:3306)/surge?parseTime=true&charset=utf8mb4
+      REDIS_ADDR: redis:6379
+      REDIS_PASS: ${REDIS_PASS:-}
+      REDIS_DB: ${REDIS_DB:-0}
+    ports:
+      - "9000:9000"
+    expose:
+      - "9000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gateway
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+    environment:
+      GATEWAY_ADDR: ":8080"
+      GATEWAY_ID: ${GATEWAY_ID:-gw-1}
+      IMCORE_ADDR: im-core:9000
+      REDIS_ADDR: redis:6379
+      REDIS_PASS: ${REDIS_PASS:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      JWT_SECRET: ${JWT_SECRET:-surge-dev-secret}
+      WEB_DIR: /app/web
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./web:/app/web:ro
+    depends_on:
+      im-core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:

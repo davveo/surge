@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package surge.im.v1;
+
+option go_package = "github.com/davveo/surge/proto/gen/im/v1;imv1";
+
+// Envelope is the only WebSocket payload. Binary protobuf by default;
+// text frames may carry protojson for local debugging.
+message Envelope {
+  uint64 request_id = 1;
+  oneof body {
+    AuthRequest auth = 10;
+    AuthResponse auth_ok = 11;
+    Heartbeat heartbeat = 12;
+    SendRequest send = 20;
+    Ack ack = 21;
+    Push push = 22;
+    SyncRequest sync = 30;
+    SyncResponse sync_resp = 31;
+    Error error = 99;
+  }
+}
+
+message AuthRequest {
+  string access_token = 1;
+  string device_id = 2;
+}
+
+message AuthResponse {
+  string user_id = 1;
+  string device_id = 2;
+  string gateway_id = 3;
+  string conn_id = 4;
+  uint64 last_sync_seq = 5;
+}
+
+message Heartbeat {
+  int64 ts_ms = 1;
+}
+
+message Payload {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TEXT = 1;
+  }
+  Type type = 1;
+  string text = 2;
+}
+
+message SendRequest {
+  string client_msg_id = 1;
+  // Canonical 1:1 id, e.g. p2p:{min_uid}:{max_uid}. Optional when peer_uid is set.
+  string cid = 2;
+  string peer_uid = 3;
+  Payload payload = 4;
+}
+
+message Ack {
+  string client_msg_id = 1;
+  string msg_id = 2;
+  string cid = 3;
+  uint64 conv_seq = 4;
+  uint64 sync_seq = 5;
+  int64 created_at_ms = 6;
+  bool duplicate = 7;
+}
+
+// Push is an inbox pointer plus P0 text body so the peer can render without an extra fetch.
+message Push {
+  string cid = 1;
+  string msg_id = 2;
+  uint64 conv_seq = 3;
+  uint64 sync_seq = 4;
+  string from_uid = 5;
+  Payload payload = 6;
+  int64 created_at_ms = 7;
+}
+
+message SyncRequest {
+  uint64 last_sync_seq = 1;
+  uint32 limit = 2;
+}
+
+message InboxEvent {
+  uint64 sync_seq = 1;
+  string cid = 2;
+  string msg_id = 3;
+  uint64 conv_seq = 4;
+  string from_uid = 5;
+  Payload payload = 6;
+  int64 created_at_ms = 7;
+}
+
+message SyncResponse {
+  uint64 last_sync_seq = 1;
+  repeated InboxEvent events = 2;
+  bool has_more = 3;
+}
+
+message Error {
+  int32 code = 1;
+  string message = 2;
+  string client_msg_id = 3;
+}

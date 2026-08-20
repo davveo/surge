@@ -1,0 +1,158 @@
+:root {
+  --rail: #2e2e2e;
+  --mid: #eaeaea;
+  --chat: #f5f5f5;
+  --green: #07c160;
+  --bubble-me: #95ec69;
+  --text: #111;
+  --muted: #888;
+  --line: #d9d9d9;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; color: var(--text); background: #ddd; }
+.hidden { display: none !important; }
+
+.login {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  background: #2e2e2e;
+}
+.login-card {
+  width: 360px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 32px 28px;
+}
+.login-card h1 { margin: 0 0 8px; font-size: 28px; }
+.login-card p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.login-card input, .login-card button {
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+}
+.login-card input { border: 1px solid var(--line); padding: 0 12px; margin-bottom: 12px; }
+.login-card button {
+  border: 0;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+}
+.hint { margin-top: 14px !important; line-height: 1.5; }
+
+.app {
+  display: grid;
+  grid-template-columns: 72px 280px 1fr;
+  height: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 0 24px rgba(0,0,0,.12);
+}
+
+.rail {
+  background: var(--rail);
+  color: #ccc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 8px;
+}
+.rail-btn {
+  width: 56px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+.rail-btn.active, .rail-btn:hover { color: #fff; }
+.rail-spacer { flex: 1; }
+.me { font-size: 12px; color: #07c160; padding: 8px; word-break: break-all; text-align: center; }
+
+.mid { background: var(--mid); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+.mid-head { padding: 16px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.add-form { display: flex; gap: 6px; padding: 8px 12px; }
+.add-form input { flex: 1; height: 32px; border: 1px solid var(--line); padding: 0 8px; }
+.add-form button { border: 0; background: var(--green); color: #fff; padding: 0 10px; cursor: pointer; }
+.list { overflow: auto; flex: 1; }
+.row {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.row:hover, .row.active { background: #d6d6d6; }
+.row-title { font-size: 14px; }
+.row-sub { font-size: 12px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: #fa5151;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  line-height: 18px;
+  padding: 0 5px;
+  align-self: center;
+}
+
+.chat { display: flex; flex-direction: column; background: var(--chat); min-width: 0; }
+.chat-head {
+  height: 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f7f7f7;
+}
+.chat-title { font-weight: 600; }
+.chat-sub { font-size: 12px; color: var(--muted); }
+.conn { font-size: 12px; color: var(--muted); }
+.conn.on { color: var(--green); }
+.msgs { flex: 1; overflow: auto; padding: 16px; }
+.bubble {
+  max-width: 70%;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  line-height: 1.45;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bubble.me { margin-left: auto; background: var(--bubble-me); }
+.bubble.peer { background: #fff; }
+.bubble.pending { opacity: .65; }
+.bubble.fail { background: #ffd4d4; }
+.meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.composer {
+  border-top: 1px solid var(--line);
+  background: #f7f7f7;
+  padding: 10px 12px 12px;
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  gap: 8px;
+}
+.composer textarea {
+  resize: none;
+  border: 1px solid var(--line);
+  padding: 8px;
+  font: inherit;
+}
+.composer button {
+  border: 0;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+}
+.composer button:disabled { background: #b5e6c8; cursor: default; }
