@@ -5,7 +5,25 @@ import (
 	"strings"
 )
 
-const p2pPrefix = "p2p:"
+const (
+	p2pPrefix   = "p2p:"
+	groupPrefix = "grp:"
+	KindP2P     = "p2p"
+	KindGroup   = "group"
+)
+
+func GroupPrefix() string { return groupPrefix }
+
+func IsGroup(cid string) bool {
+	return strings.HasPrefix(strings.TrimSpace(cid), groupPrefix)
+}
+
+func Kind(cid string) string {
+	if IsGroup(cid) {
+		return KindGroup
+	}
+	return KindP2P
+}
 
 // P2P returns the canonical 1:1 conversation id. Uids are ordered lexicographically
 // so both sides resolve to the same cid.
@@ -49,6 +67,12 @@ func ResolveCID(fromUID, cid, peerUID string) (canonical string, peer string, er
 		return "", "", fmt.Errorf("conv: from_uid required")
 	}
 	if cid != "" {
+		if IsGroup(cid) {
+			if len(cid) <= len(groupPrefix) {
+				return "", "", fmt.Errorf("conv: invalid group cid")
+			}
+			return cid, "", nil
+		}
 		peer, err = PeerUID(cid, fromUID)
 		if err != nil {
 			return "", "", err

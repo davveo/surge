@@ -10,10 +10,10 @@
   <div id="login" class="login">
     <div class="login-card">
       <h1>Surge</h1>
-      <p>P0 Web 三栏 · 输入 uid 登录</p>
+      <p>Web 三栏 · 单聊 / 群聊</p>
       <input id="login-uid" placeholder="例如 u1" autofocus />
       <button id="login-btn" type="button">进入</button>
-      <p class="hint">两个浏览器窗口分别登录 u1 / u2，先加好友再发消息。</p>
+      <p class="hint">两个窗口分别登录 u1 / u2，先加好友再发消息；通讯录可建群。</p>
     </div>
   </div>
 
@@ -37,6 +37,11 @@
           <input id="add-uid" placeholder="搜索 / 添加 uid" />
           <button type="submit">添加</button>
         </form>
+        <form id="group-form" class="add-form col">
+          <input id="group-name" placeholder="群名" />
+          <input id="group-members" placeholder="成员 uid，逗号分隔" />
+          <button type="submit">建群</button>
+        </form>
         <div id="friend-list" class="list"></div>
       </div>
     </section>
@@ -47,11 +52,19 @@
           <div id="chat-title" class="chat-title">选择一个会话</div>
           <div id="chat-sub" class="chat-sub"></div>
         </div>
-        <div id="conn-state" class="conn">未连接</div>
+        <div class="head-right">
+          <div id="conn-state" class="conn">未连接</div>
+        </div>
       </header>
+      <div id="group-bar" class="group-bar hidden">
+        <input id="invite-uid" placeholder="拉好友进群" />
+        <button id="invite-btn" type="button">邀请</button>
+        <div id="member-chips" class="chips"></div>
+      </div>
       <div id="msgs" class="msgs"></div>
+      <div id="typing" class="typing hidden">对方正在输入…</div>
       <form id="send-form" class="composer">
-        <textarea id="draft" rows="3" placeholder="发消息给好友…" disabled></textarea>
+        <textarea id="draft" rows="3" placeholder="发消息…" disabled></textarea>
         <button type="submit" disabled>发送</button>
       </form>
     </section>

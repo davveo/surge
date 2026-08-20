@@ -17,11 +17,23 @@ import (
 
 var errInvalid = errors.New("invalid argument")
 var errNotFriends = errors.New("not friends")
+var errNotMember = errors.New("not a group member")
+var errNotOwner = errors.New("not group owner")
+var errTooLarge = errors.New("group too large")
+
+const maxGroupMembers = 200
+const recallWindowMS int64 = 2 * 60 * 1000
+
+type delivery struct {
+	uid  string
+	push *imv1.Push
+}
 
 type sendResult struct {
-	ack      *imv1.Ack
-	peerUID  string
-	peerPush *imv1.Push
+	ack        *imv1.Ack
+	peerUID    string
+	peerPush   *imv1.Push
+	deliveries []delivery
 }
 
 type timelineRow struct {
@@ -32,10 +44,24 @@ type timelineRow struct {
 	createdAt  int64
 	clientMsg  string
 	senderSync uint64
+	recalled   bool
+	quoteMsgID string
+}
+
+type groupInfo struct {
+	CID      string
+	Name     string
+	OwnerUID string
+	Members  []groupMember
+}
+
+type groupMember struct {
+	UID  string
+	Role string
 }
 
 type Store interface {
-	Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload) (*sendResult, error)
+	Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload, quoteMsgID string) (*sendResult, error)
 	Sync(ctx context.Context, uid string, lastSeq uint64, limit int) (*imv1.SyncResponse, error)
 	Watermark(ctx context.Context, uid string) (uint64, error)
 	ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error)
@@ -43,6 +69,13 @@ type Store interface {
 	AddFriend(ctx context.Context, uid, peerUID string) (already bool, err error)
 	ListFriends(ctx context.Context, uid string) ([]string, error)
 	AreFriends(ctx context.Context, uid, peerUID string) (bool, error)
+	CreateGroup(ctx context.Context, ownerUID, name string, memberUIDs []string) (*groupInfo, error)
+	InviteGroup(ctx context.Context, operatorUID, cid string, memberUIDs []string) (*groupInfo, error)
+	KickGroup(ctx context.Context, operatorUID, cid, memberUID string) (*groupInfo, error)
+	GetGroup(ctx context.Context, uid, cid string) (*groupInfo, error)
+	GroupMembers(ctx context.Context, cid string) ([]string, error)
+	Recall(ctx context.Context, uid, cid, msgID string) (*imv1.RecallNotify, []string, error)
+	MarkRead(ctx context.Context, uid, cid string, convSeq uint64) error
 }
 
 func validateSend(fromUID, clientMsgID string, payload *imv1.Payload) error {
@@ -87,6 +120,8 @@ type memoryStore struct {
 	inbox   map[string][]*imv1.InboxEvent
 	convs   map[string]map[string]*imv1.Conversation
 	friends map[string]map[string]struct{}
+	groups  map[string]*groupInfo
+	reads   map[string]map[string]uint64
 }
 
 func newMemoryStore(seq Seq) *memoryStore {
@@ -101,12 +136,14 @@ func newMemoryStore(seq Seq) *memoryStore {
 		inbox:   map[string][]*imv1.InboxEvent{},
 		convs:   map[string]map[string]*imv1.Conversation{},
 		friends: map[string]map[string]struct{}{},
+		groups:  map[string]*groupInfo{},
+		reads:   map[string]map[string]uint64{},
 	}
 }
 
 func dupKey(fromUID, clientMsgID string) string { return fromUID + "|" + clientMsgID }
 
-func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload) (*sendResult, error) {
+func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload, quoteMsgID string) (*sendResult, error) {
 	if err := validateSend(fromUID, clientMsgID, payload); err != nil {
 		return nil, err
 	}
@@ -117,6 +154,11 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	title, kind, members, err := s.targetsLocked(fromUID, canonical, peer)
+	if err != nil {
+		return nil, err
+	}
 
 	if row, ok := s.byDup[dupKey(fromUID, clientMsgID)]; ok {
 		return &sendResult{
@@ -137,15 +179,6 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 	if err != nil {
 		return nil, err
 	}
-	senderSync, err := s.seq.Next(ctx, syncSeqKey(fromUID))
-	if err != nil {
-		return nil, err
-	}
-	peerSync, err := s.seq.Next(ctx, syncSeqKey(peer))
-	if err != nil {
-		return nil, err
-	}
-
 	now := time.Now().UnixMilli()
 	msgID := uuid.NewString()
 	row := &timelineRow{
@@ -155,35 +188,85 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 		payload:    payload,
 		createdAt:  now,
 		clientMsg:  clientMsgID,
-		senderSync: senderSync,
+		quoteMsgID: quoteMsgID,
 	}
 	s.byID[msgID] = row
 	s.byDup[dupKey(fromUID, clientMsgID)] = row
 	s.byCID[canonical] = append(s.byCID[canonical], row)
 
-	s.appendInbox(fromUID, senderSync, canonical, row)
-	s.appendInbox(peer, peerSync, canonical, row)
-	s.upsertConv(fromUID, canonical, peer, row, false)
-	s.upsertConv(peer, canonical, fromUID, row, true)
+	preview := clipText(payload.GetText(), 128)
+	var deliveries []delivery
+	var senderSync uint64
+	for _, uid := range members {
+		syncSeq, err := s.seq.Next(ctx, syncSeqKey(uid))
+		if err != nil {
+			return nil, err
+		}
+		if uid == fromUID {
+			row.senderSync = syncSeq
+			senderSync = syncSeq
+		}
+		s.appendInbox(uid, syncSeq, canonical, row)
+		peerLabel := peer
+		if kind == conv.KindGroup {
+			peerLabel = ""
+		} else if uid == fromUID {
+			peerLabel = peer
+		} else {
+			peerLabel = fromUID
+		}
+		s.upsertConv(uid, canonical, peerLabel, title, kind, row, preview, uid != fromUID)
+		if uid != fromUID {
+			push := &imv1.Push{
+				Cid:         canonical,
+				MsgId:       msgID,
+				ConvSeq:     convSeq,
+				SyncSeq:     syncSeq,
+				FromUid:     fromUID,
+				Payload:     payload,
+				CreatedAtMs: now,
+			}
+			deliveries = append(deliveries, delivery{uid: uid, push: push})
+		}
+	}
 
-	ack := &imv1.Ack{
-		ClientMsgId: clientMsgID,
-		MsgId:       msgID,
-		Cid:         canonical,
-		ConvSeq:     convSeq,
-		SyncSeq:     senderSync,
-		CreatedAtMs: now,
+	res := &sendResult{
+		ack: &imv1.Ack{
+			ClientMsgId: clientMsgID,
+			MsgId:       msgID,
+			Cid:         canonical,
+			ConvSeq:     convSeq,
+			SyncSeq:     senderSync,
+			CreatedAtMs: now,
+		},
+		peerUID:    peer,
+		deliveries: deliveries,
 	}
-	push := &imv1.Push{
-		Cid:         canonical,
-		MsgId:       msgID,
-		ConvSeq:     convSeq,
-		SyncSeq:     peerSync,
-		FromUid:     fromUID,
-		Payload:     payload,
-		CreatedAtMs: now,
+	if len(deliveries) > 0 {
+		res.peerPush = deliveries[0].push
 	}
-	return &sendResult{ack: ack, peerUID: peer, peerPush: push}, nil
+	return res, nil
+}
+
+func (s *memoryStore) targetsLocked(fromUID, cid, peer string) (title, kind string, members []string, err error) {
+	if conv.IsGroup(cid) {
+		g := s.groups[cid]
+		if g == nil {
+			return "", "", nil, fmt.Errorf("%w: group not found", errInvalid)
+		}
+		ok := false
+		for _, m := range g.Members {
+			members = append(members, m.UID)
+			if m.UID == fromUID {
+				ok = true
+			}
+		}
+		if !ok {
+			return "", "", nil, errNotMember
+		}
+		return g.Name, conv.KindGroup, members, nil
+	}
+	return "", conv.KindP2P, []string{fromUID, peer}, nil
 }
 
 func (s *memoryStore) appendInbox(uid string, syncSeq uint64, cid string, row *timelineRow) {
@@ -198,7 +281,7 @@ func (s *memoryStore) appendInbox(uid string, syncSeq uint64, cid string, row *t
 	})
 }
 
-func (s *memoryStore) upsertConv(uid, cid, peer string, row *timelineRow, incoming bool) {
+func (s *memoryStore) upsertConv(uid, cid, peer, title, kind string, row *timelineRow, preview string, incoming bool) {
 	if s.convs[uid] == nil {
 		s.convs[uid] = map[string]*imv1.Conversation{}
 	}
@@ -206,9 +289,18 @@ func (s *memoryStore) upsertConv(uid, cid, peer string, row *timelineRow, incomi
 	unread := uint32(0)
 	if cur != nil {
 		unread = cur.Unread
+		if title == "" {
+			title = cur.Title
+		}
+		if kind == "" {
+			kind = cur.Kind
+		}
 	}
 	if incoming {
 		unread++
+	}
+	if preview == "" && row.payload != nil {
+		preview = clipText(row.payload.GetText(), 128)
 	}
 	s.convs[uid][cid] = &imv1.Conversation{
 		Cid:         cid,
@@ -217,7 +309,9 @@ func (s *memoryStore) upsertConv(uid, cid, peer string, row *timelineRow, incomi
 		LastConvSeq: row.convSeq,
 		Unread:      unread,
 		UpdatedAtMs: row.createdAt,
-		LastText:    clipText(row.payload.GetText(), 128),
+		LastText:    preview,
+		Title:       title,
+		Kind:        kind,
 	}
 }
 
@@ -278,26 +372,46 @@ func (s *memoryStore) ListConversations(_ context.Context, uid string) ([]*imv1.
 }
 
 func (s *memoryStore) Timeline(_ context.Context, uid, cid string, afterSeq uint64, limit int) (string, []*imv1.TimelineMessage, error) {
-	if _, err := conv.PeerUID(cid, uid); err != nil {
-		return "", nil, fmt.Errorf("%w: %v", errInvalid, err)
-	}
 	if limit <= 0 {
 		limit = 50
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if conv.IsGroup(cid) {
+		g := s.groups[cid]
+		ok := false
+		if g != nil {
+			for _, m := range g.Members {
+				if m.UID == uid {
+					ok = true
+					break
+				}
+			}
+		}
+		if !ok {
+			return "", nil, errNotMember
+		}
+	} else if _, err := conv.PeerUID(cid, uid); err != nil {
+		return "", nil, fmt.Errorf("%w: %v", errInvalid, err)
+	}
 	rows := s.byCID[cid]
 	out := make([]*imv1.TimelineMessage, 0, limit)
 	for _, row := range rows {
 		if row.convSeq <= afterSeq {
 			continue
 		}
+		p := row.payload
+		if row.recalled {
+			p = &imv1.Payload{Type: imv1.Payload_RECALL, Text: ""}
+		}
 		out = append(out, &imv1.TimelineMessage{
 			MsgId:       row.msgID,
 			ConvSeq:     row.convSeq,
 			FromUid:     row.fromUID,
-			Payload:     row.payload,
+			Payload:     p,
 			CreatedAtMs: row.createdAt,
+			Recalled:    row.recalled,
+			QuoteMsgId:  row.quoteMsgID,
 		})
 		if len(out) == limit {
 			break
@@ -361,4 +475,224 @@ func normalizePair(uid, peerUID string) (string, string, error) {
 		return "", "", fmt.Errorf("%w: cannot add self", errInvalid)
 	}
 	return uid, peerUID, nil
+}
+
+func uniqueUIDs(ids []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func protoGroup(g *groupInfo) *imv1.GroupResponse {
+	if g == nil {
+		return nil
+	}
+	out := &imv1.GroupResponse{Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID}
+	for _, m := range g.Members {
+		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role})
+	}
+	return out
+}
+
+func (s *memoryStore) CreateGroup(_ context.Context, ownerUID, name string, memberUIDs []string) (*groupInfo, error) {
+	ownerUID = strings.TrimSpace(ownerUID)
+	name = strings.TrimSpace(name)
+	if ownerUID == "" || name == "" {
+		return nil, fmt.Errorf("%w: owner and name required", errInvalid)
+	}
+	members := uniqueUIDs(append([]string{ownerUID}, memberUIDs...))
+	if len(members) > maxGroupMembers {
+		return nil, errTooLarge
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, uid := range members {
+		if uid == ownerUID {
+			continue
+		}
+		if !s.hasFriend(ownerUID, uid) {
+			return nil, fmt.Errorf("%w: add friend first", errNotFriends)
+		}
+	}
+	cid := conv.GroupPrefix() + uuid.NewString()
+	g := &groupInfo{CID: cid, Name: name, OwnerUID: ownerUID}
+	now := time.Now().UnixMilli()
+	for _, uid := range members {
+		role := "member"
+		if uid == ownerUID {
+			role = "owner"
+		}
+		g.Members = append(g.Members, groupMember{UID: uid, Role: role})
+		s.seedGroupConv(uid, g, now)
+	}
+	s.groups[cid] = g
+	return g, nil
+}
+
+func (s *memoryStore) seedGroupConv(uid string, g *groupInfo, now int64) {
+	row := &timelineRow{msgID: "", convSeq: 0, createdAt: now, payload: &imv1.Payload{Text: "群聊已创建"}}
+	s.upsertConv(uid, g.CID, "", g.Name, conv.KindGroup, row, "群聊已创建", false)
+}
+
+func (s *memoryStore) InviteGroup(_ context.Context, operatorUID, cid string, memberUIDs []string) (*groupInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.groups[cid]
+	if g == nil {
+		return nil, fmt.Errorf("%w: group not found", errInvalid)
+	}
+	if !s.isMemberLocked(g, operatorUID) {
+		return nil, errNotMember
+	}
+	now := time.Now().UnixMilli()
+	for _, uid := range uniqueUIDs(memberUIDs) {
+		if s.isMemberLocked(g, uid) {
+			continue
+		}
+		if !s.hasFriend(operatorUID, uid) {
+			return nil, fmt.Errorf("%w: add friend first", errNotFriends)
+		}
+		if len(g.Members)+1 > maxGroupMembers {
+			return nil, errTooLarge
+		}
+		g.Members = append(g.Members, groupMember{UID: uid, Role: "member"})
+		s.seedGroupConv(uid, g, now)
+	}
+	return g, nil
+}
+
+func (s *memoryStore) KickGroup(_ context.Context, operatorUID, cid, memberUID string) (*groupInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.groups[cid]
+	if g == nil {
+		return nil, fmt.Errorf("%w: group not found", errInvalid)
+	}
+	if g.OwnerUID != operatorUID {
+		return nil, errNotOwner
+	}
+	if memberUID == operatorUID {
+		return nil, fmt.Errorf("%w: cannot kick owner", errInvalid)
+	}
+	kept := g.Members[:0]
+	for _, m := range g.Members {
+		if m.UID != memberUID {
+			kept = append(kept, m)
+		}
+	}
+	g.Members = kept
+	if s.convs[memberUID] != nil {
+		delete(s.convs[memberUID], cid)
+	}
+	return g, nil
+}
+
+func (s *memoryStore) GetGroup(_ context.Context, uid, cid string) (*groupInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.groups[cid]
+	if g == nil {
+		return nil, fmt.Errorf("%w: group not found", errInvalid)
+	}
+	if !s.isMemberLocked(g, uid) {
+		return nil, errNotMember
+	}
+	cp := *g
+	cp.Members = append([]groupMember{}, g.Members...)
+	return &cp, nil
+}
+
+func (s *memoryStore) GroupMembers(_ context.Context, cid string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g := s.groups[cid]
+	if g == nil {
+		return nil, fmt.Errorf("%w: group not found", errInvalid)
+	}
+	var out []string
+	for _, m := range g.Members {
+		out = append(out, m.UID)
+	}
+	return out, nil
+}
+
+func (s *memoryStore) isMemberLocked(g *groupInfo, uid string) bool {
+	for _, m := range g.Members {
+		if m.UID == uid {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *memoryStore) Recall(_ context.Context, uid, cid, msgID string) (*imv1.RecallNotify, []string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row := s.byID[msgID]
+	if row == nil || !containsCID(s.byCID[cid], msgID) {
+		return nil, nil, fmt.Errorf("%w: message not found", errInvalid)
+	}
+	if row.fromUID != uid {
+		return nil, nil, fmt.Errorf("%w: only sender can recall", errInvalid)
+	}
+	if time.Now().UnixMilli()-row.createdAt > recallWindowMS {
+		return nil, nil, fmt.Errorf("%w: recall window exceeded", errInvalid)
+	}
+	row.recalled = true
+	row.payload = &imv1.Payload{Type: imv1.Payload_RECALL, Text: ""}
+	for _, convs := range s.convs {
+		if c := convs[cid]; c != nil && c.LastMsgId == msgID {
+			c.LastText = "已撤回一条消息"
+		}
+	}
+	var mems []string
+	if conv.IsGroup(cid) {
+		var err error
+		_, _, mems, err = s.targetsLocked(uid, cid, "")
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		peer, err := conv.PeerUID(cid, uid)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: %v", errInvalid, err)
+		}
+		mems = []string{uid, peer}
+	}
+	return &imv1.RecallNotify{Cid: cid, MsgId: msgID, FromUid: uid}, mems, nil
+}
+
+func containsCID(rows []*timelineRow, msgID string) bool {
+	for _, r := range rows {
+		if r != nil && r.msgID == msgID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *memoryStore) MarkRead(_ context.Context, uid, cid string, convSeq uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reads[uid] == nil {
+		s.reads[uid] = map[string]uint64{}
+	}
+	if convSeq > s.reads[uid][cid] {
+		s.reads[uid][cid] = convSeq
+	}
+	if c := s.convs[uid][cid]; c != nil {
+		c.Unread = 0
+	}
+	return nil
 }

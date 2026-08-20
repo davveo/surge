@@ -12,7 +12,7 @@ func TestSendIdempotentAndTimeline(t *testing.T) {
 	ctx := context.Background()
 	text := &imv1.Payload{Type: imv1.Payload_TEXT, Text: "hello"}
 
-	a, err := st.Send(ctx, "u1", "c1", "", "u2", text)
+	a, err := st.Send(ctx, "u1", "c1", "", "u2", text, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestSendIdempotentAndTimeline(t *testing.T) {
 		t.Fatalf("peer push: %+v", a.peerPush)
 	}
 
-	b, err := st.Send(ctx, "u1", "c1", "", "u2", text)
+	b, err := st.Send(ctx, "u1", "c1", "", "u2", text, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestSendIdempotentAndTimeline(t *testing.T) {
 		t.Fatalf("dup: %+v", b.ack)
 	}
 
-	c, err := st.Send(ctx, "u2", "c2", a.ack.Cid, "", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "world"})
+	c, err := st.Send(ctx, "u2", "c2", a.ack.Cid, "", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "world"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestSendIdempotentAndTimeline(t *testing.T) {
 
 func TestRejectSelfChat(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
-	_, err := st.Send(context.Background(), "u1", "c1", "", "u1", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "x"})
+	_, err := st.Send(context.Background(), "u1", "c1", "", "u1", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "x"}, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

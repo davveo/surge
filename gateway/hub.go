@@ -69,7 +69,7 @@ func (h *Hub) unbind(c *Conn) {
 }
 
 func (h *Hub) push(gp *imv1.GatewayPush) {
-	if gp == nil || gp.Push == nil {
+	if gp == nil {
 		return
 	}
 	h.mu.Lock()
@@ -81,7 +81,16 @@ func (h *Hub) push(gp *imv1.GatewayPush) {
 	if gp.ConnId != "" && gp.ConnId != c.id {
 		return
 	}
-	c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Push{Push: gp.Push}})
+	switch {
+	case gp.Push != nil:
+		c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Push{Push: gp.Push}})
+	case gp.Typing != nil:
+		c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Typing{Typing: gp.Typing}})
+	case gp.Recalled != nil:
+		c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Recalled{Recalled: gp.Recalled}})
+	case gp.Read != nil:
+		c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Read{Read: gp.Read}})
+	}
 }
 
 func (c *Conn) enqueue(env *imv1.Envelope) {

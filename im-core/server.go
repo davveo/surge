@@ -55,33 +55,53 @@ func (s *server) Send(ctx context.Context, req *imv1.SendMessageRequest) (*imv1.
 	unlock := s.locks.lock(canonical)
 	defer unlock()
 
-	ok, err := s.store.AreFriends(ctx, req.GetFromUid(), peer)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	if !ok {
-		return nil, mapErr(fmt.Errorf("%w: add friend first", errNotFriends))
+	if !conv.IsGroup(canonical) {
+		ok, err := s.store.AreFriends(ctx, req.GetFromUid(), peer)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		if !ok {
+			return nil, mapErr(fmt.Errorf("%w: add friend first", errNotFriends))
+		}
 	}
 
-	res, err := s.store.Send(ctx, req.GetFromUid(), req.GetClientMsgId(), req.GetCid(), req.GetPeerUid(), req.GetPayload())
+	res, err := s.store.Send(ctx, req.GetFromUid(), req.GetClientMsgId(), req.GetCid(), req.GetPeerUid(), req.GetPayload(), req.GetQuoteMsgId())
 	if err != nil {
 		return nil, mapErr(err)
 	}
 
 	out := &imv1.SendMessageResponse{Ack: res.ack, PeerUid: res.peerUID, PeerPush: res.peerPush}
-	if res.peerPush != nil && s.router != nil {
-		rt, err := s.router.Lookup(ctx, res.peerUID)
-		if err != nil {
-			log.Printf("route lookup %s: %v", res.peerUID, err)
-		} else if rt != nil {
-			out.PeerRoute = &imv1.RecipientHint{Uid: res.peerUID, GatewayId: rt.GatewayID, ConnId: rt.ConnID}
-			push := &imv1.GatewayPush{Uid: res.peerUID, ConnId: rt.ConnID, Push: res.peerPush}
-			if err := s.router.Publish(ctx, rt.GatewayID, push); err != nil {
-				log.Printf("publish push %s: %v", res.peerUID, err)
+	for _, d := range res.deliveries {
+		rt := s.publish(ctx, d.uid, &imv1.GatewayPush{Uid: d.uid, Push: d.push})
+		if rt != nil {
+			out.FanoutRoutes = append(out.FanoutRoutes, rt)
+			if out.PeerRoute == nil {
+				out.PeerRoute = rt
 			}
 		}
 	}
 	return out, nil
+}
+
+func (s *server) publish(ctx context.Context, uid string, gp *imv1.GatewayPush) *imv1.RecipientHint {
+	if s.router == nil || gp == nil {
+		return nil
+	}
+	rt, err := s.router.Lookup(ctx, uid)
+	if err != nil {
+		log.Printf("route lookup %s: %v", uid, err)
+		return nil
+	}
+	if rt == nil {
+		return nil
+	}
+	gp.Uid = uid
+	gp.ConnId = rt.ConnID
+	if err := s.router.Publish(ctx, rt.GatewayID, gp); err != nil {
+		log.Printf("publish %s: %v", uid, err)
+		return nil
+	}
+	return &imv1.RecipientHint{Uid: uid, GatewayId: rt.GatewayID, ConnId: rt.ConnID}
 }
 
 func (s *server) Sync(ctx context.Context, req *imv1.SyncInboxRequest) (*imv1.SyncInboxResponse, error) {
@@ -144,12 +164,110 @@ func (s *server) LookupUser(_ context.Context, req *imv1.LookupUserRequest) (*im
 	return &imv1.LookupUserResponse{Uid: q, Found: true}, nil
 }
 
+func (s *server) CreateGroup(ctx context.Context, req *imv1.CreateGroupRequest) (*imv1.CreateGroupResponse, error) {
+	g, err := s.store.CreateGroup(ctx, req.GetOwnerUid(), req.GetName(), req.GetMemberUids())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return &imv1.CreateGroupResponse{Cid: g.CID, Name: g.Name}, nil
+}
+
+func (s *server) InviteGroup(ctx context.Context, req *imv1.InviteGroupRequest) (*imv1.GroupResponse, error) {
+	g, err := s.store.InviteGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUids())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return protoGroup(g), nil
+}
+
+func (s *server) KickGroup(ctx context.Context, req *imv1.KickGroupRequest) (*imv1.GroupResponse, error) {
+	g, err := s.store.KickGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return protoGroup(g), nil
+}
+
+func (s *server) GetGroup(ctx context.Context, req *imv1.GetGroupRequest) (*imv1.GroupResponse, error) {
+	g, err := s.store.GetGroup(ctx, req.GetUid(), req.GetCid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return protoGroup(g), nil
+}
+
+func (s *server) Recall(ctx context.Context, req *imv1.RecallMessageRequest) (*imv1.RecallNotify, error) {
+	n, members, err := s.store.Recall(ctx, req.GetUid(), req.GetCid(), req.GetMsgId())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	for _, uid := range members {
+		if uid == req.GetUid() {
+			continue
+		}
+		s.publish(ctx, uid, &imv1.GatewayPush{Uid: uid, Recalled: n})
+	}
+	return n, nil
+}
+
+func (s *server) MarkRead(ctx context.Context, req *imv1.MarkReadRequest) (*imv1.ReadReceipt, error) {
+	if err := s.store.MarkRead(ctx, req.GetUid(), req.GetCid(), req.GetConvSeq()); err != nil {
+		return nil, mapErr(err)
+	}
+	rc := &imv1.ReadReceipt{Cid: req.GetCid(), FromUid: req.GetUid(), ConvSeq: req.GetConvSeq()}
+	if !conv.IsGroup(req.GetCid()) {
+		if peer, err := conv.PeerUID(req.GetCid(), req.GetUid()); err == nil {
+			s.publish(ctx, peer, &imv1.GatewayPush{Uid: peer, Read: rc})
+		}
+	}
+	return rc, nil
+}
+
+func (s *server) FanoutTyping(ctx context.Context, req *imv1.Typing) (*imv1.Typing, error) {
+	cid := req.GetCid()
+	from := req.GetFromUid()
+	if cid == "" || from == "" {
+		return req, nil
+	}
+	if conv.IsGroup(cid) {
+		members, err := s.store.GroupMembers(ctx, cid)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		ok := false
+		for _, uid := range members {
+			if uid == from {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return nil, mapErr(errNotMember)
+		}
+		for _, uid := range members {
+			if uid == from {
+				continue
+			}
+			s.publish(ctx, uid, &imv1.GatewayPush{Uid: uid, Typing: req})
+		}
+	} else if peer, err := conv.PeerUID(cid, from); err == nil {
+		s.publish(ctx, peer, &imv1.GatewayPush{Uid: peer, Typing: req})
+	}
+	return req, nil
+}
+
 func mapErr(err error) error {
 	if errors.Is(err, errInvalid) {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	if errors.Is(err, errNotFriends) {
 		return status.Error(codes.PermissionDenied, err.Error())
+	}
+	if errors.Is(err, errNotMember) || errors.Is(err, errNotOwner) {
+		return status.Error(codes.PermissionDenied, err.Error())
+	}
+	if errors.Is(err, errTooLarge) {
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	return status.Error(codes.Internal, err.Error())
 }

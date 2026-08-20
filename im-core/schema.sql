@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS messages (
   payload_type TINYINT NOT NULL,
   payload_text TEXT NOT NULL,
   created_at_ms BIGINT NOT NULL,
+  recalled TINYINT NOT NULL DEFAULT 0,
+  quote_msg_id VARCHAR(36) NOT NULL DEFAULT '',
   PRIMARY KEY (msg_id),
   UNIQUE KEY uk_sender_client (from_uid, client_msg_id),
   UNIQUE KEY uk_cid_seq (cid, conv_seq),
@@ -34,6 +36,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   last_text VARCHAR(512) NOT NULL,
   unread INT UNSIGNED NOT NULL DEFAULT 0,
   updated_at_ms BIGINT NOT NULL,
+  title VARCHAR(128) NOT NULL DEFAULT '',
+  kind VARCHAR(16) NOT NULL DEFAULT 'p2p',
   PRIMARY KEY (uid, cid),
   KEY idx_uid_updated (uid, updated_at_ms)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -44,4 +48,28 @@ CREATE TABLE IF NOT EXISTS friends (
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (uid, peer_uid),
   KEY idx_peer (peer_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS groups (
+  cid VARCHAR(128) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  owner_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS group_members (
+  cid VARCHAR(128) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  role VARCHAR(16) NOT NULL,
+  joined_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (cid, uid),
+  KEY idx_uid (uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS read_cursors (
+  uid VARCHAR(64) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  conv_seq BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (uid, cid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

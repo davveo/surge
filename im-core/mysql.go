@@ -32,10 +32,21 @@ func migrate(db *sql.DB, schema string) error {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
+	alters := []string{
+		`ALTER TABLE conversations ADD COLUMN title VARCHAR(128) NOT NULL DEFAULT ''`,
+		`ALTER TABLE conversations ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'p2p'`,
+		`ALTER TABLE messages ADD COLUMN recalled TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE messages ADD COLUMN quote_msg_id VARCHAR(36) NOT NULL DEFAULT ''`,
+	}
+	for _, a := range alters {
+		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") {
+			return fmt.Errorf("migrate alter: %w", err)
+		}
+	}
 	return nil
 }
 
-func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload) (*sendResult, error) {
+func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload, quoteMsgID string) (*sendResult, error) {
 	if err := validateSend(fromUID, clientMsgID, payload); err != nil {
 		return nil, err
 	}
@@ -50,19 +61,15 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		return dup, nil
 	}
 
-	convSeq, err := s.seq.Next(ctx, convSeqKey(canonical))
-	if err != nil {
-		return nil, err
-	}
-	senderSync, err := s.seq.Next(ctx, syncSeqKey(fromUID))
-	if err != nil {
-		return nil, err
-	}
-	peerSync, err := s.seq.Next(ctx, syncSeqKey(peer))
+	title, kind, members, err := s.targets(ctx, fromUID, canonical, peer)
 	if err != nil {
 		return nil, err
 	}
 
+	convSeq, err := s.seq.Next(ctx, convSeqKey(canonical))
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UnixMilli()
 	msgID := uuid.NewString()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -72,9 +79,9 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO messages (msg_id, client_msg_id, cid, conv_seq, from_uid, payload_type, payload_text, created_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		msgID, clientMsgID, canonical, convSeq, fromUID, int32(payload.Type), payload.Text, now)
+		INSERT INTO messages (msg_id, client_msg_id, cid, conv_seq, from_uid, payload_type, payload_text, created_at_ms, recalled, quote_msg_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+		msgID, clientMsgID, canonical, convSeq, fromUID, int32(payload.Type), payload.Text, now, quoteMsgID)
 	if err != nil {
 		if isDupErr(err) {
 			return s.loadDup(ctx, fromUID, clientMsgID, canonical)
@@ -82,18 +89,35 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		return nil, fmt.Errorf("insert message: %w", err)
 	}
 
-	if err := insertInbox(ctx, tx, fromUID, senderSync, canonical, msgID, convSeq, fromUID, now); err != nil {
-		return nil, err
-	}
-	if err := insertInbox(ctx, tx, peer, peerSync, canonical, msgID, convSeq, fromUID, now); err != nil {
-		return nil, err
-	}
 	preview := clipText(payload.Text, 128)
-	if err := upsertConv(ctx, tx, fromUID, canonical, peer, msgID, convSeq, preview, now, false); err != nil {
-		return nil, err
-	}
-	if err := upsertConv(ctx, tx, peer, canonical, fromUID, msgID, convSeq, preview, now, true); err != nil {
-		return nil, err
+	var deliveries []delivery
+	var senderSync uint64
+	for _, uid := range members {
+		syncSeq, err := s.seq.Next(ctx, syncSeqKey(uid))
+		if err != nil {
+			return nil, err
+		}
+		if uid == fromUID {
+			senderSync = syncSeq
+		}
+		if err := insertInbox(ctx, tx, uid, syncSeq, canonical, msgID, convSeq, fromUID, now); err != nil {
+			return nil, err
+		}
+		peerLabel := peer
+		if kind == conv.KindGroup {
+			peerLabel = ""
+		} else if uid != fromUID {
+			peerLabel = fromUID
+		}
+		if err := upsertConv(ctx, tx, uid, canonical, peerLabel, title, kind, msgID, convSeq, preview, now, uid != fromUID); err != nil {
+			return nil, err
+		}
+		if uid != fromUID {
+			deliveries = append(deliveries, delivery{uid: uid, push: &imv1.Push{
+				Cid: canonical, MsgId: msgID, ConvSeq: convSeq, SyncSeq: syncSeq,
+				FromUid: fromUID, Payload: payload, CreatedAtMs: now,
+			}})
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		if isDupErr(err) {
@@ -101,27 +125,39 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		}
 		return nil, err
 	}
-
-	return &sendResult{
+	res := &sendResult{
 		ack: &imv1.Ack{
-			ClientMsgId: clientMsgID,
-			MsgId:       msgID,
-			Cid:         canonical,
-			ConvSeq:     convSeq,
-			SyncSeq:     senderSync,
-			CreatedAtMs: now,
+			ClientMsgId: clientMsgID, MsgId: msgID, Cid: canonical,
+			ConvSeq: convSeq, SyncSeq: senderSync, CreatedAtMs: now,
 		},
-		peerUID: peer,
-		peerPush: &imv1.Push{
-			Cid:         canonical,
-			MsgId:       msgID,
-			ConvSeq:     convSeq,
-			SyncSeq:     peerSync,
-			FromUid:     fromUID,
-			Payload:     payload,
-			CreatedAtMs: now,
-		},
-	}, nil
+		peerUID:    peer,
+		deliveries: deliveries,
+	}
+	if len(deliveries) > 0 {
+		res.peerPush = deliveries[0].push
+	}
+	return res, nil
+}
+
+func (s *mysqlStore) targets(ctx context.Context, fromUID, cid, peer string) (title, kind string, members []string, err error) {
+	if conv.IsGroup(cid) {
+		g, err := s.loadGroup(ctx, cid)
+		if err != nil {
+			return "", "", nil, err
+		}
+		ok := false
+		for _, m := range g.Members {
+			members = append(members, m.UID)
+			if m.UID == fromUID {
+				ok = true
+			}
+		}
+		if !ok {
+			return "", "", nil, errNotMember
+		}
+		return g.Name, conv.KindGroup, members, nil
+	}
+	return "", conv.KindP2P, []string{fromUID, peer}, nil
 }
 
 func insertInbox(ctx context.Context, tx *sql.Tx, uid string, syncSeq uint64, cid, msgID string, convSeq uint64, fromUID string, now int64) error {
@@ -134,21 +170,23 @@ func insertInbox(ctx context.Context, tx *sql.Tx, uid string, syncSeq uint64, ci
 	return nil
 }
 
-func upsertConv(ctx context.Context, tx *sql.Tx, uid, cid, peer, msgID string, convSeq uint64, text string, now int64, incoming bool) error {
+func upsertConv(ctx context.Context, tx *sql.Tx, uid, cid, peer, title, kind, msgID string, convSeq uint64, text string, now int64, incoming bool) error {
 	unreadInc := 0
 	if incoming {
 		unreadInc = 1
 	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO conversations (uid, cid, peer_uid, last_msg_id, last_conv_seq, last_text, unread, updated_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO conversations (uid, cid, peer_uid, last_msg_id, last_conv_seq, last_text, unread, updated_at_ms, title, kind)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			last_msg_id = VALUES(last_msg_id),
 			last_conv_seq = VALUES(last_conv_seq),
 			last_text = VALUES(last_text),
 			unread = unread + ?,
-			updated_at_ms = VALUES(updated_at_ms)`,
-		uid, cid, peer, msgID, convSeq, text, unreadInc, now, unreadInc)
+			updated_at_ms = VALUES(updated_at_ms),
+			title = IF(VALUES(title)='', title, VALUES(title)),
+			kind = IF(VALUES(kind)='', kind, VALUES(kind))`,
+		uid, cid, peer, msgID, convSeq, text, unreadInc, now, title, kind, unreadInc)
 	if err != nil {
 		return fmt.Errorf("upsert conversation: %w", err)
 	}
@@ -242,7 +280,7 @@ func (s *mysqlStore) Watermark(ctx context.Context, uid string) (uint64, error) 
 
 func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT cid, peer_uid, last_msg_id, last_conv_seq, unread, updated_at_ms, last_text
+		SELECT cid, peer_uid, last_msg_id, last_conv_seq, unread, updated_at_ms, last_text, title, kind
 		FROM conversations WHERE uid = ?
 		ORDER BY updated_at_ms DESC`, uid)
 	if err != nil {
@@ -252,7 +290,7 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 	var out []*imv1.Conversation
 	for rows.Next() {
 		c := &imv1.Conversation{}
-		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText); err != nil {
+		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -261,14 +299,22 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 }
 
 func (s *mysqlStore) Timeline(ctx context.Context, uid, cid string, afterSeq uint64, limit int) (string, []*imv1.TimelineMessage, error) {
-	if _, err := conv.PeerUID(cid, uid); err != nil {
+	if conv.IsGroup(cid) {
+		ok, err := s.isMember(ctx, cid, uid)
+		if err != nil {
+			return "", nil, err
+		}
+		if !ok {
+			return "", nil, errNotMember
+		}
+	} else if _, err := conv.PeerUID(cid, uid); err != nil {
 		return "", nil, fmt.Errorf("%w: %v", errInvalid, err)
 	}
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT msg_id, conv_seq, from_uid, payload_type, payload_text, created_at_ms
+		SELECT msg_id, conv_seq, from_uid, payload_type, payload_text, created_at_ms, recalled, quote_msg_id
 		FROM messages WHERE cid = ? AND conv_seq > ?
 		ORDER BY conv_seq ASC
 		LIMIT ?`, cid, afterSeq, limit)
@@ -280,10 +326,17 @@ func (s *mysqlStore) Timeline(ctx context.Context, uid, cid string, afterSeq uin
 	for rows.Next() {
 		m := &imv1.TimelineMessage{Payload: &imv1.Payload{}}
 		var ptype int32
-		if err := rows.Scan(&m.MsgId, &m.ConvSeq, &m.FromUid, &ptype, &m.Payload.Text, &m.CreatedAtMs); err != nil {
+		var recalled int
+		if err := rows.Scan(&m.MsgId, &m.ConvSeq, &m.FromUid, &ptype, &m.Payload.Text, &m.CreatedAtMs, &recalled, &m.QuoteMsgId); err != nil {
 			return "", nil, err
 		}
-		m.Payload.Type = imv1.Payload_Type(ptype)
+		m.Recalled = recalled != 0
+		if m.Recalled {
+			m.Payload.Type = imv1.Payload_RECALL
+			m.Payload.Text = ""
+		} else {
+			m.Payload.Type = imv1.Payload_Type(ptype)
+		}
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {

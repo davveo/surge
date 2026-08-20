@@ -36,6 +36,77 @@ func TestSendRequiresFriend(t *testing.T) {
 	}
 }
 
+func TestGroupSendAndRecall(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := srv.AddFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.AddFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u3"}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := srv.CreateGroup(ctx, &imv1.CreateGroupRequest{OwnerUid: "u1", Name: "t", MemberUids: []string{"u2", "u3"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "g1", Cid: g.Cid,
+		Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "hello group"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetAck().GetCid() != g.Cid {
+		t.Fatalf("cid %s", resp.GetAck().GetCid())
+	}
+	sync, err := st.Sync(ctx, "u3", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sync.Events) == 0 {
+		t.Fatal("u3 got no inbox")
+	}
+	_, err = srv.Recall(ctx, &imv1.RecallMessageRequest{Uid: "u1", Cid: g.Cid, MsgId: resp.GetAck().GetMsgId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, msgs, err := st.Timeline(ctx, "u2", g.Cid, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || !msgs[0].Recalled {
+		t.Fatalf("want recalled, got %+v", msgs)
+	}
+}
+
+func TestRecallWindow(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := st.Send(ctx, "u1", "c1", "", "u2", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "old"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.mu.Lock()
+	st.byID[res.ack.MsgId].createdAt = 1
+	st.mu.Unlock()
+	_, _, err = st.Recall(ctx, "u1", res.ack.Cid, res.ack.MsgId)
+	if err == nil {
+		t.Fatal("expected recall window error")
+	}
+}
+
+func TestCreateGroupRequiresFriend(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	_, err := st.CreateGroup(context.Background(), "u1", "g", []string{"u2"})
+	if err == nil {
+		t.Fatal("expected not friends")
+	}
+}
+
 func TestAddFriendIdempotent(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
 	ctx := context.Background()

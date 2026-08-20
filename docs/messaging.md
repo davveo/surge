@@ -57,16 +57,19 @@ Client  --WSS-->  Gateway  --gRPC-->  im-core
 2. 直传 OSS，消息里只带 object key、尺寸、缩略图信息。
 3. 展示走 CDN。网关只传信令，不被文件字节打满。
 
-## 建议冻结的协议帧（P0）
+## 建议冻结的协议帧
 
-| 帧 | 方向 | 作用 |
-|---|---|---|
-| `auth` | C→S | JWT 绑定连接与 `device_id` |
-| `heartbeat` | 双向 | 30–45s，空闲 90s 踢连接 |
-| `send` | C→S | `client_msg_id` + cid + payload |
-| `ack` | S→C | 映射 `client_msg_id` → `msg_id` + seq |
-| `push` | S→C | inbox 指针或轻量消息 |
-| `sync` | C→S | 携带 `last_sync_seq` 拉增量 |
-| `sync_resp` | S→C | 增量事件列表 |
+| 帧 | 阶段 | 方向 | 作用 |
+|---|---|---|---|
+| `auth` | P0 | C→S | JWT 绑定连接与 `device_id` |
+| `heartbeat` | P0 | 双向 | 30–45s，空闲 90s 踢连接 |
+| `send` | P0 | C→S | `client_msg_id` + cid / peer_uid + payload；群聊必带 cid |
+| `ack` | P0 | S→C | 映射 `client_msg_id` → `msg_id` + seq |
+| `push` | P0 | S→C | inbox 指针或轻量消息 |
+| `sync` | P0 | C→S | 携带 `last_sync_seq` 拉增量 |
+| `sync_resp` | P0 | S→C | 增量事件列表 |
+| `recall` / `recalled` | P1 | 双向 | 2 分钟内撤回，广播会话成员 |
+| `typing` | P1 | 双向 | 正在输入，网关节流转发 |
+| `read` | P1 | 双向 | 单聊已读回执（`conv_seq`） |
 
-编码：Protobuf over WebSocket 二进制帧。HTTP 仅用于 CRUD 与上传凭证。
+编码：Protobuf over WebSocket 二进制帧；本地调试可用 protojson 文本帧。HTTP 用于 CRUD（好友、建群、拉人踢人）与后续上传凭证。

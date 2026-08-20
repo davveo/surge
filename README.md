@@ -2,9 +2,9 @@
 
 对标微信网页版的 Web 端即时通讯：单聊 + 群聊。目标是 **100 万同时在线** 长连接。
 
-当前仓库 **P0**：协议、网关、单聊时间线、通讯录（直接加好友后才能发消息）、Web 三栏客户端。
+当前仓库 **P1 核心**：P0 单聊之上，已支持群聊（建群/拉人/踢人，上限 200）、2 分钟撤回、单聊已读、正在输入、草稿与浏览器通知。媒体直传与扫码登录尚未做。
 
-打开 http://127.0.0.1:8080 ，两个窗口分别登录 `u1` / `u2`，通讯录里互相添加后再发消息。
+打开 http://127.0.0.1:8080 ，两个窗口分别登录 `u1` / `u2`，通讯录里互相添加后再发消息；也可建群拉好友进群。
 
 ## 文档
 
@@ -81,6 +81,10 @@ curl -s -X POST localhost:8080/v1/friends -H "Authorization: Bearer $TOKEN" -d '
 ```json
 {"auth":{"accessToken":"<JWT>","deviceId":"web"}}
 {"send":{"clientMsgId":"m1","peerUid":"u2","payload":{"type":"TEXT","text":"hi"}}}
+{"send":{"clientMsgId":"m2","cid":"grp:...","payload":{"type":"TEXT","text":"hello group"}}}
+{"recall":{"cid":"p2p:u1:u2","msgId":"<uuid>"}}
+{"typing":{"cid":"p2p:u1:u2"}}
+{"read":{"cid":"p2p:u1:u2","convSeq":"1"}}
 {"sync":{"lastSyncSeq":"0","limit":100}}
 {"heartbeat":{}}
 ```
@@ -88,6 +92,15 @@ curl -s -X POST localhost:8080/v1/friends -H "Authorization: Bearer $TOKEN" -d '
 连 `ws://127.0.0.1:8080/v1/ws`。对端 `u2` 同样登录后会收到 `push`；刷新后带 `last_sync_seq` 做 `sync`。
 
 会话列表：`GET /v1/conversations`（`Authorization: Bearer <token>`）。
+
+建群（成员须已是好友）：
+
+```bash
+curl -s -X POST localhost:8080/v1/groups -H "Authorization: Bearer $TOKEN" \
+  -d '{"name":"周末局","members":["u2","u3"]}'
+```
+
+拉人 / 踢人：`POST /v1/group-invite`、`POST /v1/group-kick`；群详情：`GET /v1/group?cid=`。
 
 两端连上后可跑通发送与推送：
 

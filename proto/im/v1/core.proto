@@ -16,6 +16,13 @@ service IMCore {
   rpc AddFriend(AddFriendRequest) returns (AddFriendResponse);
   rpc ListFriends(ListFriendsRequest) returns (ListFriendsResponse);
   rpc LookupUser(LookupUserRequest) returns (LookupUserResponse);
+  rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
+  rpc InviteGroup(InviteGroupRequest) returns (GroupResponse);
+  rpc KickGroup(KickGroupRequest) returns (GroupResponse);
+  rpc GetGroup(GetGroupRequest) returns (GroupResponse);
+  rpc Recall(RecallMessageRequest) returns (RecallNotify);
+  rpc MarkRead(MarkReadRequest) returns (ReadReceipt);
+  rpc FanoutTyping(Typing) returns (Typing);
 }
 
 message WatermarkRequest {
@@ -32,6 +39,7 @@ message SendMessageRequest {
   string cid = 3;
   string peer_uid = 4;
   Payload payload = 5;
+  string quote_msg_id = 6;
 }
 
 message RecipientHint {
@@ -45,6 +53,7 @@ message SendMessageResponse {
   string peer_uid = 2;
   Push peer_push = 3;
   RecipientHint peer_route = 4;
+  repeated RecipientHint fanout_routes = 5;
 }
 
 message SyncInboxRequest {
@@ -69,6 +78,8 @@ message Conversation {
   uint32 unread = 5;
   int64 updated_at_ms = 6;
   string last_text = 7;
+  string title = 8;
+  string kind = 9;
 }
 
 message ListConversationsResponse {
@@ -88,6 +99,8 @@ message TimelineMessage {
   string from_uid = 3;
   Payload payload = 4;
   int64 created_at_ms = 5;
+  bool recalled = 6;
+  string quote_msg_id = 7;
 }
 
 message GetTimelineResponse {
@@ -100,6 +113,9 @@ message GatewayPush {
   string uid = 1;
   string conn_id = 2;
   Push push = 3;
+  Typing typing = 4;
+  RecallNotify recalled = 5;
+  ReadReceipt read = 6;
 }
 
 // P0: direct add, both sides become friends immediately. No request/accept.
@@ -132,4 +148,56 @@ message LookupUserRequest {
 message LookupUserResponse {
   string uid = 1;
   bool found = 2;
+}
+
+message GroupMember {
+  string uid = 1;
+  string role = 2;
+}
+
+message CreateGroupRequest {
+  string owner_uid = 1;
+  string name = 2;
+  repeated string member_uids = 3;
+}
+
+message CreateGroupResponse {
+  string cid = 1;
+  string name = 2;
+}
+
+message InviteGroupRequest {
+  string operator_uid = 1;
+  string cid = 2;
+  repeated string member_uids = 3;
+}
+
+message KickGroupRequest {
+  string operator_uid = 1;
+  string cid = 2;
+  string member_uid = 3;
+}
+
+message GetGroupRequest {
+  string uid = 1;
+  string cid = 2;
+}
+
+message GroupResponse {
+  string cid = 1;
+  string name = 2;
+  string owner_uid = 3;
+  repeated GroupMember members = 4;
+}
+
+message RecallMessageRequest {
+  string uid = 1;
+  string cid = 2;
+  string msg_id = 3;
+}
+
+message MarkReadRequest {
+  string uid = 1;
+  string cid = 2;
+  uint64 conv_seq = 3;
 }

@@ -156,3 +156,52 @@ html, body { height: 100%; margin: 0; color: var(--text); background: #ddd; }
   cursor: pointer;
 }
 .composer button:disabled { background: #b5e6c8; cursor: default; }
+
+.add-form.col { flex-wrap: wrap; }
+.add-form.col input { min-width: 120px; }
+.group-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fafafa;
+}
+.group-bar input { height: 28px; border: 1px solid var(--line); padding: 0 8px; }
+.group-bar button {
+  height: 28px;
+  border: 0;
+  background: var(--green);
+  color: #fff;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-size: 12px;
+  background: #eee;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: default;
+}
+.chip.kick { cursor: pointer; }
+.chip.kick:hover { background: #ffd4d4; }
+.bubble.recalled { color: var(--muted); font-style: italic; background: transparent !important; }
+.recall-btn {
+  display: none;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.bubble.me:hover .recall-btn.ok { display: inline; }
+.typing {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 16px 8px;
+}
+.read-mark { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }

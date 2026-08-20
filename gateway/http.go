@@ -35,6 +35,10 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/timeline", a.timeline)
 	mux.HandleFunc("/v1/friends", a.friends)
 	mux.HandleFunc("/v1/users", a.lookupUser)
+	mux.HandleFunc("/v1/groups", a.groups)
+	mux.HandleFunc("/v1/group-invite", a.groupInvite)
+	mux.HandleFunc("/v1/group-kick", a.groupKick)
+	mux.HandleFunc("/v1/group", a.groupGet)
 	mux.HandleFunc("/v1/ws", a.ws.handleWS)
 	if dir := strings.TrimSpace(a.webDir); dir != "" {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
@@ -144,6 +148,105 @@ func (a *httpAPI) lookupUser(w http.ResponseWriter, r *http.Request) {
 		q = strings.TrimSpace(r.URL.Query().Get("q"))
 	}
 	resp, err := a.core.LookupUser(r.Context(), &imv1.LookupUserRequest{Query: q})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (a *httpAPI) groups(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Name    string   `json:"name"`
+		Members []string `json:"members"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.CreateGroup(r.Context(), &imv1.CreateGroupRequest{
+		OwnerUid: uid, Name: body.Name, MemberUids: body.Members,
+	})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (a *httpAPI) groupInvite(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CID     string   `json:"cid"`
+		Members []string `json:"members"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.CID) == "" {
+		http.Error(w, `{"error":"cid required"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.InviteGroup(r.Context(), &imv1.InviteGroupRequest{
+		OperatorUid: uid, Cid: body.CID, MemberUids: body.Members,
+	})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (a *httpAPI) groupKick(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CID string `json:"cid"`
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CID == "" || body.UID == "" {
+		http.Error(w, `{"error":"cid and uid required"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.KickGroup(r.Context(), &imv1.KickGroupRequest{
+		OperatorUid: uid, Cid: body.CID, MemberUid: body.UID,
+	})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (a *httpAPI) groupGet(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	cid := strings.TrimSpace(r.URL.Query().Get("cid"))
+	if cid == "" {
+		http.Error(w, "cid required", http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.GetGroup(r.Context(), &imv1.GetGroupRequest{Uid: uid, Cid: cid})
 	if err != nil {
 		writeRPCError(w, err)
 		return

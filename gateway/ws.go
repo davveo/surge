@@ -88,6 +88,12 @@ func (s *wsServer) dispatch(c *Conn, env *imv1.Envelope) {
 		s.onSend(c, env.RequestId, body.Send)
 	case *imv1.Envelope_Sync:
 		s.onSync(c, env.RequestId, body.Sync)
+	case *imv1.Envelope_Recall:
+		s.onRecall(c, env.RequestId, body.Recall)
+	case *imv1.Envelope_Typing:
+		s.onTyping(c, body.Typing)
+	case *imv1.Envelope_Read:
+		s.onRead(c, body.Read)
 	default:
 		c.enqueue(errEnv(env.RequestId, 400, "unsupported frame", ""))
 	}
@@ -145,6 +151,7 @@ func (s *wsServer) onSend(c *Conn, reqID uint64, req *imv1.SendRequest) {
 		Cid:         req.GetCid(),
 		PeerUid:     req.GetPeerUid(),
 		Payload:     req.GetPayload(),
+		QuoteMsgId:  req.GetQuoteMsgId(),
 	})
 	if err != nil {
 		code := 500
@@ -185,6 +192,40 @@ func (s *wsServer) onSync(c *Conn, reqID uint64, req *imv1.SyncRequest) {
 		RequestId: reqID,
 		Body:      &imv1.Envelope_SyncResp{SyncResp: resp.GetSync()},
 	})
+}
+
+func (s *wsServer) onRecall(c *Conn, reqID uint64, req *imv1.RecallRequest) {
+	if c.uid == "" {
+		c.enqueue(errEnv(reqID, 401, "auth required", ""))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	n, err := s.core.Recall(ctx, &imv1.RecallMessageRequest{Uid: c.uid, Cid: req.GetCid(), MsgId: req.GetMsgId()})
+	if err != nil {
+		c.enqueue(errEnv(reqID, 400, err.Error(), ""))
+		return
+	}
+	c.enqueue(&imv1.Envelope{RequestId: reqID, Body: &imv1.Envelope_Recalled{Recalled: n}})
+}
+
+func (s *wsServer) onTyping(c *Conn, req *imv1.Typing) {
+	if c.uid == "" || req == nil {
+		return
+	}
+	req.FromUid = c.uid
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = s.core.FanoutTyping(ctx, req)
+}
+
+func (s *wsServer) onRead(c *Conn, req *imv1.ReadReceipt) {
+	if c.uid == "" || req == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = s.core.MarkRead(ctx, &imv1.MarkReadRequest{Uid: c.uid, Cid: req.GetCid(), ConvSeq: req.GetConvSeq()})
 }
 
 func errEnv(reqID uint64, code int32, msg, clientMsgID string) *imv1.Envelope {

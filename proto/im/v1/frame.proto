@@ -17,6 +17,10 @@ message Envelope {
     Push push = 22;
     SyncRequest sync = 30;
     SyncResponse sync_resp = 31;
+    RecallRequest recall = 40;
+    RecallNotify recalled = 41;
+    Typing typing = 42;
+    ReadReceipt read = 43;
     Error error = 99;
   }
 }
@@ -42,6 +46,7 @@ message Payload {
   enum Type {
     TYPE_UNSPECIFIED = 0;
     TEXT = 1;
+    RECALL = 2;
   }
   Type type = 1;
   string text = 2;
@@ -53,6 +58,7 @@ message SendRequest {
   string cid = 2;
   string peer_uid = 3;
   Payload payload = 4;
+  string quote_msg_id = 5;
 }
 
 message Ack {
@@ -101,4 +107,26 @@ message Error {
   int32 code = 1;
   string message = 2;
   string client_msg_id = 3;
+}
+
+message RecallRequest {
+  string cid = 1;
+  string msg_id = 2;
+}
+
+message RecallNotify {
+  string cid = 1;
+  string msg_id = 2;
+  string from_uid = 3;
+}
+
+message Typing {
+  string cid = 1;
+  string from_uid = 2;
+}
+
+message ReadReceipt {
+  string cid = 1;
+  string from_uid = 2;
+  uint64 conv_seq = 3;
 }

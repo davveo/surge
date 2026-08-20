@@ -44,3 +44,13 @@ func TestPeerUIDRejectsStranger(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestResolveGroupCID(t *testing.T) {
+	cid, peer, err := ResolveCID("u1", "grp:abc", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cid != "grp:abc" || peer != "" || Kind(cid) != KindGroup {
+		t.Fatalf("cid=%s peer=%s", cid, peer)
+	}
+}

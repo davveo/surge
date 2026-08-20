@@ -27,6 +27,13 @@ const (
 	IMCore_AddFriend_FullMethodName         = "/surge.im.v1.IMCore/AddFriend"
 	IMCore_ListFriends_FullMethodName       = "/surge.im.v1.IMCore/ListFriends"
 	IMCore_LookupUser_FullMethodName        = "/surge.im.v1.IMCore/LookupUser"
+	IMCore_CreateGroup_FullMethodName       = "/surge.im.v1.IMCore/CreateGroup"
+	IMCore_InviteGroup_FullMethodName       = "/surge.im.v1.IMCore/InviteGroup"
+	IMCore_KickGroup_FullMethodName         = "/surge.im.v1.IMCore/KickGroup"
+	IMCore_GetGroup_FullMethodName          = "/surge.im.v1.IMCore/GetGroup"
+	IMCore_Recall_FullMethodName            = "/surge.im.v1.IMCore/Recall"
+	IMCore_MarkRead_FullMethodName          = "/surge.im.v1.IMCore/MarkRead"
+	IMCore_FanoutTyping_FullMethodName      = "/surge.im.v1.IMCore/FanoutTyping"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -41,6 +48,13 @@ type IMCoreClient interface {
 	AddFriend(ctx context.Context, in *AddFriendRequest, opts ...grpc.CallOption) (*AddFriendResponse, error)
 	ListFriends(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*ListFriendsResponse, error)
 	LookupUser(ctx context.Context, in *LookupUserRequest, opts ...grpc.CallOption) (*LookupUserResponse, error)
+	CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error)
+	InviteGroup(ctx context.Context, in *InviteGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	KickGroup(ctx context.Context, in *KickGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	GetGroup(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	Recall(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error)
+	MarkRead(ctx context.Context, in *MarkReadRequest, opts ...grpc.CallOption) (*ReadReceipt, error)
+	FanoutTyping(ctx context.Context, in *Typing, opts ...grpc.CallOption) (*Typing, error)
 }
 
 type iMCoreClient struct {
@@ -123,6 +137,69 @@ func (c *iMCoreClient) LookupUser(ctx context.Context, in *LookupUserRequest, op
 	return out, nil
 }
 
+func (c *iMCoreClient) CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error) {
+	out := new(CreateGroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_CreateGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) InviteGroup(ctx context.Context, in *InviteGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_InviteGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) KickGroup(ctx context.Context, in *KickGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_KickGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) GetGroup(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_GetGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) Recall(ctx context.Context, in *RecallMessageRequest, opts ...grpc.CallOption) (*RecallNotify, error) {
+	out := new(RecallNotify)
+	err := c.cc.Invoke(ctx, IMCore_Recall_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) MarkRead(ctx context.Context, in *MarkReadRequest, opts ...grpc.CallOption) (*ReadReceipt, error) {
+	out := new(ReadReceipt)
+	err := c.cc.Invoke(ctx, IMCore_MarkRead_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) FanoutTyping(ctx context.Context, in *Typing, opts ...grpc.CallOption) (*Typing, error) {
+	out := new(Typing)
+	err := c.cc.Invoke(ctx, IMCore_FanoutTyping_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -135,6 +212,13 @@ type IMCoreServer interface {
 	AddFriend(context.Context, *AddFriendRequest) (*AddFriendResponse, error)
 	ListFriends(context.Context, *ListFriendsRequest) (*ListFriendsResponse, error)
 	LookupUser(context.Context, *LookupUserRequest) (*LookupUserResponse, error)
+	CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error)
+	InviteGroup(context.Context, *InviteGroupRequest) (*GroupResponse, error)
+	KickGroup(context.Context, *KickGroupRequest) (*GroupResponse, error)
+	GetGroup(context.Context, *GetGroupRequest) (*GroupResponse, error)
+	Recall(context.Context, *RecallMessageRequest) (*RecallNotify, error)
+	MarkRead(context.Context, *MarkReadRequest) (*ReadReceipt, error)
+	FanoutTyping(context.Context, *Typing) (*Typing, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -165,6 +249,27 @@ func (UnimplementedIMCoreServer) ListFriends(context.Context, *ListFriendsReques
 }
 func (UnimplementedIMCoreServer) LookupUser(context.Context, *LookupUserRequest) (*LookupUserResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LookupUser not implemented")
+}
+func (UnimplementedIMCoreServer) CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateGroup not implemented")
+}
+func (UnimplementedIMCoreServer) InviteGroup(context.Context, *InviteGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InviteGroup not implemented")
+}
+func (UnimplementedIMCoreServer) KickGroup(context.Context, *KickGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method KickGroup not implemented")
+}
+func (UnimplementedIMCoreServer) GetGroup(context.Context, *GetGroupRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetGroup not implemented")
+}
+func (UnimplementedIMCoreServer) Recall(context.Context, *RecallMessageRequest) (*RecallNotify, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Recall not implemented")
+}
+func (UnimplementedIMCoreServer) MarkRead(context.Context, *MarkReadRequest) (*ReadReceipt, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkRead not implemented")
+}
+func (UnimplementedIMCoreServer) FanoutTyping(context.Context, *Typing) (*Typing, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FanoutTyping not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -323,6 +428,132 @@ func _IMCore_LookupUser_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_CreateGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).CreateGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_CreateGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).CreateGroup(ctx, req.(*CreateGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_InviteGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InviteGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).InviteGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_InviteGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).InviteGroup(ctx, req.(*InviteGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_KickGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KickGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).KickGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_KickGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).KickGroup(ctx, req.(*KickGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_GetGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetGroup(ctx, req.(*GetGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_Recall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecallMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).Recall(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_Recall_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).Recall(ctx, req.(*RecallMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_MarkRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).MarkRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_MarkRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).MarkRead(ctx, req.(*MarkReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_FanoutTyping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Typing)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).FanoutTyping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_FanoutTyping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).FanoutTyping(ctx, req.(*Typing))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -361,6 +592,34 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LookupUser",
 			Handler:    _IMCore_LookupUser_Handler,
+		},
+		{
+			MethodName: "CreateGroup",
+			Handler:    _IMCore_CreateGroup_Handler,
+		},
+		{
+			MethodName: "InviteGroup",
+			Handler:    _IMCore_InviteGroup_Handler,
+		},
+		{
+			MethodName: "KickGroup",
+			Handler:    _IMCore_KickGroup_Handler,
+		},
+		{
+			MethodName: "GetGroup",
+			Handler:    _IMCore_GetGroup_Handler,
+		},
+		{
+			MethodName: "Recall",
+			Handler:    _IMCore_Recall_Handler,
+		},
+		{
+			MethodName: "MarkRead",
+			Handler:    _IMCore_MarkRead_Handler,
+		},
+		{
+			MethodName: "FanoutTyping",
+			Handler:    _IMCore_FanoutTyping_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
