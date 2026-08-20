@@ -19,6 +19,10 @@
     peerReadSeq: 0,
     lastTypingAt: 0,
     typingTimer: null,
+    quote: null,
+    qrTimer: null,
+    pendingTicket: "",
+    muted: {},
   };
 
   const dbp = new Promise((resolve, reject) => {
@@ -135,6 +139,78 @@
     return mine && !recalled && id && created && Date.now() - created < RECALL_MS;
   }
 
+  function muteKey() {
+    return "surge:mute:" + state.uid;
+  }
+
+  function isMuted(cid) {
+    return !!state.muted[cid];
+  }
+
+  function loadMuted() {
+    try {
+      state.muted = JSON.parse(localStorage.getItem(muteKey()) || "{}");
+    } catch (_) {
+      state.muted = {};
+    }
+  }
+
+  function saveMuted() {
+    localStorage.setItem(muteKey(), JSON.stringify(state.muted));
+  }
+
+  function payloadType(p) {
+    if (!p || p.type === undefined || p.type === null) return "";
+    return String(p.type);
+  }
+
+  function isSystemMsg(m) {
+    const t = payloadType(m.payload);
+    return t === "SYSTEM" || t === "3";
+  }
+
+  function isImageMsg(m) {
+    const t = payloadType(m.payload);
+    return t === "IMAGE" || t === "4";
+  }
+
+  function isFileMsg(m) {
+    const t = payloadType(m.payload);
+    return t === "FILE" || t === "5";
+  }
+
+  function linkify(s) {
+    return escapeHtml(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  }
+
+  function mediaOf(p) {
+    return (p && p.media) || {};
+  }
+
+  function mediaURL(m) {
+    const media = mediaOf(m.payload);
+    return media.url || media.thumbUrl || media.thumb_url || "";
+  }
+
+  function renderBody(m) {
+    if (isImageMsg(m)) {
+      const media = mediaOf(m.payload);
+      const src = media.thumbUrl || media.thumb_url || media.url || "";
+      const href = media.url || src;
+      const cap = m.payload && m.payload.text ? `<div>${linkify(m.payload.text)}</div>` : "";
+      if (!src) return escapeHtml("[图片]");
+      return `<a href="${escapeHtml(href)}" target="_blank"><img class="thumb" src="${escapeHtml(src)}" alt="" /></a>${cap}`;
+    }
+    if (isFileMsg(m)) {
+      const media = mediaOf(m.payload);
+      const name = media.filename || "文件";
+      const href = media.url || "#";
+      return `<a class="file-link" href="${escapeHtml(href)}" target="_blank">${escapeHtml(name)}</a>`;
+    }
+    const text = (m.payload && m.payload.text) || m.text || "";
+    return linkify(text);
+  }
+
   function lastMineSeq() {
     let seq = 0;
     for (const m of state.messages) {
@@ -152,13 +228,18 @@
       .map((m) => {
         const mine = field(m, "fromUid", "from_uid") === state.uid;
         const recalled = m.recalled || (m.payload && (m.payload.type === "RECALL" || m.payload.type === 2));
+        if (isSystemMsg(m) && !recalled) {
+          return `<div class="bubble system">${escapeHtml((m.payload && m.payload.text) || "")}</div>`;
+        }
         const st = m.status ? " " + m.status : "";
         const recCls = recalled ? " recalled" : "";
-        const text = recalled ? "已撤回一条消息" : (m.payload && m.payload.text) || m.text || "";
         const id = field(m, "msgId", "msg_id") || "";
         const from = field(m, "fromUid", "from_uid") || "";
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
         const who = isGroup(state.activeCid) && !mine ? `<div class="meta">${escapeHtml(from)}</div>` : "";
+        const qid = field(m, "quoteMsgId", "quote_msg_id");
+        const quote = qid ? `<div class="meta">引用 ${escapeHtml(qid.slice(0, 8))}…</div>` : "";
+        const body = recalled ? "已撤回一条消息" : renderBody(m);
         const recallBtn = canRecall(m)
           ? `<button type="button" class="recall-btn ok" data-id="${id}">撤回</button>`
           : "";
@@ -170,13 +251,21 @@
           state.peerReadSeq >= seq
             ? `<div class="read-mark">已读</div>`
             : "";
-        return `<div class="bubble${mine ? " me" : " peer"}${st}${recCls}">${who}${escapeHtml(text)}${recallBtn}${read}</div>`;
+        return `<div class="bubble${mine ? " me" : " peer"}${st}${recCls}" data-id="${id}">${who}${quote}${recalled ? escapeHtml(body) : body}${recallBtn}${read}</div>`;
       })
       .join("");
     box.querySelectorAll(".recall-btn").forEach((btn) => {
       btn.onclick = (e) => {
         e.stopPropagation();
         recall(btn.dataset.id);
+      };
+    });
+    box.querySelectorAll(".bubble:not(.system)").forEach((el) => {
+      el.ondblclick = () => {
+        if (!el.dataset.id) return;
+        state.quote = { id: el.dataset.id, preview: el.textContent.slice(0, 40) };
+        $("quote-text").textContent = "引用：" + state.quote.preview;
+        $("quote-bar").classList.remove("hidden");
       };
     });
     box.scrollTop = box.scrollHeight;
@@ -265,6 +354,9 @@
     $("chat-sub").textContent = cid;
     $("draft").disabled = false;
     $("send-form").querySelector("button").disabled = false;
+    $("attach-btn").disabled = false;
+    $("mute-btn").classList.remove("hidden");
+    $("mute-btn").textContent = isMuted(cid) ? "已免打扰" : "免打扰";
     loadDraft(cid);
     const data = await api("/v1/timeline?cid=" + encodeURIComponent(cid) + "&limit=200");
     state.messages = data.messages || [];
@@ -305,6 +397,7 @@
   function notifyIncoming(ev) {
     const from = field(ev, "fromUid", "from_uid");
     if (from === state.uid) return;
+    if (isMuted(ev.cid)) return;
     if (!document.hidden) return;
     if (!window.Notification || Notification.permission !== "granted") return;
     const text = (ev.payload && ev.payload.text) || "";
@@ -447,10 +540,11 @@
       try {
         const send = {
           clientMsgId: m.clientMsgId,
-          payload: { type: "TEXT", text: m.text },
+          payload: m.payload && m.payload.type ? m.payload : { type: "TEXT", text: m.text },
         };
         if (m.cid) send.cid = m.cid;
         if (m.peerUid) send.peerUid = m.peerUid;
+        if (m.quoteMsgId) send.quoteMsgId = m.quoteMsgId;
         sendFrame({ send });
       } catch (_) {
         break;
@@ -458,17 +552,15 @@
     }
   }
 
-  async function enter(uid) {
-    const data = await api("/v1/auth/dev-login", {
-      method: "POST",
-      body: JSON.stringify({ uid, device_id: "web" }),
-    });
-    state.uid = data.uid;
-    state.token = data.access_token;
+  async function sessionEnter(uid, token) {
+    state.uid = uid;
+    state.token = token;
     sessionStorage.setItem("surge_uid", state.uid);
     sessionStorage.setItem("surge_token", state.token);
     $("me").textContent = state.uid;
+    loadMuted();
     $("login").classList.add("hidden");
+    $("confirm-qr").classList.add("hidden");
     $("app").classList.remove("hidden");
     if (window.Notification && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
@@ -478,6 +570,122 @@
     await loadFriends();
     await loadConvs();
     connect();
+    maybeApproveTicket();
+  }
+
+  function maybeApproveTicket() {
+    if (!state.pendingTicket || !state.token) return;
+    $("confirm-qr").classList.remove("hidden");
+  }
+
+  async function startQR() {
+    try {
+      const d = await fetch("/v1/auth/qr/new", { method: "POST" }).then(async (r) => {
+        const t = await r.text();
+        if (!r.ok) throw new Error(t);
+        return JSON.parse(t);
+      });
+      $("qr-img").src = d.png + (d.png.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+      $("qr-hint").textContent = "已登录窗口打开本页扫码，或点确认登录";
+      state.qrTicket = d.ticket;
+      clearInterval(state.qrTimer);
+      state.qrTimer = setInterval(async () => {
+        try {
+          const st = await fetch("/v1/auth/qr/status?ticket=" + encodeURIComponent(state.qrTicket)).then((r) => r.json());
+          if (st.status === "approved" && st.access_token) {
+            clearInterval(state.qrTimer);
+            await sessionEnter(st.uid, st.access_token);
+          }
+        } catch (_) {}
+      }, 1000);
+    } catch (err) {
+      $("qr-hint").textContent = "二维码加载失败，可改用上方 uid 登录";
+      console.error(err);
+    }
+  }
+
+  async function sendPayload(payload) {
+    if (!state.activeCid) return;
+    const item = {
+      clientMsgId: uuid(),
+      peerUid: isGroup(state.activeCid) ? "" : state.activePeer,
+      cid: state.activeCid,
+      fromUid: state.uid,
+      text: payload.text || "",
+      payload,
+      quoteMsgId: state.quote ? state.quote.id : "",
+      status: "pending",
+      createdAtMs: Date.now(),
+    };
+    state.outbox.push(item);
+    state.messages.push(item);
+    await kvSet(state.uid + ":outbox", state.outbox);
+    try {
+      const send = {
+        clientMsgId: item.clientMsgId,
+        cid: item.cid,
+        payload,
+      };
+      if (item.peerUid) send.peerUid = item.peerUid;
+      if (item.quoteMsgId) send.quoteMsgId = item.quoteMsgId;
+      sendFrame({ send });
+    } catch (err) {
+      item.status = "fail";
+    }
+    state.quote = null;
+    $("quote-bar").classList.add("hidden");
+    renderMsgs();
+  }
+
+  async function uploadFile(file) {
+    const presign = await api("/v1/media/presign", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, content_type: file.type, size: file.size }),
+    });
+    $("upload-progress").classList.remove("hidden");
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", presign.put_url);
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        $("upload-bar").style.width = Math.round((e.loaded / e.total) * 100) + "%";
+      };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("upload " + xhr.status)));
+      xhr.onerror = () => reject(new Error("upload failed"));
+      xhr.send(file);
+    });
+    const done = await api("/v1/media/complete", {
+      method: "POST",
+      body: JSON.stringify({ object_key: presign.object_key, filename: file.name }),
+    });
+    $("upload-progress").classList.add("hidden");
+    $("upload-bar").style.width = "0";
+    const image = (file.type || "").indexOf("image/") === 0;
+    await sendPayload({
+      type: image ? "IMAGE" : "FILE",
+      text: $("draft").value.trim(),
+      media: {
+        objectKey: done.object_key,
+        thumbKey: done.thumb_key,
+        contentType: done.content_type,
+        filename: file.name,
+        size: done.size,
+        width: done.width,
+        height: done.height,
+        url: done.get_url,
+        thumbUrl: done.thumb_url,
+      },
+    });
+    $("draft").value = "";
+    localStorage.removeItem(draftKey());
+  }
+
+  async function enter(uid) {
+    const data = await api("/v1/auth/dev-login", {
+      method: "POST",
+      body: JSON.stringify({ uid, device_id: "web" }),
+    });
+    await sessionEnter(data.uid, data.access_token);
   }
 
   $("login-btn").onclick = () => {
@@ -554,34 +762,45 @@
     e.preventDefault();
     const text = $("draft").value.trim();
     if (!text || !state.activeCid) return;
-    const item = {
-      clientMsgId: uuid(),
-      peerUid: isGroup(state.activeCid) ? "" : state.activePeer,
-      cid: state.activeCid,
-      fromUid: state.uid,
-      text,
-      payload: { text },
-      status: "pending",
-      createdAtMs: Date.now(),
-    };
-    state.outbox.push(item);
-    state.messages.push(item);
-    await kvSet(state.uid + ":outbox", state.outbox);
     $("draft").value = "";
     localStorage.removeItem(draftKey());
-    renderMsgs();
-    try {
-      const send = {
-        clientMsgId: item.clientMsgId,
-        cid: item.cid,
-        payload: { type: "TEXT", text },
-      };
-      if (item.peerUid) send.peerUid = item.peerUid;
-      sendFrame({ send });
-    } catch (err) {
-      item.status = "fail";
-      renderMsgs();
-    }
+    await sendPayload({ type: "TEXT", text });
+  };
+
+  $("attach-btn").onclick = () => $("file").click();
+  $("file").onchange = () => {
+    const f = $("file").files && $("file").files[0];
+    $("file").value = "";
+    if (!f) return;
+    uploadFile(f).catch((err) => {
+      $("upload-progress").classList.add("hidden");
+      alert(err.message);
+    });
+  };
+  $("mute-btn").onclick = () => {
+    if (!state.activeCid) return;
+    if (isMuted(state.activeCid)) delete state.muted[state.activeCid];
+    else state.muted[state.activeCid] = true;
+    saveMuted();
+    $("mute-btn").textContent = isMuted(state.activeCid) ? "已免打扰" : "免打扰";
+  };
+  $("quote-clear").onclick = () => {
+    state.quote = null;
+    $("quote-bar").classList.add("hidden");
+  };
+  $("qr-approve").onclick = () => {
+    api("/v1/auth/qr/approve", { method: "POST", body: JSON.stringify({ ticket: state.pendingTicket }) })
+      .then(() => {
+        $("confirm-qr").classList.add("hidden");
+        history.replaceState({}, "", "/");
+        state.pendingTicket = "";
+      })
+      .catch((e) => alert(e.message));
+  };
+  $("qr-deny").onclick = () => {
+    $("confirm-qr").classList.add("hidden");
+    history.replaceState({}, "", "/");
+    state.pendingTicket = "";
   };
 
   $("draft").addEventListener("input", () => {
@@ -602,12 +821,16 @@
     }
   });
 
+  const params = new URLSearchParams(location.search);
+  state.pendingTicket = params.get("ticket") || "";
+
   const savedUid = sessionStorage.getItem("surge_uid");
   const savedTok = sessionStorage.getItem("surge_token");
   if (savedUid && savedTok) {
     state.uid = savedUid;
     state.token = savedTok;
     $("me").textContent = savedUid;
+    loadMuted();
     $("login").classList.add("hidden");
     $("app").classList.remove("hidden");
     if (window.Notification && Notification.permission === "default") {
@@ -619,6 +842,12 @@
     kvGet(savedUid + ":outbox").then((v) => {
       state.outbox = v || [];
     });
-    loadFriends().then(loadConvs).then(connect).catch((e) => alert(e.message));
+    loadFriends()
+      .then(loadConvs)
+      .then(connect)
+      .then(maybeApproveTicket)
+      .catch((e) => alert(e.message));
+  } else {
+    startQR();
   }
 })();

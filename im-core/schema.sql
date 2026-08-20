@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS messages (
   from_uid VARCHAR(64) NOT NULL,
   payload_type TINYINT NOT NULL,
   payload_text TEXT NOT NULL,
+  payload_media TEXT NOT NULL,
   created_at_ms BIGINT NOT NULL,
   recalled TINYINT NOT NULL DEFAULT 0,
   quote_msg_id VARCHAR(36) NOT NULL DEFAULT '',
@@ -50,7 +51,7 @@ CREATE TABLE IF NOT EXISTS friends (
   KEY idx_peer (peer_uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS groups (
+CREATE TABLE IF NOT EXISTS im_groups (
   cid VARCHAR(128) NOT NULL,
   name VARCHAR(128) NOT NULL,
   owner_uid VARCHAR(64) NOT NULL,

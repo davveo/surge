@@ -37,6 +37,7 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE conversations ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'p2p'`,
 		`ALTER TABLE messages ADD COLUMN recalled TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE messages ADD COLUMN quote_msg_id VARCHAR(36) NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN payload_media TEXT`,
 	}
 	for _, a := range alters {
 		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") {
@@ -79,9 +80,9 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO messages (msg_id, client_msg_id, cid, conv_seq, from_uid, payload_type, payload_text, created_at_ms, recalled, quote_msg_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-		msgID, clientMsgID, canonical, convSeq, fromUID, int32(payload.Type), payload.Text, now, quoteMsgID)
+		INSERT INTO messages (msg_id, client_msg_id, cid, conv_seq, from_uid, payload_type, payload_text, payload_media, created_at_ms, recalled, quote_msg_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+		msgID, clientMsgID, canonical, convSeq, fromUID, int32(payload.Type), payload.Text, marshalMedia(payload.Media), now, quoteMsgID)
 	if err != nil {
 		if isDupErr(err) {
 			return s.loadDup(ctx, fromUID, clientMsgID, canonical)
@@ -89,7 +90,7 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		return nil, fmt.Errorf("insert message: %w", err)
 	}
 
-	preview := clipText(payload.Text, 128)
+	preview := previewOf(payload)
 	var deliveries []delivery
 	var senderSync uint64
 	for _, uid := range members {
@@ -231,7 +232,7 @@ func (s *mysqlStore) Sync(ctx context.Context, uid string, lastSeq uint64, limit
 		limit = 100
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT i.sync_seq, i.cid, i.msg_id, i.conv_seq, i.from_uid, i.created_at_ms, m.payload_type, m.payload_text
+		SELECT i.sync_seq, i.cid, i.msg_id, i.conv_seq, i.from_uid, i.created_at_ms, m.payload_type, m.payload_text, COALESCE(m.payload_media, '')
 		FROM inbox i
 		JOIN messages m ON m.msg_id = i.msg_id
 		WHERE i.uid = ? AND i.sync_seq > ?
@@ -244,12 +245,13 @@ func (s *mysqlStore) Sync(ctx context.Context, uid string, lastSeq uint64, limit
 
 	events := make([]*imv1.InboxEvent, 0, limit)
 	for rows.Next() {
-		ev := &imv1.InboxEvent{Payload: &imv1.Payload{}}
+		ev := &imv1.InboxEvent{}
 		var ptype int32
-		if err := rows.Scan(&ev.SyncSeq, &ev.Cid, &ev.MsgId, &ev.ConvSeq, &ev.FromUid, &ev.CreatedAtMs, &ptype, &ev.Payload.Text); err != nil {
+		var text, media string
+		if err := rows.Scan(&ev.SyncSeq, &ev.Cid, &ev.MsgId, &ev.ConvSeq, &ev.FromUid, &ev.CreatedAtMs, &ptype, &text, &media); err != nil {
 			return nil, err
 		}
-		ev.Payload.Type = imv1.Payload_Type(ptype)
+		ev.Payload = payloadFromCols(ptype, text, media, false)
 		events = append(events, ev)
 	}
 	if err := rows.Err(); err != nil {
@@ -305,7 +307,14 @@ func (s *mysqlStore) Timeline(ctx context.Context, uid, cid string, afterSeq uin
 			return "", nil, err
 		}
 		if !ok {
-			return "", nil, errNotMember
+			var n int
+			err = s.db.QueryRowContext(ctx, `SELECT 1 FROM conversations WHERE uid = ? AND cid = ? LIMIT 1`, uid, cid).Scan(&n)
+			if err == sql.ErrNoRows {
+				return "", nil, errNotMember
+			}
+			if err != nil {
+				return "", nil, err
+			}
 		}
 	} else if _, err := conv.PeerUID(cid, uid); err != nil {
 		return "", nil, fmt.Errorf("%w: %v", errInvalid, err)
@@ -314,7 +323,7 @@ func (s *mysqlStore) Timeline(ctx context.Context, uid, cid string, afterSeq uin
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT msg_id, conv_seq, from_uid, payload_type, payload_text, created_at_ms, recalled, quote_msg_id
+		SELECT msg_id, conv_seq, from_uid, payload_type, payload_text, COALESCE(payload_media, ''), created_at_ms, recalled, quote_msg_id
 		FROM messages WHERE cid = ? AND conv_seq > ?
 		ORDER BY conv_seq ASC
 		LIMIT ?`, cid, afterSeq, limit)
@@ -324,19 +333,15 @@ func (s *mysqlStore) Timeline(ctx context.Context, uid, cid string, afterSeq uin
 	defer rows.Close()
 	var out []*imv1.TimelineMessage
 	for rows.Next() {
-		m := &imv1.TimelineMessage{Payload: &imv1.Payload{}}
+		m := &imv1.TimelineMessage{}
 		var ptype int32
+		var text, media string
 		var recalled int
-		if err := rows.Scan(&m.MsgId, &m.ConvSeq, &m.FromUid, &ptype, &m.Payload.Text, &m.CreatedAtMs, &recalled, &m.QuoteMsgId); err != nil {
+		if err := rows.Scan(&m.MsgId, &m.ConvSeq, &m.FromUid, &ptype, &text, &media, &m.CreatedAtMs, &recalled, &m.QuoteMsgId); err != nil {
 			return "", nil, err
 		}
 		m.Recalled = recalled != 0
-		if m.Recalled {
-			m.Payload.Type = imv1.Payload_RECALL
-			m.Payload.Text = ""
-		} else {
-			m.Payload.Type = imv1.Payload_Type(ptype)
-		}
+		m.Payload = payloadFromCols(ptype, text, media, m.Recalled)
 		out = append(out, m)
 	}
 	if err := rows.Err(); err != nil {

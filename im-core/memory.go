@@ -78,25 +78,6 @@ type Store interface {
 	MarkRead(ctx context.Context, uid, cid string, convSeq uint64) error
 }
 
-func validateSend(fromUID, clientMsgID string, payload *imv1.Payload) error {
-	if fromUID == "" || clientMsgID == "" {
-		return fmt.Errorf("%w: from_uid and client_msg_id required", errInvalid)
-	}
-	if len(clientMsgID) > 64 {
-		return fmt.Errorf("%w: client_msg_id too long", errInvalid)
-	}
-	if payload == nil || payload.Type != imv1.Payload_TEXT {
-		return fmt.Errorf("%w: P0 only supports text payload", errInvalid)
-	}
-	if payload.Text == "" {
-		return fmt.Errorf("%w: empty text", errInvalid)
-	}
-	if utf8.RuneCountInString(payload.Text) > 4000 {
-		return fmt.Errorf("%w: text too long", errInvalid)
-	}
-	return nil
-}
-
 func clipText(s string, max int) string {
 	if utf8.RuneCountInString(s) <= max {
 		return s
@@ -194,7 +175,7 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 	s.byDup[dupKey(fromUID, clientMsgID)] = row
 	s.byCID[canonical] = append(s.byCID[canonical], row)
 
-	preview := clipText(payload.GetText(), 128)
+	preview := previewOf(payload)
 	var deliveries []delivery
 	var senderSync uint64
 	for _, uid := range members {
@@ -388,7 +369,7 @@ func (s *memoryStore) Timeline(_ context.Context, uid, cid string, afterSeq uint
 				}
 			}
 		}
-		if !ok {
+		if !ok && s.convs[uid][cid] == nil {
 			return "", nil, errNotMember
 		}
 	} else if _, err := conv.PeerUID(cid, uid); err != nil {
@@ -593,7 +574,9 @@ func (s *memoryStore) KickGroup(_ context.Context, operatorUID, cid, memberUID s
 	}
 	g.Members = kept
 	if s.convs[memberUID] != nil {
-		delete(s.convs[memberUID], cid)
+		if c := s.convs[memberUID][cid]; c != nil {
+			c.LastText = "你已被移出群聊"
+		}
 	}
 	return g, nil
 }

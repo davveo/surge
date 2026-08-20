@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -22,6 +23,8 @@ type httpAPI struct {
 	core   imv1.IMCoreClient
 	ws     *wsServer
 	webDir string
+	rdb    *redis.Client
+	media  *mediaStore
 }
 
 func (a *httpAPI) routes() http.Handler {
@@ -31,6 +34,10 @@ func (a *httpAPI) routes() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/v1/auth/dev-login", a.devLogin)
+	mux.HandleFunc("/v1/auth/qr/new", a.qrNew)
+	mux.HandleFunc("/v1/auth/qr/status", a.qrStatus)
+	mux.HandleFunc("/v1/auth/qr.png", a.qrPNG)
+	mux.HandleFunc("/v1/auth/qr/approve", a.qrApprove)
 	mux.HandleFunc("/v1/conversations", a.conversations)
 	mux.HandleFunc("/v1/timeline", a.timeline)
 	mux.HandleFunc("/v1/friends", a.friends)
@@ -39,6 +46,8 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/group-invite", a.groupInvite)
 	mux.HandleFunc("/v1/group-kick", a.groupKick)
 	mux.HandleFunc("/v1/group", a.groupGet)
+	mux.HandleFunc("/v1/media/presign", a.mediaPresign)
+	mux.HandleFunc("/v1/media/complete", a.mediaComplete)
 	mux.HandleFunc("/v1/ws", a.ws.handleWS)
 	if dir := strings.TrimSpace(a.webDir); dir != "" {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {

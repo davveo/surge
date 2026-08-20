@@ -2,9 +2,9 @@
 
 对标微信网页版的 Web 端即时通讯：单聊 + 群聊。目标是 **100 万同时在线** 长连接。
 
-当前仓库 **P1 核心**：P0 单聊之上，已支持群聊（建群/拉人/踢人，上限 200）、2 分钟撤回、单聊已读、正在输入、草稿与浏览器通知。媒体直传与扫码登录尚未做。
+当前仓库 **P1**：单聊 + 群聊（含成员变更系统消息）、2 分钟撤回、单聊已读、正在输入、草稿/通知/免打扰、MinIO 预签名图片文件、扫码登录。
 
-打开 http://127.0.0.1:8080 ，两个窗口分别登录 `u1` / `u2`，通讯录里互相添加后再发消息；也可建群拉好友进群。
+打开 http://127.0.0.1:8080 ，两个窗口分别登录 `u1` / `u2`（或一端扫码确认），通讯录里互相添加后再发消息；也可建群、发图。
 
 ## 文档
 
@@ -33,8 +33,9 @@ make up
 |---|---|---|
 | mysql | 3306 | MySQL 8 |
 | redis | 6379 | Redis 7 |
-| im-core | 9000 | gRPC（也可只给容器内网用，删掉 compose 里的 `ports` 即可） |
-| gateway | 8080 | HTTP / WebSocket；`web/` 存在时由 gateway 提供静态资源 |
+| minio | 9001 | S3 API（控制台 9002） |
+| im-core | 9000 | gRPC |
+| gateway | 8080 | HTTP / WebSocket；`web/` 静态页 |
 
 停栈：`make down` 或 `./scripts/down.sh`。
 
@@ -102,8 +103,11 @@ curl -s -X POST localhost:8080/v1/groups -H "Authorization: Bearer $TOKEN" \
 
 拉人 / 踢人：`POST /v1/group-invite`、`POST /v1/group-kick`；群详情：`GET /v1/group?cid=`。
 
+媒体：`POST /v1/media/presign` 拿 PUT URL，浏览器直传 MinIO，再 `POST /v1/media/complete` 生成缩略图，WS 只发 object key。扫码：登录页展示 `/v1/auth/qr.png`，已登录窗口打开二维码里的链接后点确认。
+
 两端连上后可跑通发送与推送：
 
 ```bash
 go run ./tools/p0smoke
+make g200   # 200 人群，默认发 10 条，检查 ACK 无丢失
 ```

@@ -44,10 +44,17 @@ func main() {
 	defer subCancel()
 	go hub.listenPushes(subCtx)
 
+	media, err := newMediaStore(cfg)
+	if err != nil {
+		log.Fatalf("minio: %v", err)
+	}
+
 	api := &httpAPI{
 		secret: cfg.JWTSecret,
 		core:   core,
 		webDir: cfg.WebDir,
+		rdb:    rdb,
+		media:  media,
 		ws: &wsServer{
 			hub:    hub,
 			core:   core,

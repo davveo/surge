@@ -13,7 +13,20 @@
       <p>Web 三栏 · 单聊 / 群聊</p>
       <input id="login-uid" placeholder="例如 u1" autofocus />
       <button id="login-btn" type="button">进入</button>
-      <p class="hint">两个窗口分别登录 u1 / u2，先加好友再发消息；通讯录可建群。</p>
+      <div class="qr-box">
+        <img id="qr-img" alt="登录二维码" />
+        <p id="qr-hint" class="hint">已登录窗口打开本页扫码，或点确认登录</p>
+      </div>
+      <p class="hint">两个窗口分别登录 u1 / u2，先加好友再发消息；通讯录可建群。图片走 MinIO 预签名直传。</p>
+    </div>
+  </div>
+
+  <div id="confirm-qr" class="login hidden">
+    <div class="login-card">
+      <h1>确认登录</h1>
+      <p>网页版正在请求登录，是否允许？</p>
+      <button id="qr-approve" type="button">确认登录</button>
+      <button id="qr-deny" type="button" class="ghost">取消</button>
     </div>
   </div>
 
@@ -53,6 +66,7 @@
           <div id="chat-sub" class="chat-sub"></div>
         </div>
         <div class="head-right">
+          <button id="mute-btn" type="button" class="ghost-btn hidden">免打扰</button>
           <div id="conn-state" class="conn">未连接</div>
         </div>
       </header>
@@ -63,7 +77,14 @@
       </div>
       <div id="msgs" class="msgs"></div>
       <div id="typing" class="typing hidden">对方正在输入…</div>
+      <div id="quote-bar" class="quote-bar hidden">
+        <span id="quote-text"></span>
+        <button id="quote-clear" type="button">×</button>
+      </div>
+      <div id="upload-progress" class="progress hidden"><div id="upload-bar"></div></div>
       <form id="send-form" class="composer">
+        <button id="attach-btn" type="button" class="attach" disabled>+</button>
+        <input id="file" type="file" class="hidden" />
         <textarea id="draft" rows="3" placeholder="发消息…" disabled></textarea>
         <button type="submit" disabled>发送</button>
       </form>

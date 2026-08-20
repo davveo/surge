@@ -15,7 +15,7 @@ import (
 
 func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, error) {
 	g := &groupInfo{CID: cid}
-	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid FROM groups WHERE cid = ?`, cid).Scan(&g.Name, &g.OwnerUID)
+	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid FROM im_groups WHERE cid = ?`, cid).Scan(&g.Name, &g.OwnerUID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
@@ -78,7 +78,7 @@ func (s *mysqlStore) CreateGroup(ctx context.Context, ownerUID, name string, mem
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO groups (cid, name, owner_uid, created_at_ms) VALUES (?, ?, ?, ?)`,
+	if _, err := tx.ExecContext(ctx, `INSERT INTO im_groups (cid, name, owner_uid, created_at_ms) VALUES (?, ?, ?, ?)`,
 		cid, name, ownerUID, now); err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (s *mysqlStore) KickGroup(ctx context.Context, operatorUID, cid, memberUID 
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM group_members WHERE cid = ? AND uid = ?`, cid, memberUID); err != nil {
 		return nil, err
 	}
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM conversations WHERE uid = ? AND cid = ?`, memberUID, cid)
+	_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET last_text = '你已被移出群聊' WHERE uid = ? AND cid = ?`, memberUID, cid)
 	return s.loadGroup(ctx, cid)
 }
 

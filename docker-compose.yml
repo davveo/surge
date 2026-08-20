@@ -78,6 +78,12 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
       JWT_SECRET: ${JWT_SECRET:-surge-dev-secret}
       WEB_DIR: /app/web
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: surge
+      MINIO_SECRET_KEY: surge-minio
+      MINIO_BUCKET: surge
+      MINIO_PUBLIC_URL: http://127.0.0.1:9001
+      MINIO_SECURE: "false"
     ports:
       - "8080:8080"
     volumes:
@@ -87,6 +93,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "3", "-O", "-", "http://127.0.0.1:8080/healthz"]
       interval: 5s
@@ -95,6 +103,27 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    command: ["server", "/data", "--console-address", ":9002"]
+    environment:
+      MINIO_ROOT_USER: surge
+      MINIO_ROOT_PASSWORD: surge-minio
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    ports:
+      - "9001:9000"
+      - "9002:9002"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   mysql_data:
   redis_data:
+  minio_data:

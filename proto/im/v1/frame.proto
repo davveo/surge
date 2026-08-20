@@ -47,9 +47,26 @@ message Payload {
     TYPE_UNSPECIFIED = 0;
     TEXT = 1;
     RECALL = 2;
+    SYSTEM = 3;
+    IMAGE = 4;
+    FILE = 5;
   }
   Type type = 1;
   string text = 2;
+  Media media = 3;
+}
+
+// Object lives in OSS/MinIO; the message only stores metadata.
+message Media {
+  string object_key = 1;
+  string thumb_key = 2;
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  int32 width = 6;
+  int32 height = 7;
+  string url = 8;
+  string thumb_url = 9;
 }
 
 message SendRequest {

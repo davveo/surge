@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -169,23 +170,69 @@ func (s *server) CreateGroup(ctx context.Context, req *imv1.CreateGroupRequest) 
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	s.notifyGroup(ctx, req.GetOwnerUid(), g.CID, req.GetOwnerUid()+" 创建了群聊「"+g.Name+"」")
 	return &imv1.CreateGroupResponse{Cid: g.CID, Name: g.Name}, nil
 }
 
 func (s *server) InviteGroup(ctx context.Context, req *imv1.InviteGroupRequest) (*imv1.GroupResponse, error) {
+	before, err := s.store.GetGroup(ctx, req.GetOperatorUid(), req.GetCid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
 	g, err := s.store.InviteGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUids())
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if added := memberDiff(before, g); len(added) > 0 {
+		s.notifyGroup(ctx, req.GetOperatorUid(), g.CID, req.GetOperatorUid()+" 邀请 "+strings.Join(added, "、")+" 加入群聊")
 	}
 	return protoGroup(g), nil
 }
 
 func (s *server) KickGroup(ctx context.Context, req *imv1.KickGroupRequest) (*imv1.GroupResponse, error) {
+	cur, err := s.store.GetGroup(ctx, req.GetOperatorUid(), req.GetCid())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if cur.OwnerUID != req.GetOperatorUid() {
+		return nil, mapErr(errNotOwner)
+	}
+	s.notifyGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetOperatorUid()+" 将 "+req.GetMemberUid()+" 移出群聊")
 	g, err := s.store.KickGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUid())
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	return protoGroup(g), nil
+}
+
+func (s *server) notifyGroup(ctx context.Context, fromUID, cid, text string) {
+	_, err := s.Send(ctx, &imv1.SendMessageRequest{
+		FromUid:     fromUID,
+		ClientMsgId: "sys-" + uuid.NewString(),
+		Cid:         cid,
+		Payload:     &imv1.Payload{Type: imv1.Payload_SYSTEM, Text: text},
+	})
+	if err != nil {
+		log.Printf("group notify %s: %v", cid, err)
+	}
+}
+
+func memberDiff(before, after *groupInfo) []string {
+	seen := map[string]struct{}{}
+	if before != nil {
+		for _, m := range before.Members {
+			seen[m.UID] = struct{}{}
+		}
+	}
+	var added []string
+	if after != nil {
+		for _, m := range after.Members {
+			if _, ok := seen[m.UID]; !ok {
+				added = append(added, m.UID)
+			}
+		}
+	}
+	return added
 }
 
 func (s *server) GetGroup(ctx context.Context, req *imv1.GetGroupRequest) (*imv1.GroupResponse, error) {

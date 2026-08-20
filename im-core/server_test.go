@@ -75,8 +75,54 @@ func TestGroupSendAndRecall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(msgs) != 1 || !msgs[0].Recalled {
-		t.Fatalf("want recalled, got %+v", msgs)
+	found := false
+	for _, m := range msgs {
+		if m.MsgId == resp.GetAck().GetMsgId() && m.Recalled {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want recalled msg %s in %+v", resp.GetAck().GetMsgId(), msgs)
+	}
+}
+
+func TestGroupMemberEvents(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := srv.AddFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.AddFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u3"}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := srv.CreateGroup(ctx, &imv1.CreateGroupRequest{OwnerUid: "u1", Name: "t", MemberUids: []string{"u2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sync, err := st.Sync(ctx, "u2", 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sync.Events) == 0 || sync.Events[0].Payload.Type != imv1.Payload_SYSTEM {
+		t.Fatalf("create should fanout system event: %+v", sync.Events)
+	}
+	if _, err := srv.InviteGroup(ctx, &imv1.InviteGroupRequest{OperatorUid: "u1", Cid: g.Cid, MemberUids: []string{"u3"}}); err != nil {
+		t.Fatal(err)
+	}
+	sync3, err := st.Sync(ctx, "u3", 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sync3.Events) == 0 {
+		t.Fatal("invite should write inbox for new member")
+	}
+	if _, err := srv.KickGroup(ctx, &imv1.KickGroupRequest{OperatorUid: "u1", Cid: g.Cid, MemberUid: "u3"}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListConversations(ctx, "u3")
+	if err != nil || len(list) == 0 {
+		t.Fatalf("kicked user should keep conversation: %v %+v", err, list)
 	}
 }
 

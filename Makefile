@@ -1,4 +1,4 @@
-.PHONY: proto tidy test build run-im-core run-gateway up down logs smoke
+.PHONY: proto tidy test build run-im-core run-gateway up down logs smoke g200
 
 export PATH := $(HOME)/go/bin:$(PATH)
 
@@ -16,6 +16,9 @@ test:
 
 smoke:
 	go run ./tools/p0smoke
+
+g200:
+	go run ./tools/g200 -n 200 -msgs 10
 
 build: proto tidy
 	mkdir -p bin
