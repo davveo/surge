@@ -99,6 +99,14 @@
         <form id="group-form" class="mid-form wrap">
           <input id="group-name" placeholder="群名" />
           <input id="group-members" placeholder="成员 uid，逗号分隔" />
+          <div id="group-modes" class="group-modes">
+            <label class="on"><input type="radio" name="group-mode" value="normal" checked />普通群</label>
+            <label><input type="radio" name="group-mode" value="verify" />验证群</label>
+            <label><input type="radio" name="group-mode" value="private" />私密群</label>
+            <label><input type="radio" name="group-mode" value="broadcast" />广播群</label>
+            <label><input type="radio" name="group-mode" value="anonymous" />匿名群</label>
+            <label><input type="radio" name="group-mode" value="ephemeral" />阅后即焚群</label>
+          </div>
           <button type="submit">建群</button>
         </form>
         <div id="friend-list"></div>

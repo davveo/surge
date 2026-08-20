@@ -246,13 +246,14 @@ func (a *httpAPI) groups(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name    string   `json:"name"`
 		Members []string `json:"members"`
+		Mode    string   `json:"mode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
 		return
 	}
 	resp, err := a.core.CreateGroup(r.Context(), &imv1.CreateGroupRequest{
-		OwnerUid: uid, Name: body.Name, MemberUids: body.Members,
+		OwnerUid: uid, Name: body.Name, MemberUids: body.Members, Mode: body.Mode,
 	})
 	if err != nil {
 		writeRPCError(w, err)

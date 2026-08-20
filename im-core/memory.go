@@ -59,6 +59,7 @@ type groupInfo struct {
 	MutedAll     bool
 	Announcement string
 	JoinApproval bool
+	Mode         string
 	Members      []groupMember
 }
 
@@ -84,7 +85,7 @@ type Store interface {
 	AddFriend(ctx context.Context, uid, peerUID string) (already bool, err error)
 	ListFriends(ctx context.Context, uid string) ([]string, error)
 	AreFriends(ctx context.Context, uid, peerUID string) (bool, error)
-	CreateGroup(ctx context.Context, ownerUID, name string, memberUIDs []string) (*groupInfo, error)
+	CreateGroup(ctx context.Context, ownerUID, name string, memberUIDs []string, mode string) (*groupInfo, error)
 	InviteGroup(ctx context.Context, operatorUID, cid string, memberUIDs []string) (*groupInfo, error)
 	KickGroup(ctx context.Context, operatorUID, cid, memberUID string) (*groupInfo, error)
 	GetGroup(ctx context.Context, uid, cid string) (*groupInfo, error)
@@ -225,6 +226,9 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 	title, kind, members, err := s.targetsLocked(fromUID, canonical, peer)
 	if err != nil {
 		return nil, err
+	}
+	if conv.IsGroup(canonical) {
+		applyEphemeralMode(s.groups[canonical], payload)
 	}
 
 	if row, ok := s.byDup[dupKey(fromUID, clientMsgID)]; ok {
@@ -440,8 +444,8 @@ func (s *memoryStore) ListConversations(_ context.Context, uid string) ([]*imv1.
 		cp.Muted = s.mutes[uid][c.Cid]
 		cp.Pinned = s.pins[uid][c.Cid]
 		if conv.IsGroup(cp.Cid) {
-			if g := s.groups[cp.Cid]; g != nil && g.AvatarURL != "" {
-				cp.PeerProfile = &imv1.UserProfile{AvatarUrl: g.AvatarURL}
+			if g := s.groups[cp.Cid]; g != nil {
+				cp.PeerProfile = groupPeerProfile(g)
 			}
 		}
 		out = append(out, &cp)
@@ -598,7 +602,7 @@ func protoGroup(g *groupInfo) *imv1.GroupResponse {
 	}
 	out := &imv1.GroupResponse{
 		Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL,
-		MutedAll: g.MutedAll, Announcement: g.Announcement, JoinApproval: g.JoinApproval,
+		MutedAll: g.MutedAll, Announcement: g.Announcement, JoinApproval: g.JoinApproval, Mode: g.Mode,
 	}
 	for _, m := range g.Members {
 		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role, Nickname: m.Nickname, Muted: m.Muted})
@@ -606,7 +610,7 @@ func protoGroup(g *groupInfo) *imv1.GroupResponse {
 	return out
 }
 
-func (s *memoryStore) CreateGroup(_ context.Context, ownerUID, name string, memberUIDs []string) (*groupInfo, error) {
+func (s *memoryStore) CreateGroup(_ context.Context, ownerUID, name string, memberUIDs []string, mode string) (*groupInfo, error) {
 	ownerUID = strings.TrimSpace(ownerUID)
 	name = strings.TrimSpace(name)
 	if ownerUID == "" || name == "" {
@@ -628,6 +632,7 @@ func (s *memoryStore) CreateGroup(_ context.Context, ownerUID, name string, memb
 	}
 	cid := conv.GroupPrefix() + uuid.NewString()
 	g := &groupInfo{CID: cid, Name: name, OwnerUID: ownerUID}
+	applyGroupMode(g, mode)
 	now := time.Now().UnixMilli()
 	for _, uid := range members {
 		role := "member"
@@ -655,6 +660,9 @@ func (s *memoryStore) InviteGroup(_ context.Context, operatorUID, cid string, me
 	}
 	if !s.isMemberLocked(g, operatorUID) {
 		return nil, errNotMember
+	}
+	if err := canInvite(g, operatorUID); err != nil {
+		return nil, err
 	}
 	now := time.Now().UnixMilli()
 	pending := g.JoinApproval && !isManager(g, operatorUID)

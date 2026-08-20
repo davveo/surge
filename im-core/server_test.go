@@ -150,7 +150,7 @@ func TestRecallWindow(t *testing.T) {
 
 func TestCreateGroupRequiresFriend(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
-	_, err := st.CreateGroup(context.Background(), "u1", "g", []string{"u2"})
+	_, err := st.CreateGroup(context.Background(), "u1", "g", []string{"u2"}, "")
 	if err == nil {
 		t.Fatal("expected not friends")
 	}
@@ -334,7 +334,7 @@ func TestLeaveAndPin(t *testing.T) {
 	if _, err := st.AddFriend(ctx, "u1", "u3"); err != nil {
 		t.Fatal(err)
 	}
-	g, err := st.CreateGroup(ctx, "u1", "g", []string{"u2", "u3"})
+	g, err := st.CreateGroup(ctx, "u1", "g", []string{"u2", "u3"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestUpdateGroupOwnerOnly(t *testing.T) {
 	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
 		t.Fatal(err)
 	}
-	g, err := st.CreateGroup(ctx, "u1", "old", []string{"u2"})
+	g, err := st.CreateGroup(ctx, "u1", "old", []string{"u2"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +627,7 @@ func TestEmailLoginMuteAllEphemeralSearchTags(t *testing.T) {
 	if len(tags) != 1 || tags[0] != "同事" {
 		t.Fatalf("tags %v", tags)
 	}
-	g, err := st.CreateGroup(ctx, p.Uid, "g", []string{"u2"})
+	g, err := st.CreateGroup(ctx, p.Uid, "g", []string{"u2"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -751,5 +751,71 @@ func TestRosterNotifyOnFriendAndInvite(t *testing.T) {
 	}
 	if rosterHits(rt.pubs, "u3", "group_invite") != 1 {
 		t.Fatalf("want group_invite to u3, got %+v", rt.pubs)
+	}
+}
+
+func TestGroupModes(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddFriend(ctx, "u1", "u3"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddFriend(ctx, "u2", "u3"); err != nil {
+		t.Fatal(err)
+	}
+
+	verify, err := st.CreateGroup(ctx, "u1", "v", []string{"u2"}, "verify")
+	if err != nil || !verify.JoinApproval || verify.Mode != groupModeVerify {
+		t.Fatalf("verify %+v %v", verify, err)
+	}
+
+	bcast, err := st.CreateGroup(ctx, "u1", "b", []string{"u2"}, "broadcast")
+	if err != nil || !bcast.MutedAll {
+		t.Fatalf("broadcast %+v %v", bcast, err)
+	}
+	if err := canSpeak(bcast, "u2"); err == nil {
+		t.Fatal("member should be muted in broadcast group")
+	}
+	if err := canSpeak(bcast, "u1"); err != nil {
+		t.Fatal(err)
+	}
+
+	priv, err := st.CreateGroup(ctx, "u1", "p", []string{"u2"}, "private")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.InviteGroup(ctx, "u2", priv.CID, []string{"u3"}); err == nil {
+		t.Fatal("member should not invite in private group")
+	}
+	if _, err := st.InviteGroup(ctx, "u1", priv.CID, []string{"u3"}); err != nil {
+		t.Fatal(err)
+	}
+
+	eph, err := srv.CreateGroup(ctx, &imv1.CreateGroupRequest{OwnerUid: "u1", Name: "e", MemberUids: []string{"u2"}, Mode: "ephemeral"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "e1", Cid: eph.Cid, Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := st.byID[sent.Ack.MsgId]
+	if row == nil || row.payload == nil || !row.payload.Ephemeral {
+		t.Fatalf("ephemeral not forced %+v", row)
+	}
+
+	anon, err := st.CreateGroup(ctx, "u1", "a", []string{"u2"}, "anonymous")
+	if err != nil || anon.Mode != groupModeAnonymous {
+		t.Fatalf("anonymous %+v %v", anon, err)
+	}
+	got := protoGroup(anon)
+	if got.GetMode() != groupModeAnonymous {
+		t.Fatalf("proto mode %s", got.GetMode())
 	}
 }

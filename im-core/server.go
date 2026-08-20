@@ -340,7 +340,7 @@ func (s *server) ListMutes(ctx context.Context, req *imv1.ListMutesRequest) (*im
 }
 
 func (s *server) CreateGroup(ctx context.Context, req *imv1.CreateGroupRequest) (*imv1.CreateGroupResponse, error) {
-	g, err := s.store.CreateGroup(ctx, req.GetOwnerUid(), req.GetName(), req.GetMemberUids())
+	g, err := s.store.CreateGroup(ctx, req.GetOwnerUid(), req.GetName(), req.GetMemberUids(), req.GetMode())
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -351,7 +351,7 @@ func (s *server) CreateGroup(ctx context.Context, req *imv1.CreateGroupRequest) 
 		}
 		s.notifyRoster(ctx, m.UID, req.GetOwnerUid(), "group_invite", g.CID)
 	}
-	return &imv1.CreateGroupResponse{Cid: g.CID, Name: g.Name}, nil
+	return &imv1.CreateGroupResponse{Cid: g.CID, Name: g.Name, Mode: g.Mode}, nil
 }
 
 func (s *server) InviteGroup(ctx context.Context, req *imv1.InviteGroupRequest) (*imv1.GroupResponse, error) {

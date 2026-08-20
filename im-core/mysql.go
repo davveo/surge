@@ -50,6 +50,7 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE group_members ADD COLUMN nickname VARCHAR(64) NOT NULL DEFAULT ''`,
 		`ALTER TABLE group_members ADD COLUMN muted TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE conversations ADD COLUMN cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0`,
+		`ALTER TABLE im_groups ADD COLUMN mode VARCHAR(32) NOT NULL DEFAULT 'normal'`,
 		`CREATE TABLE IF NOT EXISTS hidden_messages (
   uid VARCHAR(64) NOT NULL,
   msg_id CHAR(36) NOT NULL,
@@ -90,6 +91,11 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 	title, kind, members, err := s.targets(ctx, fromUID, canonical, peer)
 	if err != nil {
 		return nil, err
+	}
+	if conv.IsGroup(canonical) {
+		if g, gerr := s.loadGroup(ctx, canonical); gerr == nil {
+			applyEphemeralMode(g, payload)
+		}
 	}
 
 	convSeq, err := s.seq.Next(ctx, convSeqKey(canonical))
@@ -313,7 +319,7 @@ func (s *mysqlStore) Watermark(ctx context.Context, uid string) (uint64, error) 
 func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.cid, c.peer_uid, c.last_msg_id, c.last_conv_seq, c.unread, c.updated_at_ms, c.last_text, c.title, c.kind,
-			IFNULL(m.muted, 0), IFNULL(c.pinned, 0), IFNULL(g.avatar_url, '')
+			IFNULL(m.muted, 0), IFNULL(c.pinned, 0), IFNULL(g.avatar_url, ''), IFNULL(g.mode, '')
 		FROM conversations c
 		LEFT JOIN conv_mutes m ON m.uid = c.uid AND m.cid = c.cid
 		LEFT JOIN im_groups g ON g.cid = c.cid
@@ -327,14 +333,14 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 	for rows.Next() {
 		c := &imv1.Conversation{}
 		var muted, pinned int
-		var groupAvatar string
-		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned, &groupAvatar); err != nil {
+		var groupAvatar, groupMode string
+		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned, &groupAvatar, &groupMode); err != nil {
 			return nil, err
 		}
 		c.Muted = muted != 0
 		c.Pinned = pinned != 0
-		if conv.IsGroup(c.Cid) && groupAvatar != "" {
-			c.PeerProfile = &imv1.UserProfile{AvatarUrl: groupAvatar}
+		if conv.IsGroup(c.Cid) {
+			c.PeerProfile = groupPeerProfile(&groupInfo{AvatarURL: groupAvatar, Mode: groupMode})
 		}
 		out = append(out, c)
 	}

@@ -282,11 +282,13 @@ message CreateGroupRequest {
   string owner_uid = 1;
   string name = 2;
   repeated string member_uids = 3;
+  string mode = 4;
 }
 
 message CreateGroupResponse {
   string cid = 1;
   string name = 2;
+  string mode = 3;
 }
 
 message InviteGroupRequest {
@@ -315,6 +317,7 @@ message GroupResponse {
   bool muted_all = 6;
   string announcement = 7;
   bool join_approval = 8;
+  string mode = 9;
 }
 
 message RecallMessageRequest {

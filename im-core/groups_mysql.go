@@ -16,10 +16,13 @@ import (
 func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, error) {
 	g := &groupInfo{CID: cid}
 	var muted, join int
-	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url, IFNULL(muted_all, 0), IFNULL(announcement, ''), IFNULL(join_approval, 0) FROM im_groups WHERE cid = ?`, cid).
-		Scan(&g.Name, &g.OwnerUID, &g.AvatarURL, &muted, &g.Announcement, &join)
+	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url, IFNULL(muted_all, 0), IFNULL(announcement, ''), IFNULL(join_approval, 0), IFNULL(mode, '') FROM im_groups WHERE cid = ?`, cid).
+		Scan(&g.Name, &g.OwnerUID, &g.AvatarURL, &muted, &g.Announcement, &join, &g.Mode)
 	g.MutedAll = muted != 0
 	g.JoinApproval = join != 0
+	if g.Mode == "" {
+		g.Mode = groupModeNormal
+	}
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("%w: group not found", errInvalid)
 	}
@@ -55,7 +58,7 @@ func (s *mysqlStore) isMember(ctx context.Context, cid, uid string) (bool, error
 	return true, nil
 }
 
-func (s *mysqlStore) CreateGroup(ctx context.Context, ownerUID, name string, memberUIDs []string) (*groupInfo, error) {
+func (s *mysqlStore) CreateGroup(ctx context.Context, ownerUID, name string, memberUIDs []string, mode string) (*groupInfo, error) {
 	ownerUID = strings.TrimSpace(ownerUID)
 	name = strings.TrimSpace(name)
 	if ownerUID == "" || name == "" {
@@ -79,16 +82,24 @@ func (s *mysqlStore) CreateGroup(ctx context.Context, ownerUID, name string, mem
 	}
 	cid := conv.GroupPrefix() + uuid.NewString()
 	now := time.Now().UnixMilli()
+	g := &groupInfo{CID: cid, Name: name, OwnerUID: ownerUID}
+	applyGroupMode(g, mode)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO im_groups (cid, name, owner_uid, created_at_ms) VALUES (?, ?, ?, ?)`,
-		cid, name, ownerUID, now); err != nil {
+	muted, join := 0, 0
+	if g.MutedAll {
+		muted = 1
+	}
+	if g.JoinApproval {
+		join = 1
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO im_groups (cid, name, owner_uid, created_at_ms, mode, muted_all, join_approval) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		cid, name, ownerUID, now, g.Mode, muted, join); err != nil {
 		return nil, err
 	}
-	g := &groupInfo{CID: cid, Name: name, OwnerUID: ownerUID}
 	for _, uid := range members {
 		role := "member"
 		if uid == ownerUID {
@@ -119,6 +130,9 @@ func (s *mysqlStore) InviteGroup(ctx context.Context, operatorUID, cid string, m
 	}
 	g, err := s.loadGroup(ctx, cid)
 	if err != nil {
+		return nil, err
+	}
+	if err := canInvite(g, operatorUID); err != nil {
 		return nil, err
 	}
 	now := time.Now().UnixMilli()

@@ -207,7 +207,7 @@
   function friendlyHttp(status, text) {
     const t = String(text || "");
     if (status === 429 || /too many/i.test(t)) return "操作过于频繁，请稍后再试";
-    if (/not group owner/i.test(t)) return "仅群主可设置";
+    if (/not group owner/i.test(t)) return "仅群主可操作";
     if (/not group admin/i.test(t)) return "仅群主或管理员可操作";
     if (/blocked/i.test(t)) return "已拉黑，无法发送";
     if (/cannot kick current device/i.test(t)) return "不能下线当前设备";
@@ -222,7 +222,7 @@
     if (/not friends/i.test(t)) return "请先加好友再发消息";
     if (/user blocked|blocked/i.test(t)) return "已拉黑，无法发送";
     if (/group muted/i.test(t)) return "全员禁言中，无法发送";
-    if (/not group owner/i.test(t)) return "仅群主可设置";
+    if (/not group owner/i.test(t)) return "仅群主可操作";
     if (/not group admin/i.test(t)) return "仅群主或管理员可操作";
     if (/peer_uid does not match cid/i.test(t)) return "会话对象不匹配，请重新打开聊天后再发";
     return t.replace(/^rpc error: code = \w+ desc = (invalid argument: )?/i, "") || "发送失败";
@@ -471,7 +471,77 @@
     if (!g) return false;
     if (isGroupOwner()) return true;
     const me = (g.members || []).find((m) => uidOf(m) === state.uid);
-    return !!(me && me.role === "admin");
+    return !!(me && (me.role === "admin" || me.Role === "admin"));
+  }
+
+  function groupModeOf(g) {
+    const raw = String((g && (g.mode || g.Mode)) || "").toLowerCase();
+    return raw || "normal";
+  }
+
+  function convGroupMode(c) {
+    if (!c || !isGroup(c.cid)) return "normal";
+    if (state.group && state.group.cid === c.cid) {
+      const m = groupModeOf(state.group);
+      if (m) return m;
+    }
+    const cached = state.groupCache && state.groupCache[c.cid];
+    if (cached) return groupModeOf(cached);
+    const email = String(field(peerProfile(c), "email") || "");
+    if (email.indexOf("grp:") === 0) return email.slice(4) || "normal";
+    return "normal";
+  }
+
+  function activeGroupMode() {
+    if (isGroup(state.activeCid) && state.group) return groupModeOf(state.group);
+    const c = (state.convs || []).find((x) => x.cid === state.activeCid);
+    return convGroupMode(c);
+  }
+
+  function groupModeLabel(mode) {
+    switch (mode) {
+      case "verify":
+        return "验证群";
+      case "private":
+        return "私密群";
+      case "broadcast":
+        return "广播群";
+      case "anonymous":
+        return "匿名群";
+      case "ephemeral":
+        return "阅后即焚群";
+      default:
+        return "";
+    }
+  }
+
+  function anonNick(uid) {
+    const s = String(state.activeCid || "") + "|" + String(uid || "");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return "匿名" + ((h >>> 0) % 9000 + 1000);
+  }
+
+  function isAnonGroup() {
+    return isGroup(state.activeCid) && activeGroupMode() === "anonymous";
+  }
+
+  function displayMemberNick(uid) {
+    if (isAnonGroup()) return anonNick(uid);
+    return memberNick(uid);
+  }
+
+  function maskGroupText(text) {
+    if (!isAnonGroup() || !text) return text;
+    let out = String(text);
+    ((state.group && state.group.members) || []).forEach((m) => {
+      const id = uidOf(m);
+      if (id) out = out.split(id).join(anonNick(id));
+    });
+    return out;
   }
 
   function avatarOf(uid) {
@@ -565,10 +635,15 @@
   function syncBurnUI() {
     const box = $("burn-toggle");
     const lab = $("burn-label");
+    const forced = isGroup(state.activeCid) && activeGroupMode() === "ephemeral";
+    if (box) {
+      if (forced) box.checked = true;
+      box.disabled = forced || !!speakBlockedReason() || !state.activeCid;
+    }
     const on = !!(box && box.checked);
     if (lab) lab.classList.toggle("burn-on", on);
     const draft = $("draft");
-    if (draft && !speakBlockedReason()) draft.placeholder = on ? "阅后即焚消息…" : "";
+    if (draft && !speakBlockedReason()) draft.placeholder = on || forced ? "阅后即焚消息…" : "";
   }
 
   function fitDraft() {
@@ -643,11 +718,12 @@
             : "";
         const peer = field(c, "peerUid", "peer_uid") || "";
         const title = convTitle(c);
+        const modeLab = groupModeLabel(convGroupMode(c));
         const uid = isGroup(c.cid) ? "" : peer;
         const time = formatConvTime(c.updatedAtMs || c.updated_at_ms);
         return `<div class="row${active}${pinCls}${muted ? " muted" : ""}" data-peer="${peer}" data-cid="${c.cid}">
           ${avatarHTML(convAvatar(c), title, uid, badge)}
-          <div class="row-main"><div class="row-head"><div class="row-title">${escapeHtml(title)}</div><div class="row-time">${escapeHtml(time)}</div></div><div class="row-sub">${escapeHtml(c.lastText || c.last_text || "")}</div></div>
+          <div class="row-main"><div class="row-head"><div class="row-title">${escapeHtml(title)}${modeLab ? `<span class="mode-tag">${escapeHtml(modeLab)}</span>` : ""}</div><div class="row-time">${escapeHtml(time)}</div></div><div class="row-sub">${escapeHtml(c.lastText || c.last_text || "")}</div></div>
         </div>`;
       })
       .join("");
@@ -987,7 +1063,7 @@
             ? burned
               ? "已销毁"
               : "已撤回一条消息"
-            : (m.payload && m.payload.text) || "";
+            : maskGroupText((m.payload && m.payload.text) || "");
           return `<div class="msg-row system"><span class="sys-notice">${escapeHtml(sysText)}</span></div>`;
         }
         const st = m.status ? " " + m.status : "";
@@ -995,11 +1071,13 @@
         const id = field(m, "msgId", "msg_id") || "";
         const from = senderOf(m);
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
-        const nick = memberNick(from) || from;
-        const who = `<div class="msg-nick" title="${escapeHtml(from)}">${escapeHtml(nick)}${
-          group && from && nick !== from ? `<span class="msg-uid">${escapeHtml(from)}</span>` : ""
+        const nick = displayMemberNick(from) || from;
+        const who = `<div class="msg-nick" title="${escapeHtml(isAnonGroup() ? nick : from)}">${escapeHtml(nick)}${
+          group && from && nick !== from && !isAnonGroup() ? `<span class="msg-uid">${escapeHtml(from)}</span>` : ""
         }</div>`;
-        const face = avatarHTML(avatarOf(from), nick, from);
+        const face = isAnonGroup()
+          ? avatarHTML("", nick, nick)
+          : avatarHTML(avatarOf(from), nick, from);
         const quote = quoteBlock(m);
         const eph = !recalled && isEphemeral(m);
         const burnHint = eph
@@ -1195,6 +1273,7 @@
         const data = await api("/v1/timeline?cid=" + encodeURIComponent(cid) + "&after=" + after + "&limit=40");
         const extra = data.messages || [];
         extra.forEach((m) => {
+          m.cid = cid;
           const id = field(m, "msgId", "msg_id");
           if (id && !state.messages.some((x) => field(x, "msgId", "msg_id") === id)) state.messages.push(m);
         });
@@ -1503,7 +1582,7 @@
       if (sub) sub.textContent = "你已被禁言";
     } else if (on) {
       syncBurnUI();
-      if (sub && isGroup(state.activeCid)) sub.textContent = "";
+      if (sub && isGroup(state.activeCid)) sub.textContent = groupModeLabel(activeGroupMode());
     } else if (draft) {
       draft.placeholder = "";
     }
@@ -1520,6 +1599,10 @@
       const p = Object.assign({}, peerProfile(c));
       p.avatarUrl = url;
       p.avatar_url = url;
+      const mode = groupModeOf(g);
+      if (mode) {
+        p.email = "grp:" + mode;
+      }
       c.peerProfile = p;
       c.peer_profile = p;
     };
@@ -1706,14 +1789,19 @@
         });
         rememberProfiles(pr.users);
       } catch (_) {}
-      const addTile = `<button type="button" class="side-member add" id="side-add-btn"><span class="side-add-plus">+</span><span class="side-member-name">添加</span></button>`;
+      const anon = groupModeOf(g) === "anonymous";
+      const addTile = groupModeOf(g) === "private" && !isOwner
+        ? ""
+        : `<button type="button" class="side-member add" id="side-add-btn"><span class="side-add-plus">+</span><span class="side-member-name">添加</span></button>`;
       $("member-chips").innerHTML = members
         .map((m) => {
           const id = uidOf(m);
           const kick = manager && id && id !== state.uid && (m.role !== "owner") ? " kick" : "";
-          const label = (m.nickname || m.Nickname) || names[id] || nickOf(id) || id;
+          const real = (m.nickname || m.Nickname) || names[id] || nickOf(id) || id;
+          const label = anon && !manager ? anonNick(id) : real;
+          const face = anon && !manager ? avatarHTML("", label, label) : avatarHTML(avatarOf(id), label, id);
           const badge = m.role === "owner" ? " ·群主" : m.role === "admin" ? " ·管理" : "";
-          return `<div class="side-member${kick}" data-uid="${escapeHtml(id)}" data-name="${escapeHtml(label)}" data-role="${escapeHtml(m.role || "")}">${avatarHTML(avatarOf(id), label, id)}<span class="side-member-name">${escapeHtml(label)}${badge}</span></div>`;
+          return `<div class="side-member${kick}" data-uid="${escapeHtml(id)}" data-name="${escapeHtml(label)}" data-role="${escapeHtml(m.role || "")}">${face}<span class="side-member-name">${escapeHtml(label)}${badge}</span></div>`;
         })
         .join("") + addTile;
       $("member-chips").querySelectorAll(".side-member:not(.add)").forEach((el) => {
@@ -1883,6 +1971,11 @@
     state.openingChat = true;
     try {
     if (state.activeCid && state.activeCid !== cid) saveDraft();
+    if (state.activeCid !== cid) {
+      state.messages = [];
+      state.highlightId = "";
+      if ($("msgs")) $("msgs").innerHTML = "";
+    }
     if (!isGroup(cid)) {
       const derived = peerFromCid(cid, state.uid);
       if (derived) peer = derived;
@@ -1960,14 +2053,17 @@
     const q = state.searchQ ? "&q=" + encodeURIComponent(state.searchQ) : "";
     const data = await api("/v1/timeline?cid=" + encodeURIComponent(cid) + "&limit=50" + q);
     if (state.activeCid !== cid) return;
-    const fetched = data.messages || [];
+    const fetched = (data.messages || []).map((m) => {
+      m.cid = cid;
+      return m;
+    });
     const seen = {};
     fetched.forEach((m) => {
       const id = String(field(m, "msgId", "msg_id") || "");
       if (id) seen[id] = true;
     });
     const live = state.messages.filter((m) => {
-      if (m.cid && m.cid !== cid) return false;
+      if (String(field(m, "cid", "cid") || "") !== cid) return false;
       const id = String(field(m, "msgId", "msg_id") || "");
       if (id) return !seen[id];
       return !!(m.clientMsgId && m.status && m.status !== "acked");
@@ -2006,7 +2102,11 @@
       state.hasMore = !!(data.hasMore || data.has_more);
       if (!older.length) state.hasMore = false;
       if (older.length) {
-        for (const m of older) await decodeIncoming(m);
+        const cid = state.activeCid;
+        for (const m of older) {
+          m.cid = cid;
+          await decodeIncoming(m);
+        }
         state.messages = older.concat(state.messages);
         await hydrateMsgProfiles();
         renderMsgs({ stick: false });
@@ -2671,6 +2771,8 @@
       payload.mentionUids = mentionUidsOf(payload.text || "");
       payload = await attachLinkPreview(payload);
       if ($("burn-toggle") && $("burn-toggle").checked) payload.ephemeral = true;
+      const sendMode = cid === state.activeCid ? activeGroupMode() : convGroupMode((state.convs || []).find((c) => c.cid === cid));
+      if (isGroup(cid) && sendMode === "ephemeral") payload.ephemeral = true;
       if (state.e2eeOn && !isGroup(cid) && payload.text && !payload.e2ee) {
         if (!peerUid || peerUid === state.uid) {
           toast("无法加密：会话对象无效，请重新打开聊天后再发");
@@ -2915,9 +3017,11 @@
       .value.split(/[,，\s]+/)
       .map((s) => s.trim())
       .filter(Boolean);
+    const modeEl = document.querySelector('input[name="group-mode"]:checked');
+    const mode = (modeEl && modeEl.value) || "normal";
     if (!name) return;
     try {
-      const g = await api("/v1/groups", { method: "POST", body: JSON.stringify({ name, members }) });
+      const g = await api("/v1/groups", { method: "POST", body: JSON.stringify({ name, members, mode }) });
       $("group-name").value = "";
       $("group-members").value = "";
       await loadConvs();
@@ -2926,6 +3030,11 @@
       dlgAlert(err.message);
     }
   };
+  document.querySelectorAll('input[name="group-mode"]').forEach((el) => {
+    el.addEventListener("change", () => {
+      document.querySelectorAll("#group-modes label").forEach((lab) => lab.classList.toggle("on", lab.querySelector("input").checked));
+    });
+  });
 
   $("invite-btn").onclick = async () => {
     const uid = $("invite-uid").value.trim();

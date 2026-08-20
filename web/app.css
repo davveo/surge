@@ -211,6 +211,38 @@ body {
   cursor: pointer;
 }
 .mid-form button:hover { background: #06ad56; }
+.group-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  padding: 0 0 2px;
+}
+.group-modes label {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0 8px;
+  color: #555;
+  font-size: 11px;
+  cursor: pointer;
+}
+.group-modes label.on,
+.group-modes label:has(input:checked) {
+  border-color: #07c160;
+  background: #e9f8ef;
+  color: #07c160;
+}
+.group-modes input { display: none; }
+.mode-tag {
+  margin-left: 4px;
+  color: #07c160;
+  font-size: 11px;
+  font-weight: 400;
+}
 
 .row {
   display: flex;
