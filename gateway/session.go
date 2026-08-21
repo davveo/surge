@@ -161,6 +161,8 @@ func (a *httpAPI) me(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			DisplayName string `json:"display_name"`
 			AvatarURL   string `json:"avatar_url"`
+			OldPassword string `json:"old_password"`
+			NewPassword string `json:"new_password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
@@ -168,6 +170,7 @@ func (a *httpAPI) me(w http.ResponseWriter, r *http.Request) {
 		}
 		resp, err := a.core.UpdateProfile(r.Context(), &imv1.UpdateProfileRequest{
 			Uid: uid, DisplayName: body.DisplayName, AvatarUrl: body.AvatarURL,
+			OldPassword: body.OldPassword, NewPassword: body.NewPassword,
 		})
 		if err != nil {
 			writeRPCError(w, err)

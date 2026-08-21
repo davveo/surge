@@ -247,6 +247,8 @@ message UpdateProfileRequest {
   string avatar_url = 3;
   string email = 4;
   string phone = 5;
+  string old_password = 6;
+  string new_password = 7;
 }
 
 message UserProfile {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/davveo/surge/pkg/conv"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -56,6 +57,13 @@ func hashPassword(password string) (string, error) {
 	return string(b), nil
 }
 
+func displayNameForUID(uid string) string {
+	if conv.IsFileHelper(uid) {
+		return "文件传输助手"
+	}
+	return uid
+}
+
 func (s *memoryStore) EnsureUser(_ context.Context, uid string) error {
 	if err := validUID(uid); err != nil {
 		return err
@@ -63,7 +71,42 @@ func (s *memoryStore) EnsureUser(_ context.Context, uid string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.users[uid] == nil {
-		s.users[uid] = &userRec{UID: uid, DisplayName: uid}
+		s.users[uid] = &userRec{UID: uid, DisplayName: displayNameForUID(uid)}
+	} else if conv.IsFileHelper(uid) && (s.users[uid].DisplayName == "" || s.users[uid].DisplayName == uid) {
+		s.users[uid].DisplayName = displayNameForUID(uid)
+	}
+	return nil
+}
+
+func (s *memoryStore) ChangePassword(_ context.Context, uid, oldPassword, newPassword string) error {
+	if err := validUID(uid); err != nil {
+		return err
+	}
+	oldPassword = strings.TrimSpace(oldPassword)
+	newPassword = strings.TrimSpace(newPassword)
+	if newPassword == "" {
+		return fmt.Errorf("%w: password required", errInvalid)
+	}
+	if len(newPassword) < 6 {
+		return fmt.Errorf("%w: password too short", errInvalid)
+	}
+	s.mu.Lock()
+	u := s.users[uid]
+	s.mu.Unlock()
+	if u == nil || u.PasswordHash == "" {
+		return fmt.Errorf("%w: bad credentials", errAuth)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPassword)) != nil {
+		return fmt.Errorf("%w: bad credentials", errAuth)
+	}
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cur := s.users[uid]; cur != nil {
+		cur.PasswordHash = hash
 	}
 	return nil
 }
@@ -158,6 +201,9 @@ func (s *memoryStore) SearchUsers(_ context.Context, query string, limit int) ([
 	defer s.mu.Unlock()
 	var out []*imv1.UserProfile
 	for _, u := range s.users {
+		if conv.IsFileHelper(u.UID) {
+			continue
+		}
 		if strings.HasPrefix(strings.ToLower(u.UID), query) || strings.Contains(strings.ToLower(u.DisplayName), query) ||
 			strings.Contains(strings.ToLower(u.Email), query) || strings.Contains(u.Phone, query) {
 			out = append(out, profileOf(u))

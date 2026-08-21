@@ -61,19 +61,23 @@ func (s *server) Send(ctx context.Context, req *imv1.SendMessageRequest) (*imv1.
 	defer unlock()
 
 	if !conv.IsGroup(canonical) {
-		blocked, err := s.store.IsBlocked(ctx, req.GetFromUid(), peer)
-		if err != nil {
-			return nil, mapErr(err)
-		}
-		if blocked {
-			return nil, mapErr(fmt.Errorf("%w: user blocked", errBlocked))
-		}
-		ok, err := s.store.AreFriends(ctx, req.GetFromUid(), peer)
-		if err != nil {
-			return nil, mapErr(err)
-		}
-		if !ok {
-			return nil, mapErr(fmt.Errorf("%w: add friend first", errNotFriends))
+		if conv.IsFileHelper(peer) {
+			_ = s.store.EnsureUser(ctx, conv.FileHelperUID)
+		} else {
+			blocked, err := s.store.IsBlocked(ctx, req.GetFromUid(), peer)
+			if err != nil {
+				return nil, mapErr(err)
+			}
+			if blocked {
+				return nil, mapErr(fmt.Errorf("%w: user blocked", errBlocked))
+			}
+			ok, err := s.store.AreFriends(ctx, req.GetFromUid(), peer)
+			if err != nil {
+				return nil, mapErr(err)
+			}
+			if !ok {
+				return nil, mapErr(fmt.Errorf("%w: add friend first", errNotFriends))
+			}
 		}
 	}
 
@@ -292,6 +296,11 @@ func (s *server) GetProfile(ctx context.Context, req *imv1.GetProfileRequest) (*
 }
 
 func (s *server) UpdateProfile(ctx context.Context, req *imv1.UpdateProfileRequest) (*imv1.UserProfile, error) {
+	if req.GetNewPassword() != "" {
+		if err := s.store.ChangePassword(ctx, req.GetUid(), req.GetOldPassword(), req.GetNewPassword()); err != nil {
+			return nil, mapErr(err)
+		}
+	}
 	p, err := s.store.UpdateProfile(ctx, req.GetUid(), req.GetDisplayName(), req.GetAvatarUrl())
 	if err != nil {
 		return nil, mapErr(err)
@@ -483,7 +492,20 @@ func (s *server) MarkRead(ctx context.Context, req *imv1.MarkReadRequest) (*imv1
 func (s *server) FanoutTyping(ctx context.Context, req *imv1.Typing) (*imv1.Typing, error) {
 	cid := req.GetCid()
 	from := req.GetFromUid()
-	if cid == "" || from == "" || conv.IsGroup(cid) {
+	if cid == "" || from == "" {
+		return req, nil
+	}
+	if conv.IsGroup(cid) {
+		members, err := s.store.GroupMembers(ctx, cid)
+		if err != nil {
+			return req, nil
+		}
+		for _, uid := range members {
+			if uid == from {
+				continue
+			}
+			s.publish(ctx, uid, &imv1.GatewayPush{Uid: uid, Typing: req})
+		}
 		return req, nil
 	}
 	if peer, err := conv.PeerUID(cid, from); err == nil {

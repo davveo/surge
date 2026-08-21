@@ -39,6 +39,43 @@ func TestSendRequiresFriend(t *testing.T) {
 	}
 }
 
+func TestFileHelperSendWithoutFriend(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	_ = st.EnsureUser(ctx, "u1")
+	resp, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid:     "u1",
+		ClientMsgId: "fh1",
+		PeerUid:     "filehelper",
+		Payload:     &imv1.Payload{Type: imv1.Payload_TEXT, Text: "note"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetAck().GetCid() != "p2p:filehelper:u1" {
+		t.Fatalf("cid %s", resp.GetAck().GetCid())
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := st.Register(ctx, "u1", "oldpass"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.UpdateProfile(ctx, &imv1.UpdateProfileRequest{Uid: "u1", OldPassword: "bad", NewPassword: "newpass"}); err == nil {
+		t.Fatal("expected bad old password")
+	}
+	if _, err := srv.UpdateProfile(ctx, &imv1.UpdateProfileRequest{Uid: "u1", OldPassword: "oldpass", NewPassword: "newpass"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.VerifyPassword(ctx, "u1", "newpass"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGroupSendAndRecall(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
 	srv := newServer(st, nil)

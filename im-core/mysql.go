@@ -508,6 +508,9 @@ func (s *mysqlStore) ListFriends(ctx context.Context, uid string) ([]string, err
 }
 
 func (s *mysqlStore) AreFriends(ctx context.Context, uid, peerUID string) (bool, error) {
+	if conv.IsFileHelper(peerUID) || conv.IsFileHelper(uid) {
+		return true, nil
+	}
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM friends WHERE uid = ? AND peer_uid = ? LIMIT 1`, uid, peerUID).Scan(&n)
 	if err == sql.ErrNoRows {

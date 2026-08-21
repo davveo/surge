@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davveo/surge/pkg/conv"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -38,10 +39,38 @@ func (s *mysqlStore) EnsureUser(ctx context.Context, uid string) error {
 		return err
 	}
 	now := time.Now().UnixMilli()
+	name := displayNameForUID(uid)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (uid, password_hash, display_name, avatar_url, created_at_ms)
 		VALUES (?, '', ?, '', ?)
-		ON DUPLICATE KEY UPDATE uid = uid`, uid, uid, now)
+		ON DUPLICATE KEY UPDATE display_name = IF(uid = 'filehelper' AND (display_name = '' OR display_name = uid), VALUES(display_name), display_name)`, uid, name, now)
+	return err
+}
+
+func (s *mysqlStore) ChangePassword(ctx context.Context, uid, oldPassword, newPassword string) error {
+	if err := validUID(uid); err != nil {
+		return err
+	}
+	oldPassword = strings.TrimSpace(oldPassword)
+	newPassword = strings.TrimSpace(newPassword)
+	if newPassword == "" {
+		return fmt.Errorf("%w: password required", errInvalid)
+	}
+	if len(newPassword) < 6 {
+		return fmt.Errorf("%w: password too short", errInvalid)
+	}
+	u, err := s.loadUser(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if u == nil || u.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPassword)) != nil {
+		return fmt.Errorf("%w: bad credentials", errAuth)
+	}
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE uid = ?`, hash, uid)
 	return err
 }
 
@@ -156,6 +185,9 @@ func (s *mysqlStore) SearchUsers(ctx context.Context, query string, limit int) (
 		u, err := scanUser(rows)
 		if err != nil {
 			return nil, err
+		}
+		if conv.IsFileHelper(u.UID) {
+			continue
 		}
 		out = append(out, profileOf(u))
 	}

@@ -97,6 +97,7 @@ type Store interface {
 	VerifyPassword(ctx context.Context, uid, password string) (*imv1.UserProfile, error)
 	GetProfile(ctx context.Context, uid string) (*imv1.UserProfile, error)
 	UpdateProfile(ctx context.Context, uid, displayName, avatarURL string) (*imv1.UserProfile, error)
+	ChangePassword(ctx context.Context, uid, oldPassword, newPassword string) error
 	SearchUsers(ctx context.Context, query string, limit int) ([]*imv1.UserProfile, error)
 	UpdateGroup(ctx context.Context, operatorUID, cid, name, avatarURL, announcement string, setAnnouncement bool, joinApproval *bool) (*groupInfo, error)
 	SetMute(ctx context.Context, uid, cid string, muted bool) error
@@ -587,6 +588,9 @@ func (s *memoryStore) ListFriends(_ context.Context, uid string) ([]string, erro
 }
 
 func (s *memoryStore) AreFriends(_ context.Context, uid, peerUID string) (bool, error) {
+	if conv.IsFileHelper(peerUID) || conv.IsFileHelper(uid) {
+		return true, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.hasFriend(uid, peerUID), nil
