@@ -51,6 +51,8 @@ func (a *httpAPI) friendRequests(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			PeerUID string `json:"peer_uid"`
 			Action  string `json:"action"`
+			Hello   string `json:"hello"`
+			Source  string `json:"source"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.PeerUID) == "" {
 			http.Error(w, `{"error":"peer_uid required"}`, http.StatusBadRequest)
@@ -74,7 +76,7 @@ func (a *httpAPI) friendRequests(w http.ResponseWriter, r *http.Request) {
 			a.pushRoster(body.PeerUID, uid, "friend_decline", "")
 			writeProtoJSON(w, resp)
 		default:
-			resp, err := a.core.RequestFriend(r.Context(), &imv1.AddFriendRequest{Uid: uid, PeerUid: body.PeerUID})
+			resp, err := a.core.RequestFriend(r.Context(), &imv1.AddFriendRequest{Uid: uid, PeerUid: body.PeerUID, Hello: body.Hello, Source: body.Source})
 			if err != nil {
 				writeRPCError(w, err)
 				return

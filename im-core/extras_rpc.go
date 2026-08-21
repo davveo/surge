@@ -25,7 +25,7 @@ func (s *server) RemoveFriend(ctx context.Context, req *imv1.RemoveFriendRequest
 
 func (s *server) RequestFriend(ctx context.Context, req *imv1.AddFriendRequest) (*imv1.FriendRequestState, error) {
 	already, _ := s.store.AreFriends(ctx, req.GetUid(), req.GetPeerUid())
-	st, err := s.store.RequestFriend(ctx, req.GetUid(), req.GetPeerUid())
+	st, err := s.store.RequestFriend(ctx, req.GetUid(), req.GetPeerUid(), req.GetHello(), req.GetSource())
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -39,7 +39,7 @@ func (s *server) RequestFriend(ctx context.Context, req *imv1.AddFriendRequest) 
 			s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_accept", "")
 		}
 	}
-	return &imv1.FriendRequestState{FromUid: req.GetUid(), ToUid: req.GetPeerUid(), Status: st}, nil
+	return &imv1.FriendRequestState{FromUid: req.GetUid(), ToUid: req.GetPeerUid(), Status: st, Hello: req.GetHello(), Source: req.GetSource()}, nil
 }
 
 func (s *server) AcceptFriend(ctx context.Context, req *imv1.AddFriendRequest) (*imv1.AddFriendResponse, error) {
@@ -65,10 +65,10 @@ func (s *server) ListFriendRequests(ctx context.Context, req *imv1.ListFriendsRe
 	}
 	resp := &imv1.ListFriendRequestsResponse{}
 	for _, p := range in {
-		resp.Incoming = append(resp.Incoming, &imv1.FriendRequestState{FromUid: p[0], ToUid: p[1], Status: "pending"})
+		resp.Incoming = append(resp.Incoming, &imv1.FriendRequestState{FromUid: p.FromUID, ToUid: p.ToUID, Status: "pending", Hello: p.Hello, Source: p.Source})
 	}
 	for _, p := range out {
-		resp.Outgoing = append(resp.Outgoing, &imv1.FriendRequestState{FromUid: p[0], ToUid: p[1], Status: "pending"})
+		resp.Outgoing = append(resp.Outgoing, &imv1.FriendRequestState{FromUid: p.FromUID, ToUid: p.ToUID, Status: "pending", Hello: p.Hello, Source: p.Source})
 	}
 	return resp, nil
 }

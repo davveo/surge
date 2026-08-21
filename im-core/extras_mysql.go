@@ -58,11 +58,13 @@ func (s *mysqlStore) RemoveFriend(ctx context.Context, uid, peerUID string) erro
 	return err
 }
 
-func (s *mysqlStore) RequestFriend(ctx context.Context, fromUID, toUID string) (string, error) {
+func (s *mysqlStore) RequestFriend(ctx context.Context, fromUID, toUID, hello, source string) (string, error) {
 	fromUID, toUID, err := normalizePair(fromUID, toUID)
 	if err != nil {
 		return "", err
 	}
+	hello = clipText(hello, 200)
+	source = clipText(source, 64)
 	blocked, err := s.IsBlocked(ctx, fromUID, toUID)
 	if err != nil {
 		return "", err
@@ -89,7 +91,10 @@ func (s *mysqlStore) RequestFriend(ctx context.Context, fromUID, toUID string) (
 		return "", err
 	}
 	now := time.Now().UnixMilli()
-	_, err = s.db.ExecContext(ctx, `INSERT IGNORE INTO friend_requests (from_uid, to_uid, created_at_ms) VALUES (?, ?, ?)`, fromUID, toUID, now)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO friend_requests (from_uid, to_uid, created_at_ms, hello, source) VALUES (?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE hello = VALUES(hello), source = IF(VALUES(source) = '', source, VALUES(source)), created_at_ms = VALUES(created_at_ms)`,
+		fromUID, toUID, now, hello, source)
 	if err != nil {
 		return "", err
 	}
@@ -117,21 +122,21 @@ func (s *mysqlStore) DeclineFriend(ctx context.Context, fromUID, toUID string) e
 	return err
 }
 
-func (s *mysqlStore) ListFriendRequests(ctx context.Context, uid string) (incoming, outgoing [][2]string, err error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT from_uid, to_uid FROM friend_requests WHERE to_uid = ? OR from_uid = ?`, uid, uid)
+func (s *mysqlStore) ListFriendRequests(ctx context.Context, uid string) (incoming, outgoing []friendReqRow, err error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT from_uid, to_uid, COALESCE(hello, ''), COALESCE(source, '') FROM friend_requests WHERE to_uid = ? OR from_uid = ?`, uid, uid)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var from, to string
-		if err := rows.Scan(&from, &to); err != nil {
+		var row friendReqRow
+		if err := rows.Scan(&row.FromUID, &row.ToUID, &row.Hello, &row.Source); err != nil {
 			return nil, nil, err
 		}
-		if to == uid {
-			incoming = append(incoming, [2]string{from, to})
+		if row.ToUID == uid {
+			incoming = append(incoming, row)
 		} else {
-			outgoing = append(outgoing, [2]string{from, to})
+			outgoing = append(outgoing, row)
 		}
 	}
 	return incoming, outgoing, rows.Err()
@@ -377,8 +382,9 @@ func (s *mysqlStore) TimelineQuery(ctx context.Context, uid, cid string, afterSe
 		}
 	}
 	if query == "" && beforeSeq == 0 {
-		_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET unread = 0 WHERE uid = ? AND cid = ?`, uid, cid)
+		_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET unread = 0, unread_mention = 0 WHERE uid = ? AND cid = ?`, uid, cid)
 	}
+	s.attachReactions(ctx, out)
 	return cid, out, hasMore, nil
 }
 

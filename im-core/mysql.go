@@ -51,6 +51,10 @@ func migrate(db *sql.DB, schema string) error {
 		`ALTER TABLE group_members ADD COLUMN muted TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE conversations ADD COLUMN cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0`,
 		`ALTER TABLE im_groups ADD COLUMN mode VARCHAR(32) NOT NULL DEFAULT 'normal'`,
+		`ALTER TABLE friend_requests ADD COLUMN hello VARCHAR(200) NOT NULL DEFAULT ''`,
+		`ALTER TABLE friend_requests ADD COLUMN source VARCHAR(64) NOT NULL DEFAULT ''`,
+		`ALTER TABLE conversations ADD COLUMN unread_mention INT UNSIGNED NOT NULL DEFAULT 0`,
+		`ALTER TABLE conversations ADD COLUMN draft_text TEXT`,
 		`CREATE TABLE IF NOT EXISTS hidden_messages (
   uid VARCHAR(64) NOT NULL,
   msg_id CHAR(36) NOT NULL,
@@ -63,6 +67,60 @@ func migrate(db *sql.DB, schema string) error {
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (cid, uid),
   KEY idx_cid (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS message_reactions (
+  msg_id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  emoji VARCHAR(16) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (msg_id, uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS favorites (
+  fav_id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  preview VARCHAR(512) NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (fav_id),
+  UNIQUE KEY uk_uid_msg (uid, msg_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS group_invites (
+  token VARCHAR(32) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  expires_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS chat_pins (
+  cid VARCHAR(128) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  preview VARCHAR(512) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS reports (
+  id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  reason VARCHAR(256) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS user_settings (
+  uid VARCHAR(64) NOT NULL,
+  dark TINYINT NOT NULL DEFAULT 0,
+  wallpaper VARCHAR(64) NOT NULL DEFAULT '',
+  notify_sound TINYINT NOT NULL DEFAULT 1,
+  notify_preview TINYINT NOT NULL DEFAULT 1,
+  dnd_start VARCHAR(8) NOT NULL DEFAULT '',
+  dnd_end VARCHAR(8) NOT NULL DEFAULT '',
+  PRIMARY KEY (uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 	for _, a := range alters {
@@ -144,6 +202,11 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		}
 		if err := upsertConv(ctx, tx, uid, canonical, peerLabel, title, kind, msgID, convSeq, preview, now, uid != fromUID); err != nil {
 			return nil, err
+		}
+		if uid != fromUID && payloadMentions(payload, uid) {
+			if _, err := tx.ExecContext(ctx, `UPDATE conversations SET unread_mention = unread_mention + 1 WHERE uid = ? AND cid = ?`, uid, canonical); err != nil {
+				return nil, err
+			}
 		}
 		if uid != fromUID {
 			deliveries = append(deliveries, delivery{uid: uid, push: &imv1.Push{
@@ -319,7 +382,7 @@ func (s *mysqlStore) Watermark(ctx context.Context, uid string) (uint64, error) 
 func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1.Conversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.cid, c.peer_uid, c.last_msg_id, c.last_conv_seq, c.unread, c.updated_at_ms, c.last_text, c.title, c.kind,
-			IFNULL(m.muted, 0), IFNULL(c.pinned, 0), IFNULL(g.avatar_url, ''), IFNULL(g.mode, '')
+			IFNULL(m.muted, 0), IFNULL(c.pinned, 0), IFNULL(g.avatar_url, ''), IFNULL(g.mode, ''), IFNULL(c.unread_mention, 0), IFNULL(c.draft_text, '')
 		FROM conversations c
 		LEFT JOIN conv_mutes m ON m.uid = c.uid AND m.cid = c.cid
 		LEFT JOIN im_groups g ON g.cid = c.cid
@@ -334,7 +397,7 @@ func (s *mysqlStore) ListConversations(ctx context.Context, uid string) ([]*imv1
 		c := &imv1.Conversation{}
 		var muted, pinned int
 		var groupAvatar, groupMode string
-		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned, &groupAvatar, &groupMode); err != nil {
+		if err := rows.Scan(&c.Cid, &c.PeerUid, &c.LastMsgId, &c.LastConvSeq, &c.Unread, &c.UpdatedAtMs, &c.LastText, &c.Title, &c.Kind, &muted, &pinned, &groupAvatar, &groupMode, &c.UnreadMention, &c.DraftText); err != nil {
 			return nil, err
 		}
 		c.Muted = muted != 0
@@ -394,7 +457,8 @@ func (s *mysqlStore) Timeline(ctx context.Context, uid, cid string, afterSeq uin
 	if err := rows.Err(); err != nil {
 		return "", nil, err
 	}
-	_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET unread = 0 WHERE uid = ? AND cid = ?`, uid, cid)
+	s.attachReactions(ctx, out)
+	_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET unread = 0, unread_mention = 0 WHERE uid = ? AND cid = ?`, uid, cid)
 	return cid, out, nil
 }
 

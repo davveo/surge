@@ -32,12 +32,20 @@ func validateSend(fromUID, clientMsgID string, payload *imv1.Payload) error {
 		if strings.TrimSpace(payload.Text) == "" {
 			return fmt.Errorf("%w: empty text", errInvalid)
 		}
-	case imv1.Payload_IMAGE, imv1.Payload_FILE:
+	case imv1.Payload_IMAGE, imv1.Payload_FILE, imv1.Payload_VIDEO:
 		if payload.Media == nil || strings.TrimSpace(payload.Media.ObjectKey) == "" {
 			return fmt.Errorf("%w: media object_key required", errInvalid)
 		}
 		if strings.Contains(payload.Media.ObjectKey, "..") {
 			return fmt.Errorf("%w: invalid object_key", errInvalid)
+		}
+	case imv1.Payload_CARD:
+		if strings.TrimSpace(payload.CardUid) == "" {
+			return fmt.Errorf("%w: card_uid required", errInvalid)
+		}
+	case imv1.Payload_MERGE:
+		if len(payload.MergeItems) == 0 {
+			return fmt.Errorf("%w: merge items required", errInvalid)
 		}
 	case imv1.Payload_RECALL:
 		return fmt.Errorf("%w: cannot send recall payload", errInvalid)
@@ -64,7 +72,19 @@ func normalizeSendPayload(p *imv1.Payload) {
 			p.Type = imv1.Payload_IMAGE
 			return
 		}
+		if strings.HasPrefix(ct, "video/") {
+			p.Type = imv1.Payload_VIDEO
+			return
+		}
 		p.Type = imv1.Payload_FILE
+		return
+	}
+	if strings.TrimSpace(p.CardUid) != "" {
+		p.Type = imv1.Payload_CARD
+		return
+	}
+	if len(p.MergeItems) > 0 {
+		p.Type = imv1.Payload_MERGE
 		return
 	}
 	if strings.TrimSpace(p.Text) != "" {
@@ -82,6 +102,16 @@ func previewOf(p *imv1.Payload) string {
 			return "[表情]"
 		}
 		return "[图片]"
+	case imv1.Payload_VIDEO:
+		return "[视频]"
+	case imv1.Payload_CARD:
+		name := strings.TrimSpace(p.Text)
+		if name == "" {
+			name = p.CardUid
+		}
+		return clipText("[名片] "+name, 128)
+	case imv1.Payload_MERGE:
+		return "[聊天记录]"
 	case imv1.Payload_FILE:
 		name := ""
 		if p.Media != nil {
@@ -136,7 +166,35 @@ func enrichPayload(p *imv1.Payload, quoteText string) *imv1.Payload {
 	if len(out.MentionUids) == 0 {
 		out.MentionUids = extractMentions(out.Text)
 	}
+	out.Text = filterSensitive(out.Text)
 	return out
+}
+
+func payloadMentions(p *imv1.Payload, uid string) bool {
+	if p == nil || uid == "" {
+		return false
+	}
+	for _, m := range p.MentionUids {
+		if m == uid || m == "所有人" {
+			return true
+		}
+	}
+	return strings.Contains(p.Text, "@所有人")
+}
+
+var sensitiveWords = []string{"违禁词"}
+
+func filterSensitive(text string) string {
+	if text == "" {
+		return text
+	}
+	for _, w := range sensitiveWords {
+		if w == "" || !strings.Contains(text, w) {
+			continue
+		}
+		text = strings.ReplaceAll(text, w, strings.Repeat("*", utf8.RuneCountInString(w)))
+	}
+	return text
 }
 
 func marshalPayloadBlob(p *imv1.Payload) string {
@@ -168,8 +226,18 @@ func marshalPayloadBlob(p *imv1.Payload) string {
 	blob.Ephemeral = p.Ephemeral
 	blob.E2EE = p.E2Ee
 	blob.StickerID = p.StickerId
+	blob.CardUID = p.CardUid
 	blob.Burned = false
-	if blob.ObjectKey == "" && blob.Link == nil && len(blob.Mentions) == 0 && blob.QuoteText == "" && !blob.Ephemeral && !blob.E2EE && blob.StickerID == "" {
+	if p.Media != nil {
+		blob.Transcript = p.Media.Transcript
+		blob.DurationMs = p.Media.DurationMs
+	}
+	if len(p.MergeItems) > 0 {
+		for _, it := range p.MergeItems {
+			blob.Merge = append(blob.Merge, mergeJSON{FromUID: it.FromUid, Text: it.Text, Type: it.Type, CreatedAtMs: it.CreatedAtMs})
+		}
+	}
+	if blob.ObjectKey == "" && blob.Link == nil && len(blob.Mentions) == 0 && blob.QuoteText == "" && !blob.Ephemeral && !blob.E2EE && blob.StickerID == "" && blob.CardUID == "" && len(blob.Merge) == 0 && blob.Transcript == "" {
 		return ""
 	}
 	b, err := json.Marshal(blob)
@@ -205,6 +273,8 @@ func payloadFromCols(ptype int32, text, mediaJSON string, recalled bool) *imv1.P
 			Height:      blob.Height,
 			Url:         blob.URL,
 			ThumbUrl:    blob.ThumbURL,
+			Transcript:  blob.Transcript,
+			DurationMs:  blob.DurationMs,
 		}
 	}
 	if blob.Link != nil && blob.Link.URL != "" {
@@ -217,6 +287,10 @@ func payloadFromCols(ptype int32, text, mediaJSON string, recalled bool) *imv1.P
 	}
 	p.MentionUids = blob.Mentions
 	p.QuoteText = blob.QuoteText
+	p.CardUid = blob.CardUID
+	for _, it := range blob.Merge {
+		p.MergeItems = append(p.MergeItems, &imv1.MergeItem{FromUid: it.FromUID, Text: it.Text, Type: it.Type, CreatedAtMs: it.CreatedAtMs})
+	}
 	return p
 }
 
@@ -232,13 +306,24 @@ func unmarshalPayloadBlob(raw string) payloadBlob {
 
 type payloadBlob struct {
 	mediaJSON
-	Link      *linkJSON `json:"link,omitempty"`
-	Mentions  []string  `json:"mentions,omitempty"`
-	QuoteText string    `json:"quoteText,omitempty"`
-	Ephemeral bool      `json:"ephemeral,omitempty"`
-	E2EE      bool      `json:"e2ee,omitempty"`
-	StickerID string    `json:"stickerId,omitempty"`
-	Burned    bool      `json:"burned,omitempty"`
+	Link       *linkJSON   `json:"link,omitempty"`
+	Mentions   []string    `json:"mentions,omitempty"`
+	QuoteText  string      `json:"quoteText,omitempty"`
+	Ephemeral  bool        `json:"ephemeral,omitempty"`
+	E2EE       bool        `json:"e2ee,omitempty"`
+	StickerID  string      `json:"stickerId,omitempty"`
+	Burned     bool        `json:"burned,omitempty"`
+	CardUID    string      `json:"cardUid,omitempty"`
+	Transcript string      `json:"transcript,omitempty"`
+	DurationMs int32       `json:"durationMs,omitempty"`
+	Merge      []mergeJSON `json:"merge,omitempty"`
+}
+
+type mergeJSON struct {
+	FromUID     string `json:"fromUid"`
+	Text        string `json:"text"`
+	Type        int32  `json:"type"`
+	CreatedAtMs int64  `json:"createdAtMs"`
 }
 
 type linkJSON struct {

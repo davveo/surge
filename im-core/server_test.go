@@ -243,12 +243,12 @@ func TestFriendRequestBlockAndHide(t *testing.T) {
 	st := newMemoryStore(newMemSeq())
 	srv := newServer(st, nil)
 	ctx := context.Background()
-	stt, err := srv.RequestFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2"})
+	stt, err := srv.RequestFriend(ctx, &imv1.AddFriendRequest{Uid: "u1", PeerUid: "u2", Hello: "我是u1", Source: "search"})
 	if err != nil || stt.Status != "pending" {
 		t.Fatalf("request %+v %v", stt, err)
 	}
 	in, out, err := st.ListFriendRequests(ctx, "u2")
-	if err != nil || len(in) != 1 || in[0][0] != "u1" || len(out) != 0 {
+	if err != nil || len(in) != 1 || in[0].FromUID != "u1" || in[0].Hello != "我是u1" || in[0].Source != "search" || len(out) != 0 {
 		t.Fatalf("incoming %+v outgoing %+v %v", in, out, err)
 	}
 	if _, err := srv.DeclineFriend(ctx, &imv1.AddFriendRequest{Uid: "u2", PeerUid: "u1"}); err != nil {
@@ -817,5 +817,90 @@ func TestGroupModes(t *testing.T) {
 	got := protoGroup(anon)
 	if got.GetMode() != groupModeAnonymous {
 		t.Fatalf("proto mode %s", got.GetMode())
+	}
+}
+
+func TestDailyReactionsFavoritesInvite(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	srv := newServer(st, nil)
+	ctx := context.Background()
+	if _, err := st.AddFriend(ctx, "u1", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "d1", PeerUid: "u2", Payload: &imv1.Payload{Type: imv1.Payload_TEXT, Text: "hi @u2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	convs, _ := st.ListConversations(ctx, "u2")
+	if len(convs) == 0 || convs[0].UnreadMention < 1 {
+		t.Fatalf("mention unread %+v", convs)
+	}
+	cid := sent.Ack.Cid
+	react, err := srv.ReactMessage(ctx, &imv1.ReactMessageRequest{Uid: "u2", Cid: cid, MsgId: sent.Ack.MsgId, Emoji: "👍"})
+	if err != nil || len(react.Reactions) != 1 {
+		t.Fatalf("react %+v %v", react, err)
+	}
+	_, msgs, err := st.Timeline(ctx, "u2", cid, 0, 20)
+	if err != nil || len(msgs) == 0 || len(msgs[0].Reactions) != 1 {
+		t.Fatalf("timeline reactions %+v %v", msgs, err)
+	}
+	fav, err := srv.AddFavorite(ctx, &imv1.FavoriteRequest{Uid: "u2", Cid: cid, MsgId: sent.Ack.MsgId})
+	if err != nil || fav.MsgId != sent.Ack.MsgId {
+		t.Fatalf("fav %+v %v", fav, err)
+	}
+	list, err := srv.ListFavorites(ctx, &imv1.ListFavoritesRequest{Uid: "u2"})
+	if err != nil || len(list.Favorites) != 1 {
+		t.Fatalf("list fav %+v %v", list, err)
+	}
+	g, err := st.CreateGroup(ctx, "u1", "g", []string{"u2"}, "normal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := srv.CreateGroupInvite(ctx, &imv1.GetGroupRequest{Uid: "u1", Cid: g.CID})
+	if err != nil || inv.Token == "" {
+		t.Fatalf("invite %+v %v", inv, err)
+	}
+	joined, err := srv.JoinByInvite(ctx, &imv1.JoinInviteRequest{Uid: "u3", Token: inv.Token})
+	if err != nil || joined == nil {
+		t.Fatalf("join %+v %v", joined, err)
+	}
+	if err := st.SetDraft(ctx, "u1", cid, "later"); err != nil {
+		t.Fatal(err)
+	}
+	convs, _ = st.ListConversations(ctx, "u1")
+	found := false
+	for _, c := range convs {
+		if c.Cid == cid && c.DraftText == "later" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("draft missing %+v", convs)
+	}
+	pin, err := srv.PinChatMessage(ctx, &imv1.PinChatMessageRequest{Uid: "u1", Cid: cid, MsgId: sent.Ack.MsgId})
+	if err != nil || pin.MsgId != sent.Ack.MsgId {
+		t.Fatalf("pin %+v %v", pin, err)
+	}
+	card, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "card1", PeerUid: "u2", Payload: &imv1.Payload{Type: imv1.Payload_CARD, CardUid: "u3", Text: "u3"},
+	})
+	if err != nil || card.Ack == nil {
+		t.Fatalf("card %v", err)
+	}
+	merge, err := srv.Send(ctx, &imv1.SendMessageRequest{
+		FromUid: "u1", ClientMsgId: "mrg1", PeerUid: "u2",
+		Payload: &imv1.Payload{Type: imv1.Payload_MERGE, MergeItems: []*imv1.MergeItem{{FromUid: "u1", Text: "hi", Type: 1}}},
+	})
+	if err != nil || merge.Ack == nil {
+		t.Fatalf("merge %v", err)
+	}
+	if _, err := srv.ReportMessage(ctx, &imv1.ReportRequest{Uid: "u2", Cid: cid, MsgId: sent.Ack.MsgId, Reason: "spam"}); err != nil {
+		t.Fatal(err)
+	}
+	stt, err := srv.SetSettings(ctx, &imv1.UserSettings{Uid: "u1", Dark: true, NotifySound: true, NotifyPreview: false, Wallpaper: "green"})
+	if err != nil || !stt.Dark || stt.NotifyPreview {
+		t.Fatalf("settings %+v %v", stt, err)
 	}
 }

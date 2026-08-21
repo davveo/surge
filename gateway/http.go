@@ -84,6 +84,15 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/group-join", a.groupJoin)
 	mux.HandleFunc("/v1/devices", a.devices)
 	mux.HandleFunc("/v1/me/qr.png", a.meQRPNG)
+	mux.HandleFunc("/v1/react", a.react)
+	mux.HandleFunc("/v1/favorites", a.favorites)
+	mux.HandleFunc("/v1/group-invite-link", a.groupInviteLink)
+	mux.HandleFunc("/v1/group-invite.png", a.groupInvitePNG)
+	mux.HandleFunc("/v1/group-join-invite", a.groupJoinInvite)
+	mux.HandleFunc("/v1/drafts", a.drafts)
+	mux.HandleFunc("/v1/pinned", a.pinned)
+	mux.HandleFunc("/v1/report", a.report)
+	mux.HandleFunc("/v1/settings", a.settings)
 	mux.HandleFunc("/v1/ws", a.ws.handleWS)
 	if dir := strings.TrimSpace(a.webDir); dir != "" {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
@@ -332,9 +341,9 @@ func (a *httpAPI) groupUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CID          string `json:"cid"`
-		Name         string `json:"name"`
-		AvatarURL    string `json:"avatar_url"`
+		CID          string  `json:"cid"`
+		Name         string  `json:"name"`
+		AvatarURL    string  `json:"avatar_url"`
 		Announcement *string `json:"announcement"`
 		JoinApproval *bool   `json:"join_approval"`
 	}

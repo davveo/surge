@@ -62,6 +62,18 @@ service IMCore {
   rpc ListJoinRequests(GetGroupRequest) returns (ListJoinRequestsResponse);
   rpc RequestJoin(LeaveGroupRequest) returns (GroupResponse);
   rpc DecideJoin(DecideJoinRequest) returns (GroupResponse);
+  rpc ReactMessage(ReactMessageRequest) returns (ReactionList);
+  rpc AddFavorite(FavoriteRequest) returns (Favorite);
+  rpc ListFavorites(ListFavoritesRequest) returns (ListFavoritesResponse);
+  rpc DeleteFavorite(FavoriteRequest) returns (HideConversationResponse);
+  rpc CreateGroupInvite(GetGroupRequest) returns (GroupInvite);
+  rpc JoinByInvite(JoinInviteRequest) returns (GroupResponse);
+  rpc SetDraft(SetDraftRequest) returns (HideConversationResponse);
+  rpc PinChatMessage(PinChatMessageRequest) returns (PinnedMessage);
+  rpc GetPinnedMessage(GetGroupRequest) returns (PinnedMessage);
+  rpc ReportMessage(ReportRequest) returns (HideConversationResponse);
+  rpc GetSettings(ListFriendsRequest) returns (UserSettings);
+  rpc SetSettings(UserSettings) returns (UserSettings);
 }
 
 message WatermarkRequest {
@@ -122,6 +134,8 @@ message Conversation {
   bool muted = 10;
   bool pinned = 11;
   UserProfile peer_profile = 12;
+  uint32 unread_mention = 13;
+  string draft_text = 14;
 }
 
 message ListConversationsResponse {
@@ -145,6 +159,7 @@ message TimelineMessage {
   int64 created_at_ms = 5;
   bool recalled = 6;
   string quote_msg_id = 7;
+  repeated ReactionBucket reactions = 8;
 }
 
 message GetTimelineResponse {
@@ -167,6 +182,8 @@ message GatewayPush {
 message AddFriendRequest {
   string uid = 1;
   string peer_uid = 2;
+  string hello = 3;
+  string source = 4;
 }
 
 message AddFriendResponse {
@@ -353,6 +370,8 @@ message FriendRequestState {
   string from_uid = 1;
   string to_uid = 2;
   string status = 3;
+  string hello = 4;
+  string source = 5;
 }
 
 message ListFriendRequestsResponse {
@@ -499,4 +518,94 @@ message DecideJoinRequest {
   string cid = 2;
   string member_uid = 3;
   bool accept = 4;
+}
+
+message ReactionBucket {
+  string emoji = 1;
+  repeated string uids = 2;
+}
+
+message ReactMessageRequest {
+  string uid = 1;
+  string cid = 2;
+  string msg_id = 3;
+  string emoji = 4;
+}
+
+message ReactionList {
+  string msg_id = 1;
+  repeated ReactionBucket reactions = 2;
+}
+
+message FavoriteRequest {
+  string uid = 1;
+  string fav_id = 2;
+  string cid = 3;
+  string msg_id = 4;
+}
+
+message Favorite {
+  string fav_id = 1;
+  string cid = 2;
+  string msg_id = 3;
+  string from_uid = 4;
+  string preview = 5;
+  int64 created_at_ms = 6;
+  Payload payload = 7;
+}
+
+message ListFavoritesRequest {
+  string uid = 1;
+  string query = 2;
+}
+
+message ListFavoritesResponse {
+  repeated Favorite favorites = 1;
+}
+
+message GroupInvite {
+  string token = 1;
+  string cid = 2;
+  string url = 3;
+}
+
+message JoinInviteRequest {
+  string uid = 1;
+  string token = 2;
+}
+
+message SetDraftRequest {
+  string uid = 1;
+  string cid = 2;
+  string text = 3;
+}
+
+message PinChatMessageRequest {
+  string uid = 1;
+  string cid = 2;
+  string msg_id = 3;
+}
+
+message PinnedMessage {
+  string cid = 1;
+  string msg_id = 2;
+  string from_uid = 3;
+  string text = 4;
+}
+
+message ReportRequest {
+  string uid = 1;
+  string cid = 2;
+  string msg_id = 3;
+  string reason = 4;
+}
+
+message UserSettings {
+  string uid = 1;
+  bool dark = 2;
+  string wallpaper = 3;
+  bool notify_sound = 4;
+  bool notify_preview = 5;
+  string dnd_start = 6;
+  string dnd_end = 7;
 }

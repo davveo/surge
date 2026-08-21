@@ -35,11 +35,20 @@ func (s *memoryStore) RemoveFriend(_ context.Context, uid, peerUID string) error
 	return nil
 }
 
-func (s *memoryStore) RequestFriend(_ context.Context, fromUID, toUID string) (string, error) {
+type friendReqRow struct {
+	FromUID string
+	ToUID   string
+	Hello   string
+	Source  string
+}
+
+func (s *memoryStore) RequestFriend(_ context.Context, fromUID, toUID, hello, source string) (string, error) {
 	fromUID, toUID, err := normalizePair(fromUID, toUID)
 	if err != nil {
 		return "", err
 	}
+	hello = clipText(hello, 200)
+	source = clipText(source, 64)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.blockedLocked(toUID, fromUID) || s.blockedLocked(fromUID, toUID) {
@@ -55,9 +64,9 @@ func (s *memoryStore) RequestFriend(_ context.Context, fromUID, toUID string) (s
 		return "friends", nil
 	}
 	if s.requests[toUID] == nil {
-		s.requests[toUID] = map[string]struct{}{}
+		s.requests[toUID] = map[string]friendReqRow{}
 	}
-	s.requests[toUID][fromUID] = struct{}{}
+	s.requests[toUID][fromUID] = friendReqRow{FromUID: fromUID, ToUID: toUID, Hello: hello, Source: source}
 	return "pending", nil
 }
 
@@ -80,15 +89,15 @@ func (s *memoryStore) DeclineFriend(_ context.Context, fromUID, toUID string) er
 	return nil
 }
 
-func (s *memoryStore) ListFriendRequests(_ context.Context, uid string) (incoming, outgoing [][2]string, err error) {
+func (s *memoryStore) ListFriendRequests(_ context.Context, uid string) (incoming, outgoing []friendReqRow, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for from := range s.requests[uid] {
-		incoming = append(incoming, [2]string{from, uid})
+	for _, row := range s.requests[uid] {
+		incoming = append(incoming, row)
 	}
-	for to, set := range s.requests {
-		if _, ok := set[uid]; ok {
-			outgoing = append(outgoing, [2]string{uid, to})
+	for _, set := range s.requests {
+		if row, ok := set[uid]; ok {
+			outgoing = append(outgoing, row)
 		}
 	}
 	return incoming, outgoing, nil
@@ -337,7 +346,9 @@ func (s *memoryStore) TimelineQuery(_ context.Context, uid, cid string, afterSeq
 	}
 	if c := s.convs[uid][cid]; c != nil && query == "" && beforeSeq == 0 {
 		c.Unread = 0
+		c.UnreadMention = 0
 	}
+	s.attachReactionsLocked(out)
 	return cid, out, hasMore, nil
 }
 

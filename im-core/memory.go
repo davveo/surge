@@ -103,10 +103,10 @@ type Store interface {
 	ListMutes(ctx context.Context, uid string) ([]string, error)
 	GetProfiles(ctx context.Context, uids []string) ([]*imv1.UserProfile, error)
 	RemoveFriend(ctx context.Context, uid, peerUID string) error
-	RequestFriend(ctx context.Context, fromUID, toUID string) (string, error)
+	RequestFriend(ctx context.Context, fromUID, toUID, hello, source string) (string, error)
 	AcceptFriend(ctx context.Context, fromUID, toUID string) error
 	DeclineFriend(ctx context.Context, fromUID, toUID string) error
-	ListFriendRequests(ctx context.Context, uid string) (incoming, outgoing [][2]string, err error)
+	ListFriendRequests(ctx context.Context, uid string) (incoming, outgoing []friendReqRow, err error)
 	BlockUser(ctx context.Context, uid, peerUID string) error
 	UnblockUser(ctx context.Context, uid, peerUID string) error
 	ListBlocks(ctx context.Context, uid string) ([]string, error)
@@ -139,6 +139,20 @@ type Store interface {
 	ListJoinRequests(ctx context.Context, uid, cid string) ([]joinReq, error)
 	RequestJoin(ctx context.Context, uid, cid string) (*groupInfo, error)
 	DecideJoin(ctx context.Context, operatorUID, cid, memberUID string, accept bool) (*groupInfo, error)
+	ReactMessage(ctx context.Context, uid, cid, msgID, emoji string) ([]*imv1.ReactionBucket, error)
+	ReactionsOf(ctx context.Context, msgIDs []string) (map[string][]*imv1.ReactionBucket, error)
+	AddFavorite(ctx context.Context, uid, cid, msgID string) (*imv1.Favorite, error)
+	ListFavorites(ctx context.Context, uid, query string) ([]*imv1.Favorite, error)
+	DeleteFavorite(ctx context.Context, uid, favID string) error
+	CreateGroupInvite(ctx context.Context, uid, cid string) (*imv1.GroupInvite, error)
+	JoinByInvite(ctx context.Context, uid, token string) (*groupInfo, error)
+	SetDraft(ctx context.Context, uid, cid, text string) error
+	PinChatMessage(ctx context.Context, uid, cid, msgID string) (*imv1.PinnedMessage, error)
+	GetPinnedMessage(ctx context.Context, uid, cid string) (*imv1.PinnedMessage, error)
+	ReportMessage(ctx context.Context, uid, cid, msgID, reason string) error
+	GetSettings(ctx context.Context, uid string) (*imv1.UserSettings, error)
+	SetSettings(ctx context.Context, st *imv1.UserSettings) (*imv1.UserSettings, error)
+	LookupMessage(ctx context.Context, uid, cid, msgID string) (*timelineRow, error)
 }
 
 func clipText(s string, max int) string {
@@ -156,28 +170,35 @@ func clipText(s string, max int) string {
 }
 
 type memoryStore struct {
-	mu       sync.Mutex
-	seq      Seq
-	byID     map[string]*timelineRow
-	byDup    map[string]*timelineRow
-	byCID    map[string][]*timelineRow
-	inbox    map[string][]*imv1.InboxEvent
-	convs    map[string]map[string]*imv1.Conversation
-	friends  map[string]map[string]struct{}
-	groups   map[string]*groupInfo
-	reads    map[string]map[string]uint64
-	users    map[string]*userRec
-	mutes    map[string]map[string]bool
-	hidden   map[string]map[string]bool
-	pins     map[string]map[string]bool
-	blocks   map[string]map[string]struct{}
-	requests map[string]map[string]struct{} // toUID -> fromUID
-	remarks  map[string]map[string]string
+	mu          sync.Mutex
+	seq         Seq
+	byID        map[string]*timelineRow
+	byDup       map[string]*timelineRow
+	byCID       map[string][]*timelineRow
+	inbox       map[string][]*imv1.InboxEvent
+	convs       map[string]map[string]*imv1.Conversation
+	friends     map[string]map[string]struct{}
+	groups      map[string]*groupInfo
+	reads       map[string]map[string]uint64
+	users       map[string]*userRec
+	mutes       map[string]map[string]bool
+	hidden      map[string]map[string]bool
+	pins        map[string]map[string]bool
+	blocks      map[string]map[string]struct{}
+	requests    map[string]map[string]friendReqRow // toUID -> fromUID
+	remarks     map[string]map[string]string
 	tags        map[string]map[string][]string // uid -> peer -> tags
 	stickers    map[string][]*imv1.Sticker
 	deletedMsgs map[string]map[string]struct{} // uid -> msgID
 	cleared     map[string]map[string]uint64   // uid -> cid -> seq
 	joins       map[string]map[string]joinReq  // cid -> uid
+	reactions   map[string]map[string]string   // msgID -> uid -> emoji
+	favorites   map[string][]*imv1.Favorite
+	invites     map[string]groupInviteTok
+	drafts      map[string]map[string]string // uid -> cid -> text
+	msgPins     map[string]*imv1.PinnedMessage
+	reports     []reportRow
+	settings    map[string]*imv1.UserSettings
 }
 
 func newMemoryStore(seq Seq) *memoryStore {
@@ -185,27 +206,33 @@ func newMemoryStore(seq Seq) *memoryStore {
 		seq = newMemSeq()
 	}
 	return &memoryStore{
-		seq:      seq,
-		byID:     map[string]*timelineRow{},
-		byDup:    map[string]*timelineRow{},
-		byCID:    map[string][]*timelineRow{},
-		inbox:    map[string][]*imv1.InboxEvent{},
-		convs:    map[string]map[string]*imv1.Conversation{},
-		friends:  map[string]map[string]struct{}{},
-		groups:   map[string]*groupInfo{},
-		reads:    map[string]map[string]uint64{},
-		users:    map[string]*userRec{},
-		mutes:    map[string]map[string]bool{},
-		hidden:   map[string]map[string]bool{},
-		pins:     map[string]map[string]bool{},
-		blocks:   map[string]map[string]struct{}{},
-		requests: map[string]map[string]struct{}{},
-		remarks:  map[string]map[string]string{},
+		seq:         seq,
+		byID:        map[string]*timelineRow{},
+		byDup:       map[string]*timelineRow{},
+		byCID:       map[string][]*timelineRow{},
+		inbox:       map[string][]*imv1.InboxEvent{},
+		convs:       map[string]map[string]*imv1.Conversation{},
+		friends:     map[string]map[string]struct{}{},
+		groups:      map[string]*groupInfo{},
+		reads:       map[string]map[string]uint64{},
+		users:       map[string]*userRec{},
+		mutes:       map[string]map[string]bool{},
+		hidden:      map[string]map[string]bool{},
+		pins:        map[string]map[string]bool{},
+		blocks:      map[string]map[string]struct{}{},
+		requests:    map[string]map[string]friendReqRow{},
+		remarks:     map[string]map[string]string{},
 		tags:        map[string]map[string][]string{},
 		stickers:    map[string][]*imv1.Sticker{},
 		deletedMsgs: map[string]map[string]struct{}{},
 		cleared:     map[string]map[string]uint64{},
 		joins:       map[string]map[string]joinReq{},
+		reactions:   map[string]map[string]string{},
+		favorites:   map[string][]*imv1.Favorite{},
+		invites:     map[string]groupInviteTok{},
+		drafts:      map[string]map[string]string{},
+		msgPins:     map[string]*imv1.PinnedMessage{},
+		settings:    map[string]*imv1.UserSettings{},
 	}
 }
 
@@ -288,6 +315,11 @@ func (s *memoryStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerU
 			peerLabel = fromUID
 		}
 		s.upsertConv(uid, canonical, peerLabel, title, kind, row, preview, uid != fromUID)
+		if uid != fromUID && payloadMentions(payload, uid) {
+			if c := s.convs[uid][canonical]; c != nil {
+				c.UnreadMention++
+			}
+		}
 		if uid != fromUID {
 			push := &imv1.Push{
 				Cid:         canonical,
@@ -448,6 +480,9 @@ func (s *memoryStore) ListConversations(_ context.Context, uid string) ([]*imv1.
 				cp.PeerProfile = groupPeerProfile(g)
 			}
 		}
+		if s.drafts[uid] != nil {
+			cp.DraftText = s.drafts[uid][cp.Cid]
+		}
 		out = append(out, &cp)
 	}
 	for i := 0; i < len(out); i++ {
@@ -515,7 +550,9 @@ func (s *memoryStore) Timeline(_ context.Context, uid, cid string, afterSeq uint
 	}
 	if c := s.convs[uid][cid]; c != nil {
 		c.Unread = 0
+		c.UnreadMention = 0
 	}
+	s.attachReactionsLocked(out)
 	return cid, out, nil
 }
 
@@ -813,6 +850,7 @@ func (s *memoryStore) MarkRead(_ context.Context, uid, cid string, convSeq uint6
 	}
 	if c := s.convs[uid][cid]; c != nil {
 		c.Unread = 0
+		c.UnreadMention = 0
 	}
 	return nil
 }

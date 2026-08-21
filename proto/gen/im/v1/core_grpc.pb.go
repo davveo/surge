@@ -73,6 +73,18 @@ const (
 	IMCore_ListJoinRequests_FullMethodName   = "/surge.im.v1.IMCore/ListJoinRequests"
 	IMCore_RequestJoin_FullMethodName        = "/surge.im.v1.IMCore/RequestJoin"
 	IMCore_DecideJoin_FullMethodName         = "/surge.im.v1.IMCore/DecideJoin"
+	IMCore_ReactMessage_FullMethodName       = "/surge.im.v1.IMCore/ReactMessage"
+	IMCore_AddFavorite_FullMethodName        = "/surge.im.v1.IMCore/AddFavorite"
+	IMCore_ListFavorites_FullMethodName      = "/surge.im.v1.IMCore/ListFavorites"
+	IMCore_DeleteFavorite_FullMethodName     = "/surge.im.v1.IMCore/DeleteFavorite"
+	IMCore_CreateGroupInvite_FullMethodName  = "/surge.im.v1.IMCore/CreateGroupInvite"
+	IMCore_JoinByInvite_FullMethodName       = "/surge.im.v1.IMCore/JoinByInvite"
+	IMCore_SetDraft_FullMethodName           = "/surge.im.v1.IMCore/SetDraft"
+	IMCore_PinChatMessage_FullMethodName     = "/surge.im.v1.IMCore/PinChatMessage"
+	IMCore_GetPinnedMessage_FullMethodName   = "/surge.im.v1.IMCore/GetPinnedMessage"
+	IMCore_ReportMessage_FullMethodName      = "/surge.im.v1.IMCore/ReportMessage"
+	IMCore_GetSettings_FullMethodName        = "/surge.im.v1.IMCore/GetSettings"
+	IMCore_SetSettings_FullMethodName        = "/surge.im.v1.IMCore/SetSettings"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -133,6 +145,18 @@ type IMCoreClient interface {
 	ListJoinRequests(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*ListJoinRequestsResponse, error)
 	RequestJoin(ctx context.Context, in *LeaveGroupRequest, opts ...grpc.CallOption) (*GroupResponse, error)
 	DecideJoin(ctx context.Context, in *DecideJoinRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	ReactMessage(ctx context.Context, in *ReactMessageRequest, opts ...grpc.CallOption) (*ReactionList, error)
+	AddFavorite(ctx context.Context, in *FavoriteRequest, opts ...grpc.CallOption) (*Favorite, error)
+	ListFavorites(ctx context.Context, in *ListFavoritesRequest, opts ...grpc.CallOption) (*ListFavoritesResponse, error)
+	DeleteFavorite(ctx context.Context, in *FavoriteRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	CreateGroupInvite(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*GroupInvite, error)
+	JoinByInvite(ctx context.Context, in *JoinInviteRequest, opts ...grpc.CallOption) (*GroupResponse, error)
+	SetDraft(ctx context.Context, in *SetDraftRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	PinChatMessage(ctx context.Context, in *PinChatMessageRequest, opts ...grpc.CallOption) (*PinnedMessage, error)
+	GetPinnedMessage(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*PinnedMessage, error)
+	ReportMessage(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	GetSettings(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*UserSettings, error)
+	SetSettings(ctx context.Context, in *UserSettings, opts ...grpc.CallOption) (*UserSettings, error)
 }
 
 type iMCoreClient struct {
@@ -629,6 +653,114 @@ func (c *iMCoreClient) DecideJoin(ctx context.Context, in *DecideJoinRequest, op
 	return out, nil
 }
 
+func (c *iMCoreClient) ReactMessage(ctx context.Context, in *ReactMessageRequest, opts ...grpc.CallOption) (*ReactionList, error) {
+	out := new(ReactionList)
+	err := c.cc.Invoke(ctx, IMCore_ReactMessage_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) AddFavorite(ctx context.Context, in *FavoriteRequest, opts ...grpc.CallOption) (*Favorite, error) {
+	out := new(Favorite)
+	err := c.cc.Invoke(ctx, IMCore_AddFavorite_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ListFavorites(ctx context.Context, in *ListFavoritesRequest, opts ...grpc.CallOption) (*ListFavoritesResponse, error) {
+	out := new(ListFavoritesResponse)
+	err := c.cc.Invoke(ctx, IMCore_ListFavorites_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) DeleteFavorite(ctx context.Context, in *FavoriteRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_DeleteFavorite_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) CreateGroupInvite(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*GroupInvite, error) {
+	out := new(GroupInvite)
+	err := c.cc.Invoke(ctx, IMCore_CreateGroupInvite_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) JoinByInvite(ctx context.Context, in *JoinInviteRequest, opts ...grpc.CallOption) (*GroupResponse, error) {
+	out := new(GroupResponse)
+	err := c.cc.Invoke(ctx, IMCore_JoinByInvite_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetDraft(ctx context.Context, in *SetDraftRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_SetDraft_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) PinChatMessage(ctx context.Context, in *PinChatMessageRequest, opts ...grpc.CallOption) (*PinnedMessage, error) {
+	out := new(PinnedMessage)
+	err := c.cc.Invoke(ctx, IMCore_PinChatMessage_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) GetPinnedMessage(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*PinnedMessage, error) {
+	out := new(PinnedMessage)
+	err := c.cc.Invoke(ctx, IMCore_GetPinnedMessage_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) ReportMessage(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_ReportMessage_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) GetSettings(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*UserSettings, error) {
+	out := new(UserSettings)
+	err := c.cc.Invoke(ctx, IMCore_GetSettings_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) SetSettings(ctx context.Context, in *UserSettings, opts ...grpc.CallOption) (*UserSettings, error) {
+	out := new(UserSettings)
+	err := c.cc.Invoke(ctx, IMCore_SetSettings_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -687,6 +819,18 @@ type IMCoreServer interface {
 	ListJoinRequests(context.Context, *GetGroupRequest) (*ListJoinRequestsResponse, error)
 	RequestJoin(context.Context, *LeaveGroupRequest) (*GroupResponse, error)
 	DecideJoin(context.Context, *DecideJoinRequest) (*GroupResponse, error)
+	ReactMessage(context.Context, *ReactMessageRequest) (*ReactionList, error)
+	AddFavorite(context.Context, *FavoriteRequest) (*Favorite, error)
+	ListFavorites(context.Context, *ListFavoritesRequest) (*ListFavoritesResponse, error)
+	DeleteFavorite(context.Context, *FavoriteRequest) (*HideConversationResponse, error)
+	CreateGroupInvite(context.Context, *GetGroupRequest) (*GroupInvite, error)
+	JoinByInvite(context.Context, *JoinInviteRequest) (*GroupResponse, error)
+	SetDraft(context.Context, *SetDraftRequest) (*HideConversationResponse, error)
+	PinChatMessage(context.Context, *PinChatMessageRequest) (*PinnedMessage, error)
+	GetPinnedMessage(context.Context, *GetGroupRequest) (*PinnedMessage, error)
+	ReportMessage(context.Context, *ReportRequest) (*HideConversationResponse, error)
+	GetSettings(context.Context, *ListFriendsRequest) (*UserSettings, error)
+	SetSettings(context.Context, *UserSettings) (*UserSettings, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -855,6 +999,42 @@ func (UnimplementedIMCoreServer) RequestJoin(context.Context, *LeaveGroupRequest
 }
 func (UnimplementedIMCoreServer) DecideJoin(context.Context, *DecideJoinRequest) (*GroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DecideJoin not implemented")
+}
+func (UnimplementedIMCoreServer) ReactMessage(context.Context, *ReactMessageRequest) (*ReactionList, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReactMessage not implemented")
+}
+func (UnimplementedIMCoreServer) AddFavorite(context.Context, *FavoriteRequest) (*Favorite, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddFavorite not implemented")
+}
+func (UnimplementedIMCoreServer) ListFavorites(context.Context, *ListFavoritesRequest) (*ListFavoritesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFavorites not implemented")
+}
+func (UnimplementedIMCoreServer) DeleteFavorite(context.Context, *FavoriteRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteFavorite not implemented")
+}
+func (UnimplementedIMCoreServer) CreateGroupInvite(context.Context, *GetGroupRequest) (*GroupInvite, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateGroupInvite not implemented")
+}
+func (UnimplementedIMCoreServer) JoinByInvite(context.Context, *JoinInviteRequest) (*GroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method JoinByInvite not implemented")
+}
+func (UnimplementedIMCoreServer) SetDraft(context.Context, *SetDraftRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetDraft not implemented")
+}
+func (UnimplementedIMCoreServer) PinChatMessage(context.Context, *PinChatMessageRequest) (*PinnedMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PinChatMessage not implemented")
+}
+func (UnimplementedIMCoreServer) GetPinnedMessage(context.Context, *GetGroupRequest) (*PinnedMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPinnedMessage not implemented")
+}
+func (UnimplementedIMCoreServer) ReportMessage(context.Context, *ReportRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportMessage not implemented")
+}
+func (UnimplementedIMCoreServer) GetSettings(context.Context, *ListFriendsRequest) (*UserSettings, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSettings not implemented")
+}
+func (UnimplementedIMCoreServer) SetSettings(context.Context, *UserSettings) (*UserSettings, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetSettings not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -1841,6 +2021,222 @@ func _IMCore_DecideJoin_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_ReactMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReactMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ReactMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ReactMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ReactMessage(ctx, req.(*ReactMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_AddFavorite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FavoriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).AddFavorite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_AddFavorite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).AddFavorite(ctx, req.(*FavoriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ListFavorites_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFavoritesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ListFavorites(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ListFavorites_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ListFavorites(ctx, req.(*ListFavoritesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_DeleteFavorite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FavoriteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).DeleteFavorite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_DeleteFavorite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).DeleteFavorite(ctx, req.(*FavoriteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_CreateGroupInvite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).CreateGroupInvite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_CreateGroupInvite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).CreateGroupInvite(ctx, req.(*GetGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_JoinByInvite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinInviteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).JoinByInvite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_JoinByInvite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).JoinByInvite(ctx, req.(*JoinInviteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetDraft_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDraftRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetDraft(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetDraft_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetDraft(ctx, req.(*SetDraftRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_PinChatMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PinChatMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).PinChatMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_PinChatMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).PinChatMessage(ctx, req.(*PinChatMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_GetPinnedMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetPinnedMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetPinnedMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetPinnedMessage(ctx, req.(*GetGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_ReportMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ReportMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ReportMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ReportMessage(ctx, req.(*ReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFriendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetSettings(ctx, req.(*ListFriendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_SetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UserSettings)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).SetSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_SetSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).SetSettings(ctx, req.(*UserSettings))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2063,6 +2459,54 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DecideJoin",
 			Handler:    _IMCore_DecideJoin_Handler,
+		},
+		{
+			MethodName: "ReactMessage",
+			Handler:    _IMCore_ReactMessage_Handler,
+		},
+		{
+			MethodName: "AddFavorite",
+			Handler:    _IMCore_AddFavorite_Handler,
+		},
+		{
+			MethodName: "ListFavorites",
+			Handler:    _IMCore_ListFavorites_Handler,
+		},
+		{
+			MethodName: "DeleteFavorite",
+			Handler:    _IMCore_DeleteFavorite_Handler,
+		},
+		{
+			MethodName: "CreateGroupInvite",
+			Handler:    _IMCore_CreateGroupInvite_Handler,
+		},
+		{
+			MethodName: "JoinByInvite",
+			Handler:    _IMCore_JoinByInvite_Handler,
+		},
+		{
+			MethodName: "SetDraft",
+			Handler:    _IMCore_SetDraft_Handler,
+		},
+		{
+			MethodName: "PinChatMessage",
+			Handler:    _IMCore_PinChatMessage_Handler,
+		},
+		{
+			MethodName: "GetPinnedMessage",
+			Handler:    _IMCore_GetPinnedMessage_Handler,
+		},
+		{
+			MethodName: "ReportMessage",
+			Handler:    _IMCore_ReportMessage_Handler,
+		},
+		{
+			MethodName: "GetSettings",
+			Handler:    _IMCore_GetSettings_Handler,
+		},
+		{
+			MethodName: "SetSettings",
+			Handler:    _IMCore_SetSettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

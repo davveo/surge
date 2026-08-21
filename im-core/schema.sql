@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   hidden TINYINT NOT NULL DEFAULT 0,
   pinned TINYINT NOT NULL DEFAULT 0,
   cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  unread_mention INT UNSIGNED NOT NULL DEFAULT 0,
+  draft_text TEXT,
   PRIMARY KEY (uid, cid),
   KEY idx_uid_updated (uid, updated_at_ms)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -107,6 +109,8 @@ CREATE TABLE IF NOT EXISTS friend_requests (
   from_uid VARCHAR(64) NOT NULL,
   to_uid VARCHAR(64) NOT NULL,
   created_at_ms BIGINT NOT NULL,
+  hello VARCHAR(200) NOT NULL DEFAULT '',
+  source VARCHAR(64) NOT NULL DEFAULT '',
   PRIMARY KEY (from_uid, to_uid),
   KEY idx_to (to_uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -157,4 +161,68 @@ CREATE TABLE IF NOT EXISTS group_join_requests (
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (cid, uid),
   KEY idx_cid (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS message_reactions (
+  msg_id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  emoji VARCHAR(16) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (msg_id, uid),
+  KEY idx_msg (msg_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS favorites (
+  fav_id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  preview VARCHAR(512) NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (fav_id),
+  UNIQUE KEY uk_uid_msg (uid, msg_id),
+  KEY idx_uid (uid, created_at_ms)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS group_invites (
+  token VARCHAR(32) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  expires_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (token),
+  KEY idx_cid (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS chat_pins (
+  cid VARCHAR(128) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  from_uid VARCHAR(64) NOT NULL,
+  preview VARCHAR(512) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (cid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS reports (
+  id CHAR(36) NOT NULL,
+  uid VARCHAR(64) NOT NULL,
+  cid VARCHAR(128) NOT NULL,
+  msg_id CHAR(36) NOT NULL,
+  reason VARCHAR(256) NOT NULL,
+  created_at_ms BIGINT NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_uid (uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  uid VARCHAR(64) NOT NULL,
+  dark TINYINT NOT NULL DEFAULT 0,
+  wallpaper VARCHAR(64) NOT NULL DEFAULT '',
+  notify_sound TINYINT NOT NULL DEFAULT 1,
+  notify_preview TINYINT NOT NULL DEFAULT 1,
+  dnd_start VARCHAR(8) NOT NULL DEFAULT '',
+  dnd_end VARCHAR(8) NOT NULL DEFAULT '',
+  PRIMARY KEY (uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

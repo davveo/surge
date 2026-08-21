@@ -269,6 +269,6 @@ func (s *mysqlStore) MarkRead(ctx context.Context, uid, cid string, convSeq uint
 	if err != nil {
 		return err
 	}
-	_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET unread = 0 WHERE uid = ? AND cid = ?`, uid, cid)
+	_, _ = s.db.ExecContext(ctx, `UPDATE conversations SET unread = 0, unread_mention = 0 WHERE uid = ? AND cid = ?`, uid, cid)
 	return nil
 }

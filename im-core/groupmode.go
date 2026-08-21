@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	groupModeNormal     = "normal"
-	groupModeVerify     = "verify"
-	groupModePrivate    = "private"
-	groupModeBroadcast  = "broadcast"
-	groupModeAnonymous  = "anonymous"
-	groupModeEphemeral  = "ephemeral"
+	groupModeNormal    = "normal"
+	groupModeVerify    = "verify"
+	groupModePrivate   = "private"
+	groupModeBroadcast = "broadcast"
+	groupModeAnonymous = "anonymous"
+	groupModeEphemeral = "ephemeral"
 )
 
 func normalizeGroupMode(raw string) string {
