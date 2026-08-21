@@ -527,7 +527,7 @@ func TestUpdateGroupOwnerOnly(t *testing.T) {
 	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "", "", "nope", true, nil); err == nil {
 		t.Fatal("member should not set announcement")
 	}
-	if _, err := st.SetMember(ctx, "u1", g.CID, "u2", "", "admin", false, false, true, false); err != nil {
+	if _, err := st.SetMember(ctx, "u1", g.CID, "u2", "", "admin", false, false, true, false, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.UpdateGroup(ctx, "u2", g.CID, "", "http://x/b.png", "", false, nil); err == nil {

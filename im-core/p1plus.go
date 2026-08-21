@@ -53,7 +53,7 @@ func (s *memoryStore) ClearConversation(_ context.Context, uid, cid string) erro
 	return nil
 }
 
-func (s *memoryStore) SetMember(_ context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool) (*groupInfo, error) {
+func (s *memoryStore) SetMember(_ context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool, mutedUntil int64) (*groupInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := s.groups[cid]
@@ -92,6 +92,11 @@ func (s *memoryStore) SetMember(_ context.Context, operatorUID, cid, memberUID, 
 			return nil, errNotOwner
 		}
 		m.Muted = muted
+		if muted && mutedUntil > 0 {
+			m.MutedUntilMs = mutedUntil
+		} else {
+			m.MutedUntilMs = 0
+		}
 	}
 	cp := *g
 	cp.Members = append([]groupMember{}, g.Members...)

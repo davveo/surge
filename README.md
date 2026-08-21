@@ -11,6 +11,7 @@
 | 文档 | 内容 |
 |---|---|
 | [docs/README.md](docs/README.md) | 方案总览 |
+| [docs/features.md](docs/features.md) | 功能清单（页面 + 后端） |
 | [docs/architecture.md](docs/architecture.md) | 架构分层 |
 | [docs/messaging.md](docs/messaging.md) | 消息协议 |
 | [docs/capacity.md](docs/capacity.md) | 容量与验收 |

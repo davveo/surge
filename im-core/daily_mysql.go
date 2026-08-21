@@ -240,7 +240,7 @@ func (s *mysqlStore) CreateGroupInvite(ctx context.Context, uid, cid string) (*i
 	if err != nil {
 		return nil, err
 	}
-	return &imv1.GroupInvite{Token: tok, Cid: cid}, nil
+	return &imv1.GroupInvite{Token: tok, Cid: cid, ExpiresAtMs: now.Add(7 * 24 * time.Hour).UnixMilli()}, nil
 }
 
 func (s *mysqlStore) JoinByInvite(ctx context.Context, uid, token string) (*groupInfo, error) {
@@ -367,9 +367,11 @@ func (s *mysqlStore) ReportMessage(ctx context.Context, uid, cid, msgID, reason 
 
 func (s *mysqlStore) GetSettings(ctx context.Context, uid string) (*imv1.UserSettings, error) {
 	st := defaultSettings(uid)
-	var dark, sound, preview int
-	err := s.db.QueryRowContext(ctx, `SELECT dark, wallpaper, notify_sound, notify_preview, dnd_start, dnd_end FROM user_settings WHERE uid = ?`, uid).
-		Scan(&dark, &st.Wallpaper, &sound, &preview, &st.DndStart, &st.DndEnd)
+	var dark, sound, preview, atMuted, hideRead, hideTyping, hideSeen int
+	err := s.db.QueryRowContext(ctx, `SELECT dark, wallpaper, notify_sound, notify_preview, dnd_start, dnd_end,
+		IFNULL(notify_at_muted, 1), IFNULL(add_me, 'verify'), IFNULL(hide_read, 0), IFNULL(hide_typing, 0), IFNULL(hide_last_seen, 0), IFNULL(burn_sec, 5)
+		FROM user_settings WHERE uid = ?`, uid).
+		Scan(&dark, &st.Wallpaper, &sound, &preview, &st.DndStart, &st.DndEnd, &atMuted, &st.AddMe, &hideRead, &hideTyping, &hideSeen, &st.BurnSec)
 	if err == sql.ErrNoRows {
 		return st, nil
 	}
@@ -379,14 +381,19 @@ func (s *mysqlStore) GetSettings(ctx context.Context, uid string) (*imv1.UserSet
 	st.Dark = dark != 0
 	st.NotifySound = sound != 0
 	st.NotifyPreview = preview != 0
-	return st, nil
+	st.NotifyAtMuted = atMuted != 0
+	st.HideRead = hideRead != 0
+	st.HideTyping = hideTyping != 0
+	st.HideLastSeen = hideSeen != 0
+	return fillSettingsDefaults(st), nil
 }
 
 func (s *mysqlStore) SetSettings(ctx context.Context, st *imv1.UserSettings) (*imv1.UserSettings, error) {
 	if st == nil || strings.TrimSpace(st.Uid) == "" {
 		return nil, fmt.Errorf("%w: uid required", errInvalid)
 	}
-	dark, sound, preview := 0, 0, 0
+	st = fillSettingsDefaults(st)
+	dark, sound, preview, atMuted, hideRead, hideTyping, hideSeen := 0, 0, 0, 0, 0, 0, 0
 	if st.Dark {
 		dark = 1
 	}
@@ -396,12 +403,27 @@ func (s *mysqlStore) SetSettings(ctx context.Context, st *imv1.UserSettings) (*i
 	if st.NotifyPreview {
 		preview = 1
 	}
+	if st.NotifyAtMuted {
+		atMuted = 1
+	}
+	if st.HideRead {
+		hideRead = 1
+	}
+	if st.HideTyping {
+		hideTyping = 1
+	}
+	if st.HideLastSeen {
+		hideSeen = 1
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_settings (uid, dark, wallpaper, notify_sound, notify_preview, dnd_start, dnd_end)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO user_settings (uid, dark, wallpaper, notify_sound, notify_preview, dnd_start, dnd_end, notify_at_muted, add_me, hide_read, hide_typing, hide_last_seen, burn_sec)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE dark = VALUES(dark), wallpaper = VALUES(wallpaper), notify_sound = VALUES(notify_sound),
-			notify_preview = VALUES(notify_preview), dnd_start = VALUES(dnd_start), dnd_end = VALUES(dnd_end)`,
-		st.Uid, dark, clipText(st.Wallpaper, 64), sound, preview, clipText(st.DndStart, 8), clipText(st.DndEnd, 8))
+			notify_preview = VALUES(notify_preview), dnd_start = VALUES(dnd_start), dnd_end = VALUES(dnd_end),
+			notify_at_muted = VALUES(notify_at_muted), add_me = VALUES(add_me), hide_read = VALUES(hide_read),
+			hide_typing = VALUES(hide_typing), hide_last_seen = VALUES(hide_last_seen), burn_sec = VALUES(burn_sec)`,
+		st.Uid, dark, clipText(st.Wallpaper, 512), sound, preview, clipText(st.DndStart, 8), clipText(st.DndEnd, 8),
+		atMuted, clipText(st.AddMe, 16), hideRead, hideTyping, hideSeen, st.BurnSec)
 	if err != nil {
 		return nil, err
 	}

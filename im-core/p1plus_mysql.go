@@ -42,7 +42,7 @@ func (s *mysqlStore) ClearConversation(ctx context.Context, uid, cid string) err
 	return err
 }
 
-func (s *mysqlStore) SetMember(ctx context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool) (*groupInfo, error) {
+func (s *mysqlStore) SetMember(ctx context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool, mutedUntil int64) (*groupInfo, error) {
 	g, err := s.loadGroup(ctx, cid)
 	if err != nil {
 		return nil, err
@@ -84,10 +84,12 @@ func (s *mysqlStore) SetMember(ctx context.Context, operatorUID, cid, memberUID,
 			return nil, errNotOwner
 		}
 		v := 0
+		until := int64(0)
 		if muted {
 			v = 1
+			until = mutedUntil
 		}
-		if _, err := s.db.ExecContext(ctx, `UPDATE group_members SET muted = ? WHERE cid = ? AND uid = ?`, v, cid, memberUID); err != nil {
+		if _, err := s.db.ExecContext(ctx, `UPDATE group_members SET muted = ?, muted_until_ms = ? WHERE cid = ? AND uid = ?`, v, until, cid, memberUID); err != nil {
 			return nil, err
 		}
 	}

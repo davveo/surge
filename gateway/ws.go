@@ -36,6 +36,8 @@ func (s *wsServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := newConn(ws, s.hub)
+	c.ip = clientIP(r)
+	c.lastActive = time.Now().UnixMilli()
 	go c.writeLoop()
 	s.readLoop(c)
 }
@@ -69,6 +71,7 @@ func (s *wsServer) readLoop(c *Conn) {
 			continue
 		}
 		c.binary = isBinary
+		c.lastActive = time.Now().UnixMilli()
 		s.dispatch(c, env)
 	}
 }

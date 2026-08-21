@@ -269,34 +269,69 @@ func (a *httpAPI) settings(w http.ResponseWriter, r *http.Request) {
 			writeRPCError(w, err)
 			return
 		}
-		writeProtoJSON(w, resp)
+		writeJSON(w, http.StatusOK, settingsJSON(resp))
 	case http.MethodPost:
 		var body struct {
-			Dark          bool   `json:"dark"`
-			Wallpaper     string `json:"wallpaper"`
-			NotifySound   *bool  `json:"notify_sound"`
-			NotifyPreview *bool  `json:"notify_preview"`
-			DndStart      string `json:"dnd_start"`
-			DndEnd        string `json:"dnd_end"`
+			Dark            bool   `json:"dark"`
+			Wallpaper       string `json:"wallpaper"`
+			NotifySound     *bool  `json:"notify_sound"`
+			NotifyPreview   *bool  `json:"notify_preview"`
+			DndStart        string `json:"dnd_start"`
+			DndEnd          string `json:"dnd_end"`
+			NotifyAtMuted   *bool  `json:"notify_at_muted"`
+			AddMe           string `json:"add_me"`
+			HideRead        *bool  `json:"hide_read"`
+			HideTyping      *bool  `json:"hide_typing"`
+			HideLastSeen    *bool  `json:"hide_last_seen"`
+			BurnSec         int32  `json:"burn_sec"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
 			return
 		}
-		st := &imv1.UserSettings{Uid: uid, Dark: body.Dark, Wallpaper: body.Wallpaper, DndStart: body.DndStart, DndEnd: body.DndEnd, NotifySound: true, NotifyPreview: true}
+		st := &imv1.UserSettings{
+			Uid: uid, Dark: body.Dark, Wallpaper: body.Wallpaper, DndStart: body.DndStart, DndEnd: body.DndEnd,
+			NotifySound: true, NotifyPreview: true, NotifyAtMuted: true, AddMe: body.AddMe, BurnSec: body.BurnSec,
+		}
 		if body.NotifySound != nil {
 			st.NotifySound = *body.NotifySound
 		}
 		if body.NotifyPreview != nil {
 			st.NotifyPreview = *body.NotifyPreview
 		}
+		if body.NotifyAtMuted != nil {
+			st.NotifyAtMuted = *body.NotifyAtMuted
+		}
+		if body.HideRead != nil {
+			st.HideRead = *body.HideRead
+		}
+		if body.HideTyping != nil {
+			st.HideTyping = *body.HideTyping
+		}
+		if body.HideLastSeen != nil {
+			st.HideLastSeen = *body.HideLastSeen
+		}
 		resp, err := a.core.SetSettings(r.Context(), st)
 		if err != nil {
 			writeRPCError(w, err)
 			return
 		}
-		writeProtoJSON(w, resp)
+		writeJSON(w, http.StatusOK, settingsJSON(resp))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func settingsJSON(st *imv1.UserSettings) map[string]interface{} {
+	if st == nil {
+		st = &imv1.UserSettings{}
+	}
+	return map[string]interface{}{
+		"uid": st.Uid, "dark": st.Dark, "wallpaper": st.Wallpaper,
+		"notify_sound": st.NotifySound, "notify_preview": st.NotifyPreview,
+		"dnd_start": st.DndStart, "dnd_end": st.DndEnd,
+		"notify_at_muted": st.NotifyAtMuted, "add_me": st.AddMe,
+		"hide_read": st.HideRead, "hide_typing": st.HideTyping, "hide_last_seen": st.HideLastSeen,
+		"burn_sec": st.BurnSec,
 	}
 }

@@ -74,6 +74,9 @@ service IMCore {
   rpc ReportMessage(ReportRequest) returns (HideConversationResponse);
   rpc GetSettings(ListFriendsRequest) returns (UserSettings);
   rpc SetSettings(UserSettings) returns (UserSettings);
+  rpc ResetPassword(LoginRequest) returns (UserProfile);
+  rpc DeleteAccount(GetProfileRequest) returns (HideConversationResponse);
+  rpc RevokeGroupInvite(JoinInviteRequest) returns (HideConversationResponse);
 }
 
 message WatermarkRequest {
@@ -269,6 +272,12 @@ message UpdateGroupRequest {
   bool join_approval = 6;
   bool set_join_approval = 7;
   bool set_announcement = 8;
+  string mode = 9;
+  int32 history_days = 10;
+  bool announce_ack = 11;
+  bool set_mode = 12;
+  bool set_history_days = 13;
+  bool set_announce_ack = 14;
 }
 
 message SetMuteRequest {
@@ -295,6 +304,7 @@ message GroupMember {
   string role = 2;
   string nickname = 3;
   bool muted = 4;
+  int64 muted_until_ms = 5;
 }
 
 message CreateGroupRequest {
@@ -320,6 +330,7 @@ message KickGroupRequest {
   string operator_uid = 1;
   string cid = 2;
   string member_uid = 3;
+  bool delete_messages = 4;
 }
 
 message GetGroupRequest {
@@ -337,6 +348,8 @@ message GroupResponse {
   string announcement = 7;
   bool join_approval = 8;
   string mode = 9;
+  int32 history_days = 10;
+  bool announce_ack = 11;
 }
 
 message RecallMessageRequest {
@@ -502,6 +515,7 @@ message SetMemberRequest {
   bool set_muted = 7;
   bool set_nickname = 8;
   bool set_role = 9;
+  int64 muted_until_ms = 10;
 }
 
 message JoinRequest {
@@ -569,6 +583,7 @@ message GroupInvite {
   string token = 1;
   string cid = 2;
   string url = 3;
+  int64 expires_at_ms = 4;
 }
 
 message JoinInviteRequest {
@@ -610,4 +625,10 @@ message UserSettings {
   bool notify_preview = 5;
   string dnd_start = 6;
   string dnd_end = 7;
+  bool notify_at_muted = 8;
+  string add_me = 9;
+  bool hide_read = 10;
+  bool hide_typing = 11;
+  bool hide_last_seen = 12;
+  int32 burn_sec = 13;
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
@@ -24,6 +25,25 @@ func (s *server) RemoveFriend(ctx context.Context, req *imv1.RemoveFriendRequest
 }
 
 func (s *server) RequestFriend(ctx context.Context, req *imv1.AddFriendRequest) (*imv1.FriendRequestState, error) {
+	if st, _ := s.store.GetSettings(ctx, req.GetPeerUid()); st != nil {
+		switch st.AddMe {
+		case "none":
+			return nil, mapErr(fmt.Errorf("%w: 对方不允许加好友", errInvalid))
+		case "qr":
+			if src := strings.ToLower(req.GetSource()); src != "qr" && src != "card" {
+				return nil, mapErr(fmt.Errorf("%w: 仅可通过二维码添加", errInvalid))
+			}
+		case "anyone":
+			already, err := s.store.AddFriend(ctx, req.GetUid(), req.GetPeerUid())
+			if err != nil {
+				return nil, mapErr(err)
+			}
+			if !already {
+				s.notifyRoster(ctx, req.GetPeerUid(), req.GetUid(), "friend_accept", "")
+			}
+			return &imv1.FriendRequestState{FromUid: req.GetUid(), ToUid: req.GetPeerUid(), Status: "friends"}, nil
+		}
+	}
 	already, _ := s.store.AreFriends(ctx, req.GetUid(), req.GetPeerUid())
 	st, err := s.store.RequestFriend(ctx, req.GetUid(), req.GetPeerUid(), req.GetHello(), req.GetSource())
 	if err != nil {

@@ -181,6 +181,11 @@ func (s *server) GetTimeline(ctx context.Context, req *imv1.GetTimelineRequest) 
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	if conv.IsGroup(req.GetCid()) {
+		if g, gerr := s.store.GetGroup(ctx, req.GetUid(), req.GetCid()); gerr == nil {
+			msgs = filterTimelineHistory(g, req.GetUid(), msgs)
+		}
+	}
 	_ = s.store.UnhideConversation(ctx, req.GetUid(), req.GetCid())
 	return &imv1.GetTimelineResponse{Cid: cid, Messages: msgs, HasMore: hasMore}, nil
 }
@@ -324,6 +329,12 @@ func (s *server) UpdateGroup(ctx context.Context, req *imv1.UpdateGroupRequest) 
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	if req.GetSetMode() || req.GetSetHistoryDays() || req.GetSetAnnounceAck() {
+		g, err = s.store.PatchGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMode(), req.GetHistoryDays(), req.GetAnnounceAck(), req.GetSetMode(), req.GetSetHistoryDays(), req.GetSetAnnounceAck())
+		if err != nil {
+			return nil, mapErr(err)
+		}
+	}
 	if n := strings.TrimSpace(req.GetName()); n != "" {
 		s.notifyGroup(ctx, req.GetOperatorUid(), g.CID, req.GetOperatorUid()+" 将群名改为「"+g.Name+"」")
 	}
@@ -395,6 +406,9 @@ func (s *server) KickGroup(ctx context.Context, req *imv1.KickGroupRequest) (*im
 	g, err := s.store.KickGroup(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUid())
 	if err != nil {
 		return nil, mapErr(err)
+	}
+	if req.GetDeleteMessages() {
+		_ = s.store.DeleteMemberMessages(ctx, req.GetCid(), req.GetMemberUid())
 	}
 	s.notifyRoster(ctx, req.GetMemberUid(), req.GetOperatorUid(), "group_kick", req.GetCid())
 	return protoGroup(g), nil
@@ -481,6 +495,9 @@ func (s *server) MarkRead(ctx context.Context, req *imv1.MarkReadRequest) (*imv1
 		return nil, mapErr(err)
 	}
 	rc := &imv1.ReadReceipt{Cid: req.GetCid(), FromUid: req.GetUid(), ConvSeq: req.GetConvSeq()}
+	if st, _ := s.store.GetSettings(ctx, req.GetUid()); st != nil && st.HideRead {
+		return rc, nil
+	}
 	if !conv.IsGroup(req.GetCid()) {
 		if peer, err := conv.PeerUID(req.GetCid(), req.GetUid()); err == nil {
 			s.publish(ctx, peer, &imv1.GatewayPush{Uid: peer, Read: rc})
@@ -493,6 +510,9 @@ func (s *server) FanoutTyping(ctx context.Context, req *imv1.Typing) (*imv1.Typi
 	cid := req.GetCid()
 	from := req.GetFromUid()
 	if cid == "" || from == "" {
+		return req, nil
+	}
+	if st, _ := s.store.GetSettings(ctx, from); st != nil && st.HideTyping {
 		return req, nil
 	}
 	if conv.IsGroup(cid) {

@@ -186,7 +186,7 @@ func (s *memoryStore) CreateGroupInvite(_ context.Context, uid, cid string) (*im
 	}
 	tok := inviteToken()
 	s.invites[tok] = groupInviteTok{Token: tok, CID: cid, FromUID: uid, Exp: time.Now().Add(7 * 24 * time.Hour).UnixMilli()}
-	return &imv1.GroupInvite{Token: tok, Cid: cid}, nil
+	return &imv1.GroupInvite{Token: tok, Cid: cid, ExpiresAtMs: time.Now().Add(7 * 24 * time.Hour).UnixMilli()}, nil
 }
 
 func (s *memoryStore) JoinByInvite(ctx context.Context, uid, token string) (*groupInfo, error) {
@@ -225,7 +225,7 @@ func (s *memoryStore) JoinByInvite(ctx context.Context, uid, token string) (*gro
 		return nil, errTooLarge
 	}
 	now := time.Now().UnixMilli()
-	g.Members = append(g.Members, groupMember{UID: uid, Role: "member"})
+	g.Members = append(g.Members, groupMember{UID: uid, Role: "member", JoinedAtMs: now})
 	row := &timelineRow{msgID: "", convSeq: 0, createdAt: now, payload: &imv1.Payload{Text: "加入群聊"}}
 	s.upsertConv(uid, g.CID, "", g.Name, conv.KindGroup, row, "加入群聊", true)
 	return g, nil
@@ -296,16 +296,13 @@ func (s *memoryStore) ReportMessage(_ context.Context, uid, cid, msgID, reason s
 	return nil
 }
 
-func defaultSettings(uid string) *imv1.UserSettings {
-	return &imv1.UserSettings{Uid: uid, NotifySound: true, NotifyPreview: true}
-}
 
 func (s *memoryStore) GetSettings(_ context.Context, uid string) (*imv1.UserSettings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if st := s.settings[uid]; st != nil {
 		cp := *st
-		return &cp, nil
+		return fillSettingsDefaults(&cp), nil
 	}
 	return defaultSettings(uid), nil
 }
@@ -317,9 +314,15 @@ func (s *memoryStore) SetSettings(_ context.Context, st *imv1.UserSettings) (*im
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := *st
-	cp.Wallpaper = clipText(cp.Wallpaper, 64)
+	cp.Wallpaper = clipText(cp.Wallpaper, 512)
 	cp.DndStart = clipText(cp.DndStart, 8)
 	cp.DndEnd = clipText(cp.DndEnd, 8)
-	s.settings[st.Uid] = &cp
-	return &cp, nil
+	if cp.AddMe == "" {
+		cp.AddMe = "verify"
+	}
+	if cp.BurnSec <= 0 {
+		cp.BurnSec = 5
+	}
+	s.settings[st.Uid] = fillSettingsDefaults(&cp)
+	return fillSettingsDefaults(&cp), nil
 }

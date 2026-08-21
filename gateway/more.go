@@ -61,17 +61,26 @@ func (a *httpAPI) tooMany(r *http.Request, key string, n int64, window time.Dura
 }
 
 func (a *httpAPI) presence(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.uidFromAuth(w, r); !ok {
+	self, ok := a.uidFromAuth(w, r)
+	if !ok {
 		return
 	}
 	raw := strings.TrimSpace(r.URL.Query().Get("uids"))
 	uids := strings.FieldsFunc(raw, func(c rune) bool { return c == ',' || c == ' ' })
 	online := map[string]bool{}
 	for _, uid := range uids {
+		hide := false
+		if st, err := a.core.GetSettings(r.Context(), &imv1.ListFriendsRequest{Uid: uid}); err == nil && st.GetHideLastSeen() && uid != self {
+			hide = true
+		}
 		on := a.ws != nil && a.ws.hub != nil && a.ws.hub.isOnline(uid)
 		if !on && a.rdb != nil {
 			n, err := a.rdb.Exists(r.Context(), route.Key(uid)).Result()
 			on = err == nil && n > 0
+		}
+		if hide {
+			online[uid] = false
+			continue
 		}
 		online[uid] = on
 	}

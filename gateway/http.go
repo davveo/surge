@@ -94,6 +94,11 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/pinned", a.pinned)
 	mux.HandleFunc("/v1/report", a.report)
 	mux.HandleFunc("/v1/settings", a.settings)
+	mux.HandleFunc("/v1/auth/forgot", a.forgotPassword)
+	mux.HandleFunc("/v1/auth/reset", a.resetPassword)
+	mux.HandleFunc("/v1/account-delete", a.deleteAccount)
+	mux.HandleFunc("/v1/login-history", a.loginHistory)
+	mux.HandleFunc("/v1/group-invite-revoke", a.revokeInvite)
 	mux.HandleFunc("/v1/ws", a.ws.handleWS)
 	if dir := strings.TrimSpace(a.webDir); dir != "" {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
@@ -315,15 +320,16 @@ func (a *httpAPI) groupKick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CID string `json:"cid"`
-		UID string `json:"uid"`
+		CID             string  `json:"cid"`
+		UID             string  `json:"uid"`
+		DeleteMessages  bool    `json:"delete_messages"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CID == "" || body.UID == "" {
 		http.Error(w, `{"error":"cid and uid required"}`, http.StatusBadRequest)
 		return
 	}
 	resp, err := a.core.KickGroup(r.Context(), &imv1.KickGroupRequest{
-		OperatorUid: uid, Cid: body.CID, MemberUid: body.UID,
+		OperatorUid: uid, Cid: body.CID, MemberUid: body.UID, DeleteMessages: body.DeleteMessages,
 	})
 	if err != nil {
 		writeRPCError(w, err)
@@ -347,6 +353,9 @@ func (a *httpAPI) groupUpdate(w http.ResponseWriter, r *http.Request) {
 		AvatarURL    string  `json:"avatar_url"`
 		Announcement *string `json:"announcement"`
 		JoinApproval *bool   `json:"join_approval"`
+		Mode         *string `json:"mode"`
+		HistoryDays  *int32  `json:"history_days"`
+		AnnounceAck  *bool   `json:"announce_ack"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.CID) == "" {
 		http.Error(w, `{"error":"cid required"}`, http.StatusBadRequest)
@@ -360,6 +369,18 @@ func (a *httpAPI) groupUpdate(w http.ResponseWriter, r *http.Request) {
 	if body.JoinApproval != nil {
 		req.JoinApproval = *body.JoinApproval
 		req.SetJoinApproval = true
+	}
+	if body.Mode != nil {
+		req.Mode = *body.Mode
+		req.SetMode = true
+	}
+	if body.HistoryDays != nil {
+		req.HistoryDays = *body.HistoryDays
+		req.SetHistoryDays = true
+	}
+	if body.AnnounceAck != nil {
+		req.AnnounceAck = *body.AnnounceAck
+		req.SetAnnounceAck = true
 	}
 	resp, err := a.core.UpdateGroup(r.Context(), req)
 	if err != nil {

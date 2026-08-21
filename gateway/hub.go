@@ -19,13 +19,15 @@ import (
 )
 
 type Conn struct {
-	id       string
-	uid      string
-	deviceID string
-	binary   bool
-	ws       *websocket.Conn
-	send     chan *imv1.Envelope
-	hub      *Hub
+	id         string
+	uid        string
+	deviceID   string
+	ip         string
+	lastActive int64
+	binary     bool
+	ws         *websocket.Conn
+	send       chan *imv1.Envelope
+	hub        *Hub
 }
 
 type Hub struct {

@@ -34,7 +34,10 @@
     }
     const name = nickOf(state.activePeer) || state.activePeer;
     el.innerHTML = avatarHTML(avatarOf(state.activePeer), name, state.activePeer) +
-      `<div class="side-peer-name">${escapeHtml(name)}</div>`;
+      `<div class="side-peer-name">${escapeHtml(name)}</div>
+       <button type="button" class="btn-ghost" id="copy-peer-uid">复制账号</button>`;
+    const copy = $("copy-peer-uid");
+    if (copy) copy.onclick = () => navigator.clipboard.writeText(state.activePeer).then(() => toast("已复制")).catch(() => {});
   }
   function onClick(id, fn) {
     const n = $(id);
@@ -96,7 +99,8 @@
     verifyPeer: "",
     verifyStep: "",
     verifyReplyDraft: {},
-    settings: { notify_sound: true, notify_preview: true, dark: false, wallpaper: "", dnd_start: "", dnd_end: "" },
+    settings: { notify_sound: true, notify_preview: true, dark: false, wallpaper: "", dnd_start: "", dnd_end: "", notify_at_muted: true, add_me: "verify", hide_read: false, hide_typing: false, hide_last_seen: false, burn_sec: 5 },
+    convFilter: "all",
     favorites: [],
     chatPin: null,
     draftTimer: 0,
@@ -112,6 +116,9 @@
     holdUnreadCid: "",
     groupPickMembers: [],
     lightbox: { urls: [], index: 0 },
+    searchHits: [],
+    searchHitI: 0,
+    recCancel: false,
   };
 
   const FILEHELPER = "filehelper";
@@ -424,8 +431,13 @@
       const ok = $("modal-ok");
       const card = $("modal") && $("modal").querySelector(".modal-card");
       title.textContent = opts.title || (modalState.mode === "prompt" ? "请输入" : modalState.mode === "confirm" ? "确认" : "提示");
-      body.textContent = opts.message || "";
-      body.classList.toggle("hidden", !opts.message);
+      if (opts.html) {
+        body.innerHTML = opts.html;
+        body.classList.remove("hidden");
+      } else {
+        body.textContent = opts.message || "";
+        body.classList.toggle("hidden", !opts.message);
+      }
       if (card) card.classList.toggle("modal-wide", modalState.multiline);
       if (modalState.mode === "prompt" && modalState.multiline && ta) {
         input.classList.add("hidden");
@@ -746,6 +758,8 @@
       const me = await api("/v1/me");
       if (me && uidOf(me)) {
         rememberProfiles([me]);
+        if ($("set-email")) $("set-email").value = me.email || "";
+        if ($("set-phone")) $("set-phone").value = me.phone || "";
       }
       showMe();
     } catch (_) {
@@ -778,21 +792,60 @@
     return "surge:draft:" + state.uid + ":" + (cid || state.activeCid);
   }
 
-  function saveDraft() {
+  function uiPrefs() {
+    try {
+      return JSON.parse(localStorage.getItem("surge:ui:" + state.uid) || "{}") || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function setUiPrefs(p) {
+    if (!state.uid) return;
+    localStorage.setItem("surge:ui:" + state.uid, JSON.stringify(Object.assign(uiPrefs(), p || {})));
+  }
+
+  function localDraftOnly() {
+    return !!uiPrefs().localDraft;
+  }
+
+  function applyFontSize() {
+    const n = String(uiPrefs().font || "15");
+    document.documentElement.setAttribute("data-font", n);
+    if ($("set-font")) $("set-font").value = n;
+  }
+
+  function isPlaceholderDraft(text) {
+    const t = String(text || "").trim();
+    return !t || t === "@";
+  }
+
+  function saveDraft(flush) {
     if (!state.uid || !state.activeCid || !$("draft")) return;
-    const text = $("draft").value;
-    localStorage.setItem(draftKey(), text);
+    const cid = state.activeCid;
+    const raw = $("draft").value;
+    const text = isPlaceholderDraft(raw) ? "" : raw;
+    localStorage.setItem(draftKey(cid), text);
+    const conv = (state.convs || []).find((c) => c.cid === cid);
+    if (conv) {
+      conv.draftText = text;
+      conv.draft_text = text;
+    }
+    const post = () => {
+      const body = localDraftOnly() ? "" : text;
+      api("/v1/drafts", { method: "POST", body: JSON.stringify({ cid, text: body }) }).catch(() => {});
+    };
     clearTimeout(state.draftTimer);
-    state.draftTimer = setTimeout(() => {
-      api("/v1/drafts", { method: "POST", body: JSON.stringify({ cid: state.activeCid, text }) }).catch(() => {});
-    }, 600);
+    if (flush) post();
+    else state.draftTimer = setTimeout(post, 600);
   }
 
   function loadDraft(cid) {
     const conv = (state.convs || []).find((c) => c.cid === cid);
     const cloud = conv && (conv.draftText || conv.draft_text);
     const local = localStorage.getItem(draftKey(cid)) || "";
-    $("draft").value = cloud || local;
+    const raw = localDraftOnly() ? local : (cloud || local);
+    $("draft").value = isPlaceholderDraft(raw) ? "" : raw;
     fitDraft();
   }
 
@@ -811,6 +864,10 @@
     if ($("emoji-btn")) $("emoji-btn").disabled = !on;
     if ($("shot-btn")) $("shot-btn").disabled = !on;
     if ($("rec-btn")) $("rec-btn").disabled = !on;
+    if ($("poll-btn")) $("poll-btn").disabled = !on;
+    if ($("chain-btn")) $("chain-btn").disabled = !on;
+    if ($("loc-btn")) $("loc-btn").disabled = !on;
+    if ($("md-hint")) $("md-hint").disabled = !on;
     if ($("burn-toggle")) $("burn-toggle").disabled = !on;
     const form = $("send-form");
     if (form) form.classList.toggle("composer-locked", !on);
@@ -864,6 +921,7 @@
     }
     const on = isBurnWanted(cid);
     if (lab) lab.classList.toggle("burn-on", on);
+    if ($("burn-sec")) $("burn-sec").classList.toggle("hidden", !on);
     const draft = $("draft");
     if (draft && !speakBlockedReason()) draft.placeholder = on ? "阅后即焚消息…" : "";
   }
@@ -917,7 +975,7 @@
   }
 
   function sortedConvs() {
-    return state.convs.slice().sort((a, b) => {
+    const all = state.convs.slice().sort((a, b) => {
       const ha = isFileHelper(field(a, "peerUid", "peer_uid")) ? 1 : 0;
       const hb = isFileHelper(field(b, "peerUid", "peer_uid")) ? 1 : 0;
       if (ha !== hb) return hb - ha;
@@ -926,6 +984,14 @@
       if (pa !== pb) return pb - pa;
       return Number(b.updatedAtMs || b.updated_at_ms || 0) - Number(a.updatedAtMs || a.updated_at_ms || 0);
     });
+    const f = state.convFilter || "all";
+    if (f === "unread") {
+      return all.filter((c) => Number(c.unread || 0) > 0 || Number(c.unreadMention || c.unread_mention || 0) > 0);
+    }
+    if (f === "mention") {
+      return all.filter((c) => Number(c.unreadMention || c.unread_mention || 0) > 0);
+    }
+    return all;
   }
 
   async function setConvPinned(cid, next) {
@@ -990,6 +1056,19 @@
     await loadConvs();
   }
 
+  async function deleteConversation(cid) {
+    if (!cid) return;
+    if (!(await dlgConfirm("将清空并隐藏该会话，可在列表底部找回。", "删除聊天", true))) return;
+    try {
+      await api("/v1/conversation-clear", { method: "POST", body: JSON.stringify({ cid }) });
+    } catch (_) {}
+    if (cid === state.activeCid) {
+      state.messages = [];
+      renderMsgs();
+    }
+    await hideConversation(cid);
+  }
+
   async function markConvUnread(cid) {
     if (!cid) return;
     if (cid === state.activeCid) state.holdUnreadCid = cid;
@@ -1048,6 +1127,12 @@
       items.push({ label: "不显示", run: () => hideConversation(cid).catch((err) => dlgAlert(err.message)) });
     }
     items.push({ label: "标为未读", run: () => markConvUnread(cid) });
+    if (!hidden) {
+      items.push({
+        label: "删除聊天",
+        run: () => deleteConversation(cid).catch((err) => dlgAlert(err.message)),
+      });
+    }
     const menu = $("msg-menu");
     if (!menu) return;
     menu.innerHTML = items
@@ -1089,7 +1174,10 @@
         const modeLab = groupModeLabel(convGroupMode(c));
         const uid = isGroup(c.cid) ? "" : peer;
         const time = formatConvTime(c.updatedAtMs || c.updated_at_ms);
-        const draft = c.draftText || c.draft_text || "";
+        const rawDraft = localDraftOnly()
+          ? (localStorage.getItem(draftKey(c.cid)) || "")
+          : (c.draftText || c.draft_text || localStorage.getItem(draftKey(c.cid)) || "");
+        const draft = isPlaceholderDraft(rawDraft) ? "" : rawDraft;
         const sub = mentionN > 0
           ? `<span class="mention-flag">[有人@我]</span> ${escapeHtml(c.lastText || c.last_text || "")}`
           : draft
@@ -1173,7 +1261,7 @@
       fHTML += `<div class="letter-head">星标好友</div>` + starred.map(friendRow).join("");
     }
     letters.forEach((L) => {
-      fHTML += `<div class="letter-head">${escapeHtml(L)}</div>` + groups[L].map(friendRow).join("");
+      fHTML += `<div class="letter-head" data-letter="${escapeHtml(L)}">${escapeHtml(L)}</div>` + groups[L].map(friendRow).join("");
     });
     fEl.innerHTML = fHTML;
     fEl.querySelectorAll(".row").forEach((row) => {
@@ -1193,9 +1281,37 @@
         };
       }
     });
+    renderLetterIndex(letters);
     renderRequests();
     renderBlocks();
     renderTagGroups();
+    syncDocTitle();
+  }
+
+  function syncDocTitle() {
+    const n = (state.convs || []).reduce((s, c) => s + Number(c.unread || 0), 0);
+    document.title = n > 0 ? "(" + (n > 99 ? "99+" : n) + ") Surge IM" : "Surge IM";
+  }
+
+  function renderLetterIndex(letters) {
+    const el = $("letter-index");
+    if (!el) return;
+    const keys = ["★"].concat(letters || []);
+    el.innerHTML = keys.map((L) => `<button type="button" data-letter="${escapeHtml(L)}">${escapeHtml(L)}</button>`).join("");
+    el.querySelectorAll("button").forEach((btn) => {
+      btn.onclick = () => {
+        const L = btn.dataset.letter;
+        const body = $("contacts-body");
+        if (!body) return;
+        if (L === "★") {
+          const head = [...body.querySelectorAll(".letter-head")].find((h) => h.textContent === "星标好友");
+          if (head) head.scrollIntoView({ block: "start" });
+          return;
+        }
+        const head = body.querySelector('.letter-head[data-letter="' + CSS.escape(L) + '"]');
+        if (head) head.scrollIntoView({ block: "start" });
+      };
+    });
   }
 
   function renderTagGroups() {
@@ -1216,11 +1332,17 @@
             return `<div class="row" data-peer="${escapeHtml(uid)}">${avatarHTML(avatarOf(uid), name, uid)}<div class="row-main"><div class="row-title">${escapeHtml(name)}</div></div></div>`;
           })
           .join("");
-        return `<div class="tag-head">${escapeHtml(g.name || "")} · ${uids.length}</div>${rows}`;
+        return `<div class="tag-head">${escapeHtml(g.name || "")} · ${uids.length}<button type="button" class="tag-add" data-tag="${escapeHtml(g.name || "")}">+ 加人</button></div>${rows}`;
       })
       .join("");
     el.querySelectorAll(".row[data-peer]").forEach((row) => {
       row.onclick = () => openChat(row.dataset.peer, cidOf(state.uid, row.dataset.peer));
+    });
+    el.querySelectorAll(".tag-add").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        addFriendsToTag(btn.dataset.tag);
+      };
     });
   }
 
@@ -1385,8 +1507,34 @@
   }
 
   function linkify(s) {
-    const html = escapeHtml(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-    return html.replace(/@所有人/g, '<span class="mention">@所有人</span>').replace(/@([A-Za-z0-9._@+-]{1,64})/g, '<span class="mention">@$1</span>');
+    let html = escapeHtml(s);
+    html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    html = html.replace(/@所有人/g, '<span class="mention">@所有人</span>');
+    const names = [];
+    const seen = {};
+    const pushName = (n) => {
+      n = String(n || "").trim();
+      if (!n || seen[n]) return;
+      seen[n] = true;
+      names.push(n);
+    };
+    ((state.group && state.group.members) || []).forEach((m) => {
+      const id = uidOf(m);
+      pushName(memberNick(id));
+      pushName(id);
+    });
+    names.sort((a, b) => b.length - a.length);
+    names.forEach((n) => {
+      const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp("@" + esc + "(?=$|\\s|[，。！？,.!?])", "g");
+      const mine = n === state.uid || n === nickOf(state.uid) || n === memberNick(state.uid);
+      html = html.replace(re, '<span class="mention' + (mine ? " mention-me" : "") + '">@' + escapeHtml(n) + "</span>");
+    });
+    html = html.replace(/@([A-Za-z0-9._@+-]{1,64})/g, (all, id) => {
+      if (html.indexOf(">" + all + "<") >= 0) return all;
+      return '<span class="mention">' + all + "</span>";
+    });
+    return html;
   }
 
   function quoteBlock(m) {
@@ -1460,9 +1608,8 @@
       const media = mediaOf(m.payload);
       const href = media.url || "";
       if (!href) return escapeHtml("[视频]");
-      const poster = media.thumbUrl || media.thumb_url || "";
-      const posterAttr = poster ? ` poster="${escapeHtml(poster)}"` : "";
-      return `<video class="msg-video" controls preload="metadata"${posterAttr} src="${escapeHtml(href)}"></video>`;
+      const poster = media.thumbUrl || media.thumb_url || href;
+      return `<div class="video-thumb" data-full="${escapeHtml(href)}" data-poster="${escapeHtml(poster)}"><img src="${escapeHtml(poster)}" alt="" /><span class="play">▶</span></div>`;
     }
     if (isCardMsg(m)) {
       const uid = (m.payload && (m.payload.cardUid || m.payload.card_uid)) || "";
@@ -1494,7 +1641,7 @@
       const dur = Number(media.durationMs || media.duration_ms || 0);
       const sec = dur > 0 ? Math.max(1, Math.round(dur / 1000)) : 0;
       const bars = Array.from({ length: 16 }, (_, i) => `<i style="height:${8 + ((i * 7) % 12)}px"></i>`).join("");
-      return `<div class="voice-bar" data-src="${escapeHtml(href)}" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}"><button type="button" class="voice-play" aria-label="播放">▶</button><div class="voice-wave">${bars}</div><span class="voice-dur">${sec ? sec + "″" : ""}</span></div><div class="voice-tools"><button type="button" data-act="stt" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}">转文字</button><div class="stt-text hidden">${tr ? escapeHtml(tr) : ""}</div></div>`;
+      return `<div class="voice-bar" data-src="${escapeHtml(href)}" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}"><button type="button" class="voice-play" aria-label="播放">▶</button><div class="voice-wave">${bars}</div><span class="voice-dur">${sec ? sec + "″" : ""}</span><button type="button" class="voice-speed" data-rate="1">1x</button></div><div class="voice-tools"><button type="button" data-act="stt" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}">转文字</button><div class="stt-text hidden">${tr ? escapeHtml(tr) : ""}</div></div>`;
     }
     if (isFileMsg(m)) {
       const media = mediaOf(m.payload);
@@ -1503,11 +1650,55 @@
       return `<a class="file-link" href="${escapeHtml(href)}" target="_blank">${escapeHtml(name)}</a>`;
     }
     const text = (m.payload && m.payload.text) || m.text || "";
-    const html = linkify(text);
+    const poll = parseSpecial(text, "poll");
+    if (poll) {
+      const opts = (poll.opts || []).map((o, i) => `<button type="button" class="poll-opt" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}" data-i="${i}">${escapeHtml(o)}</button>`).join("");
+      return `<div class="poll-card"><div class="c-name">${escapeHtml(poll.q || "投票")}</div>${opts}</div>`;
+    }
+    const chain = parseSpecial(text, "chain");
+    if (chain) {
+      const lines = (chain.items || []).map((it, i) => `${i + 1}. ${escapeHtml(it)}`).join("<br>");
+      return `<div class="chain-card"><div class="c-name">${escapeHtml(chain.title || "接龙")}</div>${lines}<button type="button" class="chain-add" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}">参与接龙</button></div>`;
+    }
+    const loc = parseSpecial(text, "loc");
+    if (loc) {
+      const href = "https://www.openstreetmap.org/?mlat=" + loc.lat + "&mlon=" + loc.lng + "#map=16/" + loc.lat + "/" + loc.lng;
+      return `<div class="loc-card"><a href="${escapeHtml(href)}" target="_blank" rel="noopener">位置 ${escapeHtml(String(loc.lat))}, ${escapeHtml(String(loc.lng))}</a></div>`;
+    }
+    const html = renderRich(text);
     if (String(text).length > 220) {
       return `<div class="long-msg collapsed">${html}<button type="button" class="fold-toggle">展开</button></div>`;
     }
     return html;
+  }
+
+  function parseSpecial(text, kind) {
+    const p = "::surge:" + kind + "::";
+    if (String(text || "").indexOf(p) !== 0) return null;
+    try { return JSON.parse(String(text).slice(p.length)); } catch (_) { return null; }
+  }
+
+  function renderRich(s) {
+    let html = linkify(s);
+    html = html.replace(/```([\s\S]*?)```/g, (_, c) => "<pre><code>" + c + "</code></pre>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    return '<span class="msg-md">' + html + "</span>";
+  }
+
+  function isAnnounceAcked(cid, raw) {
+    try {
+      const m = JSON.parse(localStorage.getItem("surge:annack:" + state.uid) || "{}");
+      return m[cid] === String(raw || "");
+    } catch (_) { return false; }
+  }
+  function setAnnounceAcked(cid, raw) {
+    try {
+      const k = "surge:annack:" + state.uid;
+      const m = JSON.parse(localStorage.getItem(k) || "{}");
+      m[cid] = String(raw || "");
+      localStorage.setItem(k, JSON.stringify(m));
+    } catch (_) {}
   }
 
   function groupReadCount(seq) {
@@ -1594,12 +1785,12 @@
         const from = senderOf(m);
         const seq = Number(field(m, "convSeq", "conv_seq") || 0);
         const nick = displayMemberNick(from) || from;
-        const who = `<div class="msg-nick" title="${escapeHtml(isAnonGroup() ? nick : from)}">${escapeHtml(nick)}${
+        const who = `<div class="msg-nick" data-uid="${escapeHtml(from)}" title="${escapeHtml(isAnonGroup() ? nick : from)}">${escapeHtml(nick)}${
           group && from && nick !== from && !isAnonGroup() ? `<span class="msg-uid">${escapeHtml(from)}</span>` : ""
         }</div>`;
         const face = isAnonGroup()
           ? avatarHTML("", nick, nick)
-          : avatarHTML(avatarOf(from), nick, from);
+          : `<span class="msg-face" data-uid="${escapeHtml(from)}">${avatarHTML(avatarOf(from), nick, from)}</span>`;
         const quote = quoteBlock(m);
         const eph = !recalled && isEphemeral(m);
         const burnHint = eph
@@ -1645,7 +1836,21 @@
     box.querySelectorAll("img.thumb").forEach((img) => {
       img.onclick = (e) => {
         e.stopPropagation();
-        openLightbox(img.dataset.full || img.src);
+        openLightbox(img.dataset.full || img.src, "image");
+      };
+    });
+    box.querySelectorAll(".video-thumb").forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        openLightbox(el.dataset.full, "video");
+      };
+    });
+    box.querySelectorAll(".msg-nick, .msg-face").forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const uid = el.dataset.uid;
+        if (!uid || uid === state.uid || isAnonGroup()) return;
+        if (isGroup(state.activeCid)) openMemberCard(uid);
       };
     });
     box.querySelectorAll(".merge-msg").forEach((el) => {
@@ -1655,6 +1860,29 @@
         const id = bubble && bubble.dataset.id;
         const m = state.messages.find((x) => field(x, "msgId", "msg_id") === id);
         openMergeDetail(m);
+      };
+    });
+    box.querySelectorAll(".poll-opt").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const i = Number(btn.dataset.i);
+        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === btn.dataset.id);
+        const poll = parseSpecial((m && m.payload && m.payload.text) || "", "poll");
+        const opt = poll && poll.opts && poll.opts[i];
+        if (opt) sendPayload({ type: "TEXT", text: "投票：" + opt });
+      };
+    });
+    box.querySelectorAll(".chain-add").forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === btn.dataset.id);
+        const chain = parseSpecial((m && m.payload && m.payload.text) || "", "chain");
+        if (!chain) return;
+        const line = await dlgPrompt("接龙内容", "", chain.title || "接龙");
+        if (line == null || !String(line).trim()) return;
+        chain.items = chain.items || [];
+        chain.items.push((nickOf(state.uid) || state.uid) + "：" + String(line).trim());
+        sendPayload({ type: "TEXT", text: "::surge:chain::" + JSON.stringify(chain) });
       };
     });
     box.querySelectorAll("video.msg-video").forEach((v) => bindVideoPoster(v));
@@ -1692,7 +1920,7 @@
         showMsgMenu(e.clientX, e.clientY, el.dataset.id, el.closest(".msg-row"));
       };
       el.onclick = (e) => {
-        if (e.target.closest("a,button,img,.voice-bar,.quote-card,.card-msg,.merge-msg,video")) return;
+        if (e.target.closest("a,button,img,.voice-bar,.quote-card,.card-msg,.merge-msg,video,.video-thumb")) return;
         if (!window.matchMedia || !window.matchMedia("(hover: none)").matches) return;
         const row = el.closest(".msg-row");
         if (!row) return;
@@ -1756,6 +1984,7 @@
       state.jumpUnread = false;
     } else if (stick) box.scrollTop = box.scrollHeight;
     else box.scrollTop = box.scrollHeight - prevH + prevTop;
+    syncJumpChrome();
   }
 
   function unreadSplitIndex() {
@@ -1793,8 +2022,20 @@
       if (playBtn) playBtn.textContent = "▶";
     };
     audio.addEventListener("ended", stop);
+    const speedBtn = bar.querySelector(".voice-speed");
+    if (speedBtn) {
+      speedBtn.onclick = (e) => {
+        e.stopPropagation();
+        const cur = Number(speedBtn.dataset.rate || 1);
+        const next = cur === 1 ? 1.5 : cur === 1.5 ? 2 : 1;
+        speedBtn.dataset.rate = String(next);
+        speedBtn.textContent = next + "x";
+        audio.playbackRate = next;
+      };
+    }
     bar.onclick = (e) => {
       e.stopPropagation();
+      if (e.target && e.target.closest && e.target.closest(".voice-speed")) return;
       if (bar.classList.contains("playing")) {
         stop();
         return;
@@ -1875,10 +2116,13 @@
     $("quote-bar").classList.remove("hidden");
     const from = m ? senderOf(m) : "";
     if (isGroup(state.activeCid) && from && from !== state.uid && !isAnonGroup()) {
-      const at = "@" + from + " ";
+      const nick = memberNick(from) || from;
+      const at = "@" + nick + " ";
       const el = $("draft");
       if (el && el.value.indexOf(at) < 0) {
         el.value = at + el.value;
+        state.draftMentions = state.draftMentions || [];
+        if (state.draftMentions.indexOf(from) < 0) state.draftMentions.push(from);
         fitDraft();
       }
     }
@@ -1900,6 +2144,25 @@
     if (!recalled) items.push({ label: "置顶消息", icon: "pin", run: () => pinChatMsg(msgId) });
     if (!recalled) items.push({ label: "收藏", icon: "star", run: () => addFavorite(msgId) });
     if (text) items.push({ label: "复制", icon: "copy", run: () => navigator.clipboard.writeText(text).then(() => toast("已复制")).catch(() => {}) });
+    if (text) items.push({ label: "翻译", icon: "copy", run: () => translateMsg(text) });
+    if (!recalled && isImageMsg(m)) {
+      items.push({
+        label: "复制图片",
+        icon: "copy",
+        run: () => copyImage(mediaURL(m)).catch(() => toast("无法复制图片")),
+      });
+    }
+    if (!recalled && isVideoMsg(m)) {
+      items.push({
+        label: "另存视频",
+        icon: "copy",
+        run: () => {
+          const url = mediaURL(m);
+          state.lightbox = { urls: [{ url, kind: "video" }], index: 0 };
+          saveLightbox();
+        },
+      });
+    }
     if (canRecall(m)) items.push({ label: "撤回", icon: "recall", run: () => recall(msgId) });
     items.push({ label: "删除", icon: "trash", run: () => deleteForMe(msgId) });
     items.push({ sep: true });
@@ -2035,13 +2298,28 @@
         return `<div class="row" data-id="${escapeHtml(id)}" data-cid="${escapeHtml(f.cid || "")}" data-msg="${escapeHtml(f.msgId || f.msg_id || "")}" data-peer="${escapeHtml(from)}">
           ${avatarHTML(avatarOf(from), nickOf(from) || from, from)}
           <div class="row-main"><div class="row-title">${escapeHtml(f.preview || "[消息]")}</div><div class="row-sub">${escapeHtml(from)}</div></div>
-          <div class="row-actions"><button type="button" data-act="fwd">转发</button><button type="button" class="danger" data-act="del">删除</button></div>
+          <div class="row-actions"><button type="button" data-act="now">当前会话</button><button type="button" data-act="fwd">转发</button><button type="button" class="danger" data-act="del">删除</button></div>
         </div>`;
       })
       .join("");
     el.querySelectorAll(".row").forEach((row) => {
       row.onclick = () => {
         if (row.dataset.cid) openChat(row.dataset.peer, row.dataset.cid);
+      };
+      const nowBtn = row.querySelector("[data-act=now]");
+      if (nowBtn) nowBtn.onclick = async (e) => {
+        e.stopPropagation();
+        const fav = state.favorites.find((x) => (x.favId || x.fav_id) === row.dataset.id);
+        if (!fav || !fav.payload || !state.activeCid) {
+          toast("请先打开一个会话");
+          return;
+        }
+        try {
+          await sendPayload(JSON.parse(JSON.stringify(fav.payload)), { cid: state.activeCid, peerUid: state.activePeer, forward: true });
+          toast("已转发到当前会话");
+        } catch (err) {
+          dlgAlert(err.message);
+        }
       };
       const fwd = row.querySelector("[data-act=fwd]");
       if (fwd) fwd.onclick = (e) => {
@@ -2070,6 +2348,7 @@
         for (const p of payloads) {
           await sendPayload(JSON.parse(JSON.stringify(p)), { cid, peerUid: peer, forward: true });
         }
+        await sendForwardComment(cid, peer);
         toast("已转发");
       } catch (err) {
         dlgAlert(err.message);
@@ -2156,11 +2435,13 @@
     if (!body) return;
     body.innerHTML = `${avatarHTML(avatarOf(uid), name, uid)}<div class="verify-name">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(uid)}</div>
       <div class="modal-actions" style="margin-top:16px">
+        <button type="button" class="btn-ghost" id="mc-copy">复制账号</button>
         ${uid !== state.uid && !isFriend ? `<button type="button" class="btn-primary" id="mc-add">加为好友</button>` : ""}
         ${uid !== state.uid ? `<button type="button" class="btn-ghost" id="mc-msg">发消息</button>` : ""}
         ${uid !== state.uid ? `<button type="button" class="btn-ghost" id="mc-card">发送名片</button>` : ""}
       </div>`;
     $("member-card").classList.remove("hidden");
+    if ($("mc-copy")) $("mc-copy").onclick = () => navigator.clipboard.writeText(uid).then(() => toast("已复制 " + uid)).catch(() => {});
     if ($("mc-add")) $("mc-add").onclick = () => { $("member-card").classList.add("hidden"); sendFriendRequest(uid, isGroup(state.activeCid) ? "group" : "card"); };
     if ($("mc-msg")) $("mc-msg").onclick = () => { $("member-card").classList.add("hidden"); openChat(uid, cidOf(state.uid, uid)); };
     if ($("mc-card")) $("mc-card").onclick = () => { $("member-card").classList.add("hidden"); sendCard(uid); };
@@ -2172,22 +2453,50 @@
     await sendPayload({ type: "CARD", cardUid: uid, text: nickOf(uid) || uid });
   }
 
+  function isMentioned(ev) {
+    const p = (ev && ev.payload) || {};
+    const mentions = p.mentionUids || p.mention_uids || [];
+    if (mentions.indexOf(state.uid) >= 0 || mentions.indexOf("所有人") >= 0) return true;
+    const text = String(p.text || "");
+    if (text.indexOf("@所有人") >= 0) return true;
+    const nick = nickOf(state.uid) || "";
+    const mine = memberNick(state.uid) || nick;
+    if (nick && text.indexOf("@" + nick) >= 0) return true;
+    if (mine && text.indexOf("@" + mine) >= 0) return true;
+    if (text.indexOf("@" + state.uid) >= 0) return true;
+    return false;
+  }
+
   function applySettings(st) {
     state.settings = Object.assign({ notify_sound: true, notify_preview: true }, st || {});
     document.documentElement.classList.toggle("dark", !!(state.settings.dark));
     const app = $("app");
     if (app) {
       app.classList.remove("wall-green", "wall-gray", "wall-night");
+      app.style.backgroundImage = "";
       const wall = state.settings.wallpaper || "";
-      if (wall) app.classList.add("wall-" + wall);
+      if (wall.indexOf("http") === 0 || wall.indexOf("/") === 0) {
+        app.style.backgroundImage = "url(" + wall + ")";
+        app.style.backgroundSize = "cover";
+      } else if (wall) app.classList.add("wall-" + wall);
     }
     setSwitch("set-dark", !!state.settings.dark);
     const sound = state.settings.notifySound !== false && state.settings.notify_sound !== false;
     const preview = state.settings.notifyPreview !== false && state.settings.notify_preview !== false;
     setSwitch("set-sound", sound);
     setSwitch("set-preview", preview);
+    setSwitch("set-notify-at", state.settings.notifyAtMuted !== false && state.settings.notify_at_muted !== false);
+    setSwitch("set-read", !(state.settings.hideRead || state.settings.hide_read));
+    setSwitch("set-typing", !(state.settings.hideTyping || state.settings.hide_typing));
+    setSwitch("set-last-seen", !(state.settings.hideLastSeen || state.settings.hide_last_seen));
+    setSwitch("set-local-draft", localDraftOnly());
     setEnterSend(enterSendOn());
-    if ($("set-wall")) $("set-wall").value = state.settings.wallpaper || "";
+    applyFontSize();
+    if ($("set-wall")) $("set-wall").value = ["green", "gray", "night", ""].indexOf(state.settings.wallpaper) >= 0 ? (state.settings.wallpaper || "") : "";
+    if ($("set-wall-url")) $("set-wall-url").value = (state.settings.wallpaper || "").indexOf("http") === 0 || (state.settings.wallpaper || "").indexOf("/") === 0 ? state.settings.wallpaper : "";
+    if ($("set-add-me")) $("set-add-me").value = state.settings.addMe || state.settings.add_me || "verify";
+    if ($("set-burn-sec")) $("set-burn-sec").value = String(state.settings.burnSec || state.settings.burn_sec || 5);
+    if ($("burn-sec")) $("burn-sec").value = String(state.settings.burnSec || state.settings.burn_sec || 5);
     if ($("set-dnd-start")) $("set-dnd-start").value = state.settings.dndStart || state.settings.dnd_start || "";
     if ($("set-dnd-end")) $("set-dnd-end").value = state.settings.dndEnd || state.settings.dnd_end || "";
   }
@@ -2227,12 +2536,26 @@
   async function saveSettings() {
     const body = {
       dark: $("set-dark") && $("set-dark").classList.contains("on"),
-      wallpaper: ($("set-wall") && $("set-wall").value) || "",
+      wallpaper: (($("set-wall-url") && $("set-wall-url").value.trim()) || ($("set-wall") && $("set-wall").value) || ""),
       notify_sound: $("set-sound") && $("set-sound").classList.contains("on"),
       notify_preview: $("set-preview") && $("set-preview").classList.contains("on"),
       dnd_start: ($("set-dnd-start") && $("set-dnd-start").value) || "",
       dnd_end: ($("set-dnd-end") && $("set-dnd-end").value) || "",
+      notify_at_muted: $("set-notify-at") && $("set-notify-at").classList.contains("on"),
+      add_me: ($("set-add-me") && $("set-add-me").value) || "verify",
+      hide_read: $("set-read") && !$("set-read").classList.contains("on"),
+      hide_typing: $("set-typing") && !$("set-typing").classList.contains("on"),
+      hide_last_seen: $("set-last-seen") && !$("set-last-seen").classList.contains("on"),
+      burn_sec: Number(($("set-burn-sec") && $("set-burn-sec").value) || 5),
     };
+    setUiPrefs({
+      localDraft: $("set-local-draft") && $("set-local-draft").classList.contains("on"),
+      font: ($("set-font") && $("set-font").value) || "15",
+    });
+    applyFontSize();
+    if (localDraftOnly() && state.activeCid) {
+      api("/v1/drafts", { method: "POST", body: JSON.stringify({ cid: state.activeCid, text: "" }) }).catch(() => {});
+    }
     try {
       const st = await api("/v1/settings", { method: "POST", body: JSON.stringify(body) });
       applySettings(st);
@@ -2590,7 +2913,22 @@
           }).join("")}</div>`
         : `<div class="row-sub">暂无图片</div>`;
       box.querySelectorAll("img").forEach((img) => {
-        img.onclick = () => openLightbox(img.dataset.full || img.src);
+        img.onclick = () => openLightbox(img.dataset.full || img.src, "image");
+      });
+      return;
+    }
+    if (kind === "video") {
+      const vids = msgs.filter(isVideoMsg);
+      box.innerHTML = vids.length
+        ? `<div class="media-grid">${vids.map((m) => {
+            const media = mediaOf(m.payload);
+            const href = media.url || "";
+            const poster = media.thumbUrl || media.thumb_url || href;
+            return `<div class="video-thumb" data-full="${escapeHtml(href)}"><img src="${escapeHtml(poster)}" alt="" /><span class="play">▶</span></div>`;
+          }).join("")}</div>`
+        : `<div class="row-sub">暂无视频</div>`;
+      box.querySelectorAll(".video-thumb").forEach((el) => {
+        el.onclick = () => openLightbox(el.dataset.full, "video");
       });
       return;
     }
@@ -2624,6 +2962,7 @@
       state.messages = all.filter((m) => {
         m.cid = state.activeCid;
         if (kind === "image") return isImageMsg(m);
+        if (kind === "video") return isVideoMsg(m);
         return isFileMsg(m) && !isAudioMsg(m);
       });
       renderMsgs({ stick: false });
@@ -3069,6 +3408,10 @@
     const role = me.role || "";
     if (role === "owner") return "";
     if (me.muted || me.Muted) return "muted_me";
+    if (g.announceAck || g.announce_ack) {
+      const raw = String(field(g, "announcement") || "").trim();
+      if (raw && !isAnnounceAcked(state.activeCid, raw) && role !== "owner") return "announce_ack";
+    }
     if ((g.mutedAll || g.muted_all) && role !== "admin") return "muted_all";
     return "";
   }
@@ -3088,6 +3431,9 @@
     } else if (reason === "muted_me") {
       if (draft) draft.placeholder = "你已被禁言";
       if (sub) sub.textContent = "你已被禁言";
+    } else if (reason === "announce_ack") {
+      if (draft) draft.placeholder = "请先确认已阅读群公告";
+      if (sub) sub.textContent = "请先确认已阅读群公告";
     } else if (on) {
       syncBurnUI();
       if (sub && isGroup(state.activeCid)) sub.textContent = groupModeLabel(activeGroupMode());
@@ -3189,6 +3535,8 @@
     if (text) text.textContent = preview;
     el.title = raw;
     el.classList.remove("hidden");
+    const needAck = !!(g.announceAck || g.announce_ack) && !isAnnounceAcked(state.activeCid, raw);
+    if ($("announce-pin-ack")) $("announce-pin-ack").classList.toggle("hidden", !needAck);
   }
 
   function updateChatHeader() {
@@ -3259,6 +3607,7 @@
       const members = g.members || [];
       $("chat-title").textContent = (g.name || "群聊") + " (" + members.length + ")";
       if ($("side-group-name")) $("side-group-name").textContent = g.name || "";
+      if ($("side-group-id")) $("side-group-id").textContent = (g.cid || state.activeCid || "").slice(0, 18);
       const avEl = $("side-group-avatar");
       if (avEl) {
         const url = field(g, "avatarUrl", "avatar_url") || "";
@@ -3285,6 +3634,12 @@
       if ($("side-my-nick")) $("side-my-nick").textContent = me.nickname || me.Nickname || nickOf(state.uid) || state.uid;
       setSwitch("join-approval-switch", !!(g.joinApproval || g.join_approval));
       toggleHidden("join-approval-btn", !isOwner);
+      toggleHidden("group-mode-row", !isOwner);
+      toggleHidden("history-days-row", !isOwner);
+      toggleHidden("announce-ack-row", !isOwner);
+      if ($("side-group-mode")) $("side-group-mode").textContent = groupModeLabel(groupModeOf(g)) || "普通群";
+      if ($("side-history-days")) $("side-history-days").textContent = Number(g.historyDays || g.history_days || 0) ? (g.historyDays || g.history_days) + " 天" : "全部";
+      setSwitch("announce-ack-switch", !!(g.announceAck || g.announce_ack));
       toggleHidden("transfer-btn", !isOwner);
       toggleHidden("dissolve-btn", !isOwner);
       if ($("mute-all-btn")) {
@@ -3318,7 +3673,8 @@
             : m.role === "admin"
               ? `<span class="role-badge admin">管理</span>`
               : "";
-          return `<div class="side-member${kick}" data-uid="${escapeHtml(id)}" data-name="${escapeHtml(label)}" data-role="${escapeHtml(m.role || "")}">${face}<span class="side-member-name">${escapeHtml(label)}${badge}</span></div>`;
+          const mutedMark = (m.muted || m.Muted) ? `<span class="muted-tag">禁言</span>` : "";
+          return `<div class="side-member${kick}" data-uid="${escapeHtml(id)}" data-name="${escapeHtml(label)}" data-role="${escapeHtml(m.role || "")}">${face}<span class="side-member-name">${escapeHtml(label)}${badge}${mutedMark}</span></div>`;
         })
         .join("") + addTile;
       $("member-chips").querySelectorAll(".side-member:not(.add)").forEach((el) => {
@@ -3450,7 +3806,13 @@
     const m = (state.group.members || []).find((x) => uidOf(x) === uid) || {};
     const muted = !!(m.muted || m.Muted);
     items.push([muted ? "解除禁言" : "禁言", async () => {
-      await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, muted: !muted }) });
+      let minutes = 0;
+      if (!muted) {
+        const pick = await dlgPrompt("禁言时长（分钟，空=长期）", "60", "禁言");
+        if (pick === null) return;
+        minutes = Number(pick) || 0;
+      }
+      await api("/v1/group-member", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, muted: !muted, mute_minutes: minutes }) });
       const mem = ((state.group && state.group.members) || []).find((x) => uidOf(x) === uid);
       if (mem) {
         mem.muted = !muted;
@@ -3466,7 +3828,8 @@
     if (role !== "owner") {
       items.push(["移出本群", async () => {
         if (!(await dlgConfirm("将把该成员移出本群。", "移出 " + memberNick(uid), true))) return;
-        await api("/v1/group-kick", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid }) });
+        const wipe = await dlgConfirm("同时删除其在本群的消息？", "删除消息", true);
+        await api("/v1/group-kick", { method: "POST", body: JSON.stringify({ cid: state.activeCid, uid, delete_messages: !!wipe }) });
         await refreshGroup();
         await loadConvs();
       }]);
@@ -3492,7 +3855,7 @@
     state.openingChat = true;
     closeVerify();
     try {
-    if (state.activeCid && state.activeCid !== cid) saveDraft();
+    if (state.activeCid && state.activeCid !== cid) saveDraft(true);
     if (state.activeCid !== cid) {
       if (state.holdUnreadCid === cid) state.holdUnreadCid = "";
       const prev = state.convs.find((c) => c.cid === cid) || (state.hiddenConvs || []).find((c) => c.cid === cid);
@@ -3802,10 +4165,11 @@
   function notifyIncoming(ev) {
     const from = senderOf(ev);
     if (from === state.uid) return;
-    const mentions = (ev.payload && (ev.payload.mentionUids || ev.payload.mention_uids)) || [];
-    const mentioned = mentions.indexOf(state.uid) >= 0 || ((ev.payload && ev.payload.text) || "").indexOf("@" + state.uid) >= 0;
-    if (isMuted(ev.cid) && !mentioned) return;
-    if (inDnd() && !mentioned) return;
+    const mentioned = isMentioned(ev);
+    const muted = isMuted(ev.cid);
+    const atOn = state.settings.notifyAtMuted !== false && state.settings.notify_at_muted !== false;
+    if (muted && !(mentioned && atOn)) return;
+    if (inDnd() && !(mentioned && atOn)) return;
     playNotifySound();
     if (!document.hidden) return;
     if (!window.Notification || Notification.permission !== "granted") return;
@@ -4118,6 +4482,131 @@
     }
   }
 
+  function rememberAccount(uid, token, refresh) {
+    try {
+      const list = JSON.parse(localStorage.getItem("surge:accounts") || "[]").filter((a) => a && a.uid !== uid);
+      list.unshift({ uid, token, refresh: refresh || "", name: nickOf(uid) || uid });
+      localStorage.setItem("surge:accounts", JSON.stringify(list.slice(0, 6)));
+    } catch (_) {}
+  }
+  function listAccounts() {
+    try { return JSON.parse(localStorage.getItem("surge:accounts") || "[]") || []; } catch (_) { return []; }
+  }
+  function fillAccountSwitch() {
+    const el = $("account-switch");
+    if (!el) return;
+    const list = listAccounts();
+    if (!list.length) { el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    el.innerHTML = "已登录账号：" + list.map((a) => `<a href="#" data-uid="${escapeHtml(a.uid)}">${escapeHtml(a.name || a.uid)}</a>`).join(" · ");
+    el.querySelectorAll("a").forEach((a) => {
+      a.onclick = (e) => {
+        e.preventDefault();
+        const hit = listAccounts().find((x) => x.uid === a.dataset.uid);
+        if (hit) sessionEnter(hit.uid, hit.token, hit.refresh).catch((err) => dlgAlert(err.message));
+      };
+    });
+  }
+  function fillSenderChips() {
+    const el = $("chat-sender-row");
+    if (!el) return;
+    const seen = {};
+    const chips = [];
+    ((state.group && state.group.members) || []).forEach((m) => {
+      const id = uidOf(m);
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      chips.push(`<button type="button" class="chip" data-uid="${escapeHtml(id)}">${escapeHtml(memberNick(id) || id)}</button>`);
+    });
+    if (!chips.length) {
+      (state.messages || []).forEach((m) => {
+        const id = senderOf(m);
+        if (!id || seen[id]) return;
+        seen[id] = true;
+        chips.push(`<button type="button" class="chip" data-uid="${escapeHtml(id)}">${escapeHtml(nickOf(id) || id)}</button>`);
+      });
+    }
+    el.innerHTML = chips.join("") || "<span class='row-sub'>暂无发送人</span>";
+    el.querySelectorAll(".chip").forEach((btn) => {
+      btn.onclick = () => {
+        el.querySelectorAll(".chip").forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        filterChatBySender(btn.dataset.uid);
+      };
+    });
+  }
+  function translateMsg(text) {
+    const url = "https://translate.google.com/?sl=auto&tl=zh-CN&text=" + encodeURIComponent(text);
+    window.open(url, "_blank", "noopener");
+  }
+  function exportActiveChat() {
+    if (!state.activeCid) { toast("先打开一个会话"); return; }
+    const lines = (state.messages || []).map((m) => {
+      const t = new Date(Number(field(m, "createdAtMs", "created_at_ms") || 0)).toLocaleString();
+      return `[${t}] ${senderOf(m)}: ${(m.payload && m.payload.text) || ""}`;
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "chat-" + state.activeCid.slice(0, 12) + ".txt";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  let scanStream = null;
+  async function openScanner() {
+    const box = $("scan-box");
+    if (!box) return;
+    box.classList.remove("hidden");
+    const video = $("scan-video");
+    try {
+      scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      if (video) {
+        video.srcObject = scanStream;
+        await video.play().catch(() => {});
+        scanLoop(video);
+      }
+    } catch (_) {
+      toast("无法打开摄像头，可从相册选图");
+    }
+  }
+  function stopScanner() {
+    if (scanStream) scanStream.getTracks().forEach((t) => t.stop());
+    scanStream = null;
+    if ($("scan-box")) $("scan-box").classList.add("hidden");
+  }
+  async function scanLoop(video) {
+    if (!("BarcodeDetector" in window)) return;
+    const det = new BarcodeDetector({ formats: ["qr_code"] });
+    const tick = async () => {
+      if (!scanStream) return;
+      try {
+        const codes = await det.detect(video);
+        if (codes && codes[0] && codes[0].rawValue) {
+          handleScanText(codes[0].rawValue);
+          stopScanner();
+          return;
+        }
+      } catch (_) {}
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+  function handleScanText(raw) {
+    try {
+      const u = new URL(raw, location.origin);
+      const add = u.searchParams.get("add");
+      const join = u.searchParams.get("join");
+      if (add) { sendFriendRequest(add, "qr"); return; }
+      if (join) {
+        api("/v1/group-join-invite", { method: "POST", body: JSON.stringify({ token: join }) })
+          .then(async (g) => { toast("已加入群聊"); await loadConvs(); if (g.cid) openChat("", g.cid); })
+          .catch((e) => dlgAlert(e.message));
+        return;
+      }
+    } catch (_) {}
+    toast("无法识别：" + String(raw).slice(0, 80));
+  }
+
   async function sessionEnter(uid, token, refresh) {
     state.uid = uid;
     state.token = token;
@@ -4125,8 +4614,11 @@
     sessionStorage.setItem("surge_uid", state.uid);
     sessionStorage.setItem("surge_token", state.token);
     if (state.refresh) sessionStorage.setItem("surge_refresh", state.refresh);
+    rememberAccount(uid, token, refresh);
     await loadMe();
     setEnterSend(enterSendOn());
+    applyFontSize();
+    registerPWA();
     loadMuted();
     loadPins();
     loadHiddenConvs();
@@ -4305,6 +4797,9 @@
     return m;
   }
   const BURN_SECS = 5;
+  function burnSecs() {
+    return Number(($("burn-sec") && $("burn-sec").value) || state.settings.burnSec || state.settings.burn_sec || BURN_SECS) || 5;
+  }
   function watchEphemeral() {
     state.messages.forEach((m) => {
       if (m._burnQueued || m.recalled) return;
@@ -4313,7 +4808,7 @@
       const id = field(m, "msgId", "msg_id");
       if (!id) return;
       m._burnQueued = true;
-      m._burnLeft = BURN_SECS;
+      m._burnLeft = burnSecs();
       renderMsgs({ stick: false });
       const tick = setInterval(() => {
         if (m.recalled) {
@@ -4997,17 +5492,52 @@
     uploadAvatar(f, true).catch((err) => dlgAlert(err.message));
   };
 
-  $("me").onclick = async () => {
-    const name = await dlgPrompt("设置对外显示的名称", nickOf(state.uid) || state.uid, "修改昵称");
-    if (name === null) return;
-    try {
-      await api("/v1/me", { method: "POST", body: JSON.stringify({ display_name: name.trim() }) });
-      await loadMe();
-      if (state.activeCid) renderMsgs({ stick: false });
-    } catch (err) {
-      dlgAlert(err.message);
-    }
+  $("me").onclick = (e) => {
+    e.stopPropagation();
+    hideMsgMenu();
+    const menu = $("msg-menu");
+    if (!menu) return;
+    const items = [
+      {
+        label: "改昵称",
+        run: async () => {
+          const name = await dlgPrompt("设置对外显示的名称", nickOf(state.uid) || state.uid, "修改昵称");
+          if (name === null) return;
+          try {
+            await api("/v1/me", { method: "POST", body: JSON.stringify({ display_name: name.trim() }) });
+            await loadMe();
+            if (state.activeCid) renderMsgs({ stick: false });
+          } catch (err) {
+            dlgAlert(err.message);
+          }
+        },
+      },
+      { label: "换头像", run: () => $("me-avatar-file") && $("me-avatar-file").click() },
+      { label: "名片二维码", run: () => loadQrCard() },
+      { label: "扫描二维码", run: () => openScanner() },
+    ];
+    menu.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}"><span>${it.label}</span></button>`).join("");
+    menu.querySelectorAll("button").forEach((btn) => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        hideMsgMenu();
+        const it = items[Number(btn.dataset.i)];
+        if (it && it.run) it.run();
+      };
+    });
+    menu.classList.remove("hidden");
+    const r = $("me").getBoundingClientRect();
+    menu.style.left = r.right + 8 + "px";
+    menu.style.top = r.top + "px";
   };
+  if ($("me-avatar-file")) {
+    $("me-avatar-file").onchange = () => {
+      const f = $("me-avatar-file").files && $("me-avatar-file").files[0];
+      $("me-avatar-file").value = "";
+      if (!f) return;
+      uploadAvatar(f, false).catch((err) => dlgAlert(err.message));
+    };
+  }
 
   $("send-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -5057,9 +5587,28 @@
     $("tag-btn").onclick = async () => {
       if (!state.activePeer) return;
       const cur = visibleTags((state.friends.find((f) => friendUid(f) === state.activePeer) || {}).tags);
-      const raw = await dlgPrompt("多个标签用逗号分隔", cur.join(","), "好友标签");
-      if (raw == null) return;
-      const tags = raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+      const names = [];
+      (state.tagGroups || []).forEach((g) => {
+        if (g.name && names.indexOf(g.name) < 0) names.push(g.name);
+      });
+      cur.forEach((t) => {
+        if (names.indexOf(t) < 0) names.push(t);
+      });
+      const html =
+        `<div id="tag-pick">` +
+        names
+          .map(
+            (t) =>
+              `<label class="tag-check"><input type="checkbox" value="${escapeHtml(t)}"${cur.indexOf(t) >= 0 ? " checked" : ""} />${escapeHtml(t)}</label>`
+          )
+          .join("") +
+        `</div><input id="tag-new-input" class="modal-input" placeholder="新标签（回车添加）" autocomplete="off" />`;
+      const ok = await dlgOpen({ mode: "confirm", html, title: "好友标签" });
+      if (!ok) return;
+      const box = $("tag-pick");
+      const tags = box ? [...box.querySelectorAll("input:checked")].map((el) => el.value) : [];
+      const extra = ($("tag-new-input") && $("tag-new-input").value.trim()) || "";
+      if (extra) tags.push(extra);
       const f = state.friends.find((x) => friendUid(x) === state.activePeer);
       if (f && isStarred(f)) tags.push(STAR_TAG);
       try {
@@ -5107,9 +5656,14 @@
         recMedia.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
           recBtn.classList.remove("rec-on");
+          toggleHidden("rec-overlay", true);
+          clearTimeout(recBtn._limit);
+          recBtn.removeEventListener("pointermove", recBtn._move);
+          const cancel = state.recCancel;
+          state.recCancel = false;
           const blob = new Blob(recChunks, { type: recMedia.mimeType || "audio/webm" });
           recMedia = null;
-          if (blob.size < 256) return;
+          if (cancel || blob.size < 256) return;
           const file = new File([blob], "voice.webm", { type: blob.type || "audio/webm" });
           if (state.voiceText) file._transcript = state.voiceText;
           state.voiceText = "";
@@ -5122,6 +5676,27 @@
         recMedia.start();
         recBtn.classList.add("rec-on");
         state.voiceText = "";
+        state.recCancel = false;
+        try { recBtn.setPointerCapture(e.pointerId); } catch (_) {}
+        const startY = e.clientY;
+        const ov = $("rec-overlay");
+        if (ov) {
+          ov.textContent = "松开发送 · 上滑取消";
+          ov.classList.remove("cancel");
+          ov.classList.remove("hidden");
+        }
+        recBtn._move = (ev) => {
+          state.recCancel = startY - ev.clientY > 48;
+          if (ov) {
+            ov.classList.toggle("cancel", state.recCancel);
+            ov.textContent = state.recCancel ? "松开取消" : "松开发送 · 上滑取消";
+          }
+        };
+        recBtn.addEventListener("pointermove", recBtn._move);
+        recBtn._limit = setTimeout(() => {
+          state.recCancel = false;
+          stopRec();
+        }, 60000);
         const Recog = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (Recog) {
           try {
@@ -5148,7 +5723,10 @@
       if (recMedia && recMedia.state === "recording") recMedia.stop();
     };
     recBtn.onpointerup = stopRec;
-    recBtn.onpointerleave = stopRec;
+    recBtn.onpointercancel = () => {
+      state.recCancel = true;
+      stopRec();
+    };
   }
   if ($("global-search")) {
     let gsT = null;
@@ -5239,27 +5817,32 @@
     };
   }
   $("file").onchange = () => {
-    const f = $("file").files && $("file").files[0];
+    const files = $("file").files ? Array.from($("file").files) : [];
     $("file").value = "";
-    if (!f) return;
-    uploadFile(f).catch((err) => {
-      $("upload-progress").classList.add("hidden");
-      dlgAlert(err.message);
-    });
+    uploadFiles(files);
   };
-  function takeImageFile(dt) {
-    if (!dt || !dt.files) return null;
-    for (let i = 0; i < dt.files.length; i++) {
-      if ((dt.files[i].type || "").indexOf("image/") === 0) return dt.files[i];
+  async function uploadFiles(files) {
+    const list = (files || []).filter(Boolean);
+    for (const f of list) {
+      try {
+        await uploadFile(f);
+      } catch (err) {
+        $("upload-progress").classList.add("hidden");
+        dlgAlert(err.message);
+        break;
+      }
     }
-    return dt.files[0] || null;
+  }
+  function takeFiles(dt) {
+    if (!dt || !dt.files || !dt.files.length) return [];
+    return Array.from(dt.files);
   }
   document.addEventListener("paste", (e) => {
     if (!state.activeCid || $("draft").disabled) return;
-    const f = takeImageFile(e.clipboardData);
-    if (!f) return;
+    const files = takeFiles(e.clipboardData);
+    if (!files.length) return;
     e.preventDefault();
-    uploadFile(f).catch((err) => dlgAlert(err.message));
+    uploadFiles(files);
   });
   const dropTarget = document.querySelector(".chat-main") || $("msgs");
   if (dropTarget) {
@@ -5269,8 +5852,7 @@
     dropTarget.addEventListener("drop", (e) => {
       e.preventDefault();
       if (!state.activeCid || $("draft").disabled) return;
-      const f = takeImageFile(e.dataTransfer);
-      if (f) uploadFile(f).catch((err) => dlgAlert(err.message));
+      uploadFiles(takeFiles(e.dataTransfer));
     });
   }
   async function refreshE2eeFp() {
@@ -5426,7 +6008,7 @@
     await saveSettings();
     $("settings-box").classList.add("hidden");
   });
-  ["set-dark", "set-sound", "set-preview", "set-enter-send"].forEach((id) => {
+  ["set-dark", "set-sound", "set-preview", "set-enter-send", "set-local-draft"].forEach((id) => {
     const el = $(id);
     if (!el) return;
     el.onclick = () => {
@@ -5476,16 +6058,20 @@
       state.searchKind = btn.dataset.sk;
       $("chat-search-kinds").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
       if (btn.dataset.sk === "date") {
-        const day = await dlgPrompt("例如 2026-08-21", "", "按日期查找");
-        if (day) filterChatByDate(day);
+        toggleHidden("chat-date-row", false);
+        toggleHidden("chat-sender-row", true);
+        if ($("chat-date")) $("chat-date").focus();
         return;
       }
       if (btn.dataset.sk === "sender") {
-        const q = await dlgPrompt("输入昵称或 uid", "", "按发送人查找");
-        if (q) filterChatBySender(q);
+        toggleHidden("chat-date-row", true);
+        fillSenderChips();
+        toggleHidden("chat-sender-row", false);
         return;
       }
-      if (btn.dataset.sk === "image" || btn.dataset.sk === "file") {
+      toggleHidden("chat-date-row", true);
+      toggleHidden("chat-sender-row", true);
+      if (btn.dataset.sk === "image" || btn.dataset.sk === "file" || btn.dataset.sk === "video") {
         filterChatByKind(btn.dataset.sk);
         return;
       }
@@ -5499,8 +6085,9 @@
       const inv = await api("/v1/group-invite-link", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
       const url = inv.url || inv.Url || "";
       $("invite-qr-img").src = "/v1/group-invite.png?token=" + encodeURIComponent(inv.token || inv.Token || "");
-      $("invite-qr-url").textContent = url;
+      $("invite-qr-url").textContent = url + (inv.expiresAtMs || inv.expires_at_ms ? " · 有效至 " + new Date(Number(inv.expiresAtMs || inv.expires_at_ms)).toLocaleString() : "");
       $("invite-qr-box").dataset.url = url;
+      $("invite-qr-box").dataset.token = inv.token || inv.Token || "";
       $("invite-qr-box").classList.remove("hidden");
     } catch (err) {
       dlgAlert(err.message);
@@ -5573,7 +6160,7 @@
         const did = String(d.device_id || "");
         const self = isSelfDevice(d, mine);
         const short = (did || connId).slice(0, 8);
-        const sub = self ? "本机" : short ? "在线 · " + short : "在线";
+        const sub = self ? "本机" : [d.ip, d.last_active || d.lastActive, short].filter(Boolean).join(" · ") || "在线";
         const kick = self || !connId
           ? ""
           : `<div class="row-actions"><button type="button" class="danger" data-id="${escapeHtml(connId)}">下线</button></div>`;
@@ -5626,6 +6213,14 @@
     });
   }
   onClick("select-cancel", () => exitSelect());
+  onClick("select-all", () => {
+    (state.messages || []).forEach((m) => {
+      const id = field(m, "msgId", "msg_id");
+      if (id && !m.recalled) state.selected[id] = true;
+    });
+    if ($("select-count")) $("select-count").textContent = "已选 " + Object.keys(state.selected).length;
+    renderMsgs({ stick: false });
+  });
   onClick("select-fwd", () => {
     const ids = Object.keys(state.selected);
     if (!ids.length) return;
@@ -5965,23 +6560,50 @@
     if (menu && !menu.classList.contains("hidden") && !menu.contains(e.target)) hideMsgMenu();
   });
 
-  function chatImageURLs() {
-    return (state.messages || [])
-      .filter(isImageMsg)
-      .map((m) => {
-        const media = mediaOf(m.payload);
-        return media.url || media.thumbUrl || media.thumb_url || "";
-      })
-      .filter(Boolean);
+  function chatMediaItems() {
+    const out = [];
+    (state.messages || []).forEach((m) => {
+      const url = mediaURL(m);
+      if (!url) return;
+      if (isImageMsg(m)) out.push({ url, kind: "image" });
+      else if (isVideoMsg(m)) out.push({ url, kind: "video" });
+    });
+    return out;
+  }
+
+  function lightboxItem() {
+    const lb = state.lightbox || { urls: [], index: 0 };
+    const item = lb.urls[lb.index];
+    if (!item) return { url: "", kind: "image" };
+    if (typeof item === "string") return { url: item, kind: "image" };
+    return item;
   }
 
   function showLightbox() {
-    const lb = state.lightbox || { urls: [], index: 0 };
-    const src = lb.urls[lb.index];
-    if (!src) return;
-    $("lightbox-img").src = src;
+    const item = lightboxItem();
+    if (!item.url) return;
+    const img = $("lightbox-img");
+    const vid = $("lightbox-video");
+    if (item.kind === "video" && vid) {
+      if (img) {
+        img.classList.add("hidden");
+        img.src = "";
+      }
+      vid.classList.remove("hidden");
+      vid.src = item.url;
+    } else {
+      if (vid) {
+        vid.pause();
+        vid.removeAttribute("src");
+        vid.classList.add("hidden");
+      }
+      if (img) {
+        img.classList.remove("hidden");
+        img.src = item.url;
+      }
+    }
     $("lightbox").classList.remove("hidden");
-    const many = lb.urls.length > 1;
+    const many = (state.lightbox.urls || []).length > 1;
     if ($("lightbox-prev")) $("lightbox-prev").classList.toggle("hidden", !many);
     if ($("lightbox-next")) $("lightbox-next").classList.toggle("hidden", !many);
   }
@@ -5989,13 +6611,33 @@
   function stepLightbox(dir) {
     const lb = state.lightbox;
     if (!lb || !lb.urls.length) return;
+    const vid = $("lightbox-video");
+    if (vid) vid.pause();
     lb.index = (lb.index + dir + lb.urls.length) % lb.urls.length;
     showLightbox();
   }
 
   function closeLightbox() {
     $("lightbox").classList.add("hidden");
-    $("lightbox-img").src = "";
+    if ($("lightbox-img")) $("lightbox-img").src = "";
+    const vid = $("lightbox-video");
+    if (vid) {
+      vid.pause();
+      vid.removeAttribute("src");
+      vid.classList.add("hidden");
+    }
+  }
+
+  async function copyImage(url) {
+    if (!url) return;
+    const r = await fetch(url);
+    const blob = await r.blob();
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
+      toast("已复制图片");
+      return;
+    }
+    throw new Error("clipboard");
   }
 
   function bindVideoPoster(video) {
@@ -6057,9 +6699,10 @@
   }
 
   async function saveLightbox() {
-    const src = state.lightbox && state.lightbox.urls[state.lightbox.index];
+    const item = lightboxItem();
+    const src = item.url;
     if (!src) return;
-    const name = (src.split("?")[0].split("/").pop() || "image.jpg").replace(/[^\w.-]+/g, "_") || "image.jpg";
+    const name = (src.split("?")[0].split("/").pop() || (item.kind === "video" ? "video.mp4" : "image.jpg")).replace(/[^\w.-]+/g, "_") || "file";
     try {
       const r = await fetch(src);
       const blob = await r.blob();
@@ -6082,15 +6725,15 @@
     }
   }
 
-  function openLightbox(src) {
+  function openLightbox(src, kind) {
     if (!src) return;
-    const urls = chatImageURLs();
-    let index = urls.indexOf(src);
+    const items = chatMediaItems();
+    let index = items.findIndex((x) => x.url === src);
     if (index < 0) {
-      urls.unshift(src);
+      items.unshift({ url: src, kind: kind || "image" });
       index = 0;
     }
-    state.lightbox = { urls, index };
+    state.lightbox = { urls: items, index };
     showLightbox();
   }
   if ($("lightbox")) {
@@ -6111,6 +6754,17 @@
     saveLightbox();
   });
   if ($("lightbox-img")) $("lightbox-img").onclick = (e) => e.stopPropagation();
+  if ($("lightbox-video")) $("lightbox-video").onclick = (e) => e.stopPropagation();
+
+  async function sendForwardComment(cid, peer) {
+    const comment = ($("forward-comment") && $("forward-comment").value.trim()) || "";
+    if (!comment) return;
+    await sendPayload({ type: "TEXT", text: comment }, { cid, peerUid: peer });
+  }
+
+  function wrapForwardPick(onPick, cid, peer) {
+    Promise.resolve(onPick(cid, peer)).catch((err) => dlgAlert(err.message));
+  }
 
   function fillForwardList(onPick, payloads) {
     const list = $("forward-list");
@@ -6142,7 +6796,7 @@
       multi;
     if (!convHTML && !friendHTML) list.innerHTML = `<div class="row"><div class="row-sub">没有可转发的对象</div></div>`;
     list.querySelectorAll(".row[data-cid]").forEach((row) => {
-      row.onclick = () => onPick(row.dataset.cid, row.dataset.peer);
+      row.onclick = () => wrapForwardPick(onPick, row.dataset.cid, row.dataset.peer);
     });
     const multiRow = list.querySelector("[data-act=multi]");
     if (multiRow && payloads) {
@@ -6160,6 +6814,7 @@
                 for (const p of payloads) {
                   await sendPayload(JSON.parse(JSON.stringify(p)), { cid, peerUid: uid, forward: true });
                 }
+                await sendForwardComment(cid, uid);
               }
               if (uids.length) toast("已转发");
             } catch (err) {
@@ -6184,6 +6839,7 @@
         for (const payload of payloads) {
           await sendPayload(JSON.parse(JSON.stringify(payload)), { cid, peerUid: peer, forward: true });
         }
+        await sendForwardComment(cid, peer);
         toast("已转发");
         exitSelect();
       } catch (err) {
@@ -6194,6 +6850,7 @@
   }
   $("forward-cancel").onclick = () => {
     state.forwarding = null;
+    if ($("forward-comment")) $("forward-comment").value = "";
     $("forward-box").classList.add("hidden");
   };
   $("forward-box").onclick = (e) => {
@@ -6204,28 +6861,60 @@
   $("chat-search").addEventListener("input", () => {
     const q = $("chat-search").value.trim();
     clearTimeout(chatSearchTimer);
-    chatSearchTimer = setTimeout(async () => {
-      if (!q) {
-        state.searchQ = "";
-        return;
-      }
-      const hit = state.messages.find((m) => ((m.payload && m.payload.text) || "").indexOf(q) >= 0);
-      if (hit) {
-        highlightMsg(field(hit, "msgId", "msg_id"));
-        return;
-      }
-      try {
-        const data = await api("/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&q=" + encodeURIComponent(q) + "&limit=5");
-        const m = (data.messages || [])[0];
-        if (m) jumpToMessage(state.activeCid, field(m, "msgId", "msg_id"), field(m, "convSeq", "conv_seq"), state.activePeer);
-        else toast("没有匹配的聊天记录");
-      } catch (err) {
-        toast(err.message);
-      }
-    }, 250);
+    chatSearchTimer = setTimeout(() => runChatSearch(q), 250);
   });
+  onClick("chat-search-prev", () => stepChatSearch(-1));
+  onClick("chat-search-next", () => stepChatSearch(1));
+
+  async function runChatSearch(q) {
+    const nav = $("chat-search-nav");
+    if (!q) {
+      state.searchHits = [];
+      if (nav) nav.classList.add("hidden");
+      return;
+    }
+    const local = (state.messages || []).filter((m) => ((m.payload && m.payload.text) || "").indexOf(q) >= 0);
+    const hits = local.map((m) => ({
+      id: field(m, "msgId", "msg_id"),
+      seq: field(m, "convSeq", "conv_seq"),
+    })).filter((h) => h.id);
+    if (hits.length < 2) {
+      try {
+        const data = await api("/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&q=" + encodeURIComponent(q) + "&limit=50");
+        (data.messages || []).forEach((m) => {
+          const id = field(m, "msgId", "msg_id");
+          if (!id || hits.some((h) => h.id === id)) return;
+          hits.push({ id, seq: field(m, "convSeq", "conv_seq") });
+        });
+      } catch (_) {}
+    }
+    state.searchHits = hits;
+    state.searchHitI = 0;
+    if (!hits.length) {
+      if (nav) nav.classList.add("hidden");
+      toast("没有匹配的聊天记录");
+      return;
+    }
+    if (nav) nav.classList.remove("hidden");
+    goChatSearchHit(0);
+  }
+
+  function stepChatSearch(dir) {
+    if (!state.searchHits.length) return;
+    goChatSearchHit(state.searchHitI + dir);
+  }
+
+  function goChatSearchHit(i) {
+    const hits = state.searchHits;
+    if (!hits.length) return;
+    state.searchHitI = (i + hits.length) % hits.length;
+    const hit = hits[state.searchHitI];
+    if ($("chat-search-count")) $("chat-search-count").textContent = state.searchHitI + 1 + "/" + hits.length;
+    jumpToMessage(state.activeCid, hit.id, hit.seq, state.activePeer);
+  }
   $("msgs").addEventListener("scroll", () => {
     if ($("msgs").scrollTop < 48) loadOlder();
+    syncJumpChrome();
   });
   $("qr-approve").onclick = () => {
     api("/v1/auth/qr/approve", { method: "POST", body: JSON.stringify({ ticket: state.pendingTicket }) })
@@ -6247,7 +6936,7 @@
     saveDraft();
     if (!state.activeCid) return;
     const now = Date.now();
-    if (!isAnonGroup() && now - state.lastTypingAt >= 2000) {
+    if (!isAnonGroup() && now - state.lastTypingAt >= 2000 && !(state.settings.hideTyping || state.settings.hide_typing)) {
       state.lastTypingAt = now;
       try {
         sendFrame({ typing: { cid: state.activeCid } });
@@ -6338,6 +7027,8 @@
     state.token = savedTok;
     state.refresh = savedRefresh;
     showMe();
+    applyFontSize();
+    registerPWA();
     loadMuted();
     loadPins();
     loadHiddenConvs();
@@ -6369,6 +7060,235 @@
   } else {
     startQR();
   }
+
+  function syncJumpChrome() {
+    const box = $("msgs");
+    const btn = $("jump-bottom");
+    if (box && btn) {
+      const near = box.scrollHeight - box.scrollTop - box.clientHeight < 96;
+      btn.classList.toggle("hidden", near || !state.activeCid);
+    }
+    const uj = $("unread-jump");
+    if (!uj || !box) return;
+    const n = Number(state.unreadAtOpen || 0);
+    const split = $("unread-split");
+    let show = false;
+    if (n > 0 && split) {
+      const br = box.getBoundingClientRect();
+      const sr = split.getBoundingClientRect();
+      show = sr.top > br.bottom - 8 || sr.bottom < br.top + 8;
+    }
+    uj.classList.toggle("hidden", !show);
+    if (show) uj.textContent = "有 " + n + " 条新消息";
+  }
+
+  function registerPWA() {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+
+  async function addFriendsToTag(tag) {
+    if (!tag) return;
+    openContactPicker({
+      title: "加入标签「" + tag + "」",
+      multi: true,
+      confirmLabel: "添加",
+      onConfirm: async (uids) => {
+        try {
+          for (const uid of uids) {
+            const f = state.friends.find((x) => friendUid(x) === uid);
+            const tags = visibleTags(f && f.tags);
+            if (tags.indexOf(tag) < 0) tags.push(tag);
+            if (f && isStarred(f)) tags.push(STAR_TAG);
+            await api("/v1/friend-tags", { method: "POST", body: JSON.stringify({ peer_uid: uid, tags }) });
+          }
+          await loadFriends();
+          toast("已加入标签");
+        } catch (err) {
+          dlgAlert(err.message);
+        }
+      },
+    });
+  }
+
+  onClick("tag-new-btn", async () => {
+    const name = await dlgPrompt("标签名称", "", "新建标签");
+    if (name === null || !String(name).trim()) return;
+    addFriendsToTag(String(name).trim());
+  });
+  onClick("copy-gid-btn", () => {
+    if (!state.activeCid) return;
+    navigator.clipboard.writeText(state.activeCid).then(() => toast("已复制群 ID")).catch(() => {});
+  });
+  if ($("conv-filters")) {
+    $("conv-filters").querySelectorAll("button").forEach((btn) => {
+      btn.onclick = () => {
+        $("conv-filters").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+        state.convFilter = btn.dataset.cf || "all";
+        renderLists();
+      };
+    });
+  }
+  onClick("chat-date-go", () => {
+    const day = $("chat-date") && $("chat-date").value;
+    if (day) filterChatByDate(day);
+  });
+  if ($("chat-date")) {
+    $("chat-date").onchange = () => { if ($("chat-date").value) filterChatByDate($("chat-date").value); };
+  }
+  onClick("invite-qr-refresh", () => { if ($("group-invite-qr-btn")) $("group-invite-qr-btn").click(); });
+  onClick("invite-qr-revoke", async () => {
+    const token = ($("invite-qr-box") && $("invite-qr-box").dataset.token) || "";
+    if (!token) return;
+    try {
+      await api("/v1/group-invite-revoke", { method: "POST", body: JSON.stringify({ token }) });
+      toast("邀请已作废");
+      $("invite-qr-box").classList.add("hidden");
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("qr-card-btn", () => loadQrCard());
+  onClick("announce-pin-ack", () => {
+    const g = activeGroup();
+    const raw = g ? String(field(g, "announcement") || "").trim() : "";
+    if (raw) setAnnounceAcked(state.activeCid, raw);
+    syncAnnouncePin();
+    lockComposer();
+    toast("已确认公告");
+  });
+  onClick("poll-btn", async () => {
+    const q = await dlgPrompt("投票问题", "", "发起投票");
+    if (q == null || !String(q).trim()) return;
+    const opts = await dlgPrompt("选项，用逗号分隔", "赞成,反对", "投票选项");
+    if (opts == null) return;
+    const list = String(opts).split(/[,，]/).map((s) => s.trim()).filter(Boolean).slice(0, 8);
+    if (list.length < 2) { toast("至少两个选项"); return; }
+    sendPayload({ type: "TEXT", text: "::surge:poll::" + JSON.stringify({ q: String(q).trim(), opts: list }) });
+  });
+  onClick("chain-btn", async () => {
+    const title = await dlgPrompt("接龙标题", "", "接龙");
+    if (title == null || !String(title).trim()) return;
+    sendPayload({ type: "TEXT", text: "::surge:chain::" + JSON.stringify({ title: String(title).trim(), items: [] }) });
+  });
+  onClick("loc-btn", () => {
+    if (!navigator.geolocation) { toast("浏览器不支持定位"); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => sendPayload({ type: "TEXT", text: "::surge:loc::" + JSON.stringify({ lat: pos.coords.latitude.toFixed(5), lng: pos.coords.longitude.toFixed(5) }) }),
+      () => toast("无法获取位置")
+    );
+  });
+  onClick("md-hint", () => toast("支持 **粗体** 、`代码`、```代码块```"));
+  onClick("group-mode-row", async () => {
+    if (!isGroupOwner()) return;
+    const mode = await dlgPrompt("normal / verify / private / broadcast / anonymous / ephemeral", activeGroupMode() || "normal", "群类型");
+    if (!mode) return;
+    try {
+      await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, mode: String(mode).trim() }) });
+      await refreshGroup();
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("history-days-row", async () => {
+    if (!isGroupOwner()) return;
+    const d = await dlgPrompt("新成员可见天数，0=全部", "3", "历史范围");
+    if (d == null) return;
+    try {
+      await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, history_days: Number(d) || 0 }) });
+      await refreshGroup();
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("announce-ack-row", async () => {
+    if (!isGroupOwner()) return;
+    const g = activeGroup() || {};
+    const next = !(g.announceAck || g.announce_ack);
+    try {
+      await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, announce_ack: next }) });
+      await refreshGroup();
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("set-contact-btn", async () => {
+    try {
+      await api("/v1/me", { method: "POST", body: JSON.stringify({ email: ($("set-email") && $("set-email").value) || "", phone: ($("set-phone") && $("set-phone").value) || "" }) });
+      toast("已保存联系方式");
+      await loadMe();
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("set-export-btn", () => exportActiveChat());
+  onClick("set-history-btn", async () => {
+    try {
+      const data = await api("/v1/login-history");
+      const lines = (data.items || []).map((it) => (it.at || "") + " " + (it.device || "") + " " + (it.ip || "")).join("\n") || "暂无记录";
+      dlgAlert(lines, "登录历史");
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("set-delete-btn", async () => {
+    if (!(await dlgConfirm("注销后无法恢复，确定继续？", "注销账号", true))) return;
+    try {
+      await api("/v1/account-delete", { method: "POST", body: "{}" });
+      sessionStorage.clear();
+      location.reload();
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("forgot-btn", async () => {
+    const uid = ($("login-uid") && $("login-uid").value.trim()) || (await dlgPrompt("账号 / 邮箱", "", "忘记密码"));
+    if (!uid) return;
+    try {
+      const r = await api("/v1/auth/forgot", { method: "POST", body: JSON.stringify({ uid }) });
+      const code = r.code || (await dlgPrompt("请输入邮件验证码", "", "重置密码"));
+      if (!code) return;
+      const pass = await dlgPrompt("新密码（至少 6 位）", "", "重置密码");
+      if (!pass) return;
+      await api("/v1/auth/reset", { method: "POST", body: JSON.stringify({ code, password: pass }) });
+      toast("密码已重置，请登录");
+    } catch (err) { dlgAlert(err.message); }
+  });
+  onClick("scan-qr-btn", () => openScanner());
+  onClick("scan-qr-shared", () => openScanner());
+  onClick("scan-close", () => stopScanner());
+  onClick("scan-file-btn", () => $("scan-file") && $("scan-file").click());
+  if ($("scan-file")) {
+    $("scan-file").onchange = async () => {
+      const f = $("scan-file").files && $("scan-file").files[0];
+      $("scan-file").value = "";
+      if (!f || !("BarcodeDetector" in window)) { toast("当前浏览器无法识别图片二维码"); return; }
+      const bmp = await createImageBitmap(f);
+      const det = new BarcodeDetector({ formats: ["qr_code"] });
+      const codes = await det.detect(bmp);
+      if (codes && codes[0]) handleScanText(codes[0].rawValue);
+      else toast("未识别到二维码");
+    };
+  }
+  fillAccountSwitch();
+  onClick("jump-bottom", () => {
+    const box = $("msgs");
+    if (box) box.scrollTop = box.scrollHeight;
+    syncJumpChrome();
+  });
+  onClick("unread-jump", () => {
+    const el = $("unread-split");
+    if (el) el.scrollIntoView({ block: "center" });
+    syncJumpChrome();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") {
+      if (e.key === "ArrowLeft" && $("lightbox") && !$("lightbox").classList.contains("hidden")) stepLightbox(-1);
+      if (e.key === "ArrowRight" && $("lightbox") && !$("lightbox").classList.contains("hidden")) stepLightbox(1);
+      return;
+    }
+    if ($("lightbox") && !$("lightbox").classList.contains("hidden")) {
+      closeLightbox();
+      return;
+    }
+    const menu = $("msg-menu");
+    if (menu && !menu.classList.contains("hidden")) {
+      hideMsgMenu();
+      return;
+    }
+    ["pick-box", "forward-box", "merge-box", "member-card", "settings-box", "react-pick"].forEach((id) => {
+      if ($(id) && !$(id).classList.contains("hidden")) $(id).classList.add("hidden");
+    });
+    const side = $("chat-side");
+    if (side && !side.classList.contains("hidden")) setChatSide(false);
+  });
 
   initMidSplitter();
 })();

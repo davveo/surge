@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Surge IM</title>
+  <meta name="theme-color" content="#2e2e2e" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -23,7 +26,7 @@
       },
     };
   </script>
-  <link rel="stylesheet" href="/app.css?v=im-gaps" />
+  <link rel="stylesheet" href="/app.css?v=im-ux4" />
 </head>
 <body class="h-full m-0 bg-zinc-300 text-zinc-900 font-sans">
   <div id="login" class="min-h-full grid place-items-center bg-rail">
@@ -38,6 +41,8 @@
       <button id="register-btn" type="button" class="mt-2 h-10 w-full rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">注册</button>
       <button id="oauth-demo-btn" type="button" class="mt-2 h-10 w-full rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">第三方登录（演示）</button>
       <a id="oauth-github" href="/v1/auth/oauth/github" class="mt-2 flex h-10 w-full items-center justify-center rounded border border-zinc-300 bg-white text-sm text-zinc-800 hover:bg-zinc-50">GitHub 登录</a>
+      <button id="forgot-btn" type="button" class="mt-2 h-10 w-full rounded border border-transparent bg-transparent text-sm text-zinc-500 hover:text-zinc-800">忘记密码</button>
+      <div id="account-switch" class="hidden mt-3 text-[13px] text-zinc-500"></div>
       <div class="my-4 text-center">
         <img id="qr-img" class="mx-auto h-[180px] w-[180px] bg-zinc-100" alt="登录二维码" />
         <p id="qr-hint" class="mt-3 text-[13px] leading-relaxed text-zinc-500">已登录窗口打开本页扫码，或点确认登录</p>
@@ -57,7 +62,8 @@
 
   <div id="app" class="hidden">
     <aside class="rail">
-      <div id="me" title="修改昵称"></div>
+      <div id="me" title="修改资料"></div>
+      <input id="me-avatar-file" type="file" accept="image/*" class="hidden" />
       <nav class="rail-nav">
         <button class="rail-btn on" data-tab="chats" title="会话" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 4.4A2.4 2.4 0 0 1 6.6 2h10.8A2.4 2.4 0 0 1 20 4.4v9.2a2.4 2.4 0 0 1-2.4 2.4H9.1L4.6 19.5A.8.8 0 0 1 3.3 18.9V4.4Z"/></svg>
@@ -89,6 +95,11 @@
           <button id="mark-all-read-btn" type="button" title="全部标为已读">✓</button>
           <button id="new-chat-btn" type="button" title="发起聊天 / 建群">+</button>
         </header>
+        <div id="conv-filters">
+          <button type="button" class="on" data-cf="all">全部</button>
+          <button type="button" data-cf="unread">未读</button>
+          <button type="button" data-cf="mention">@我</button>
+        </div>
         <div id="global-hits" class="hidden"></div>
         <div id="conv-list"></div>
       </div>
@@ -119,8 +130,12 @@
           </div>
           <button type="submit">建群</button>
         </form>
-        <div id="friend-list"></div>
-        <div id="tag-groups"></div>
+        <div id="contacts-body">
+          <div id="friend-list"></div>
+          <button id="tag-new-btn" type="button" class="side-row">新建标签</button>
+          <div id="tag-groups"></div>
+          <div id="letter-index" aria-hidden="true"></div>
+        </div>
         <div id="block-wrap">
           <div class="mid-label">黑名单</div>
           <div id="block-list"></div>
@@ -163,6 +178,7 @@
       <div id="announce-pin" class="hidden">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 10.2v3.6h3.1L14 17.6V6.4l-5.7 3.8H5.2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M17 9.1a3.6 3.6 0 0 1 0 5.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <span id="announce-pin-text"></span>
+        <button type="button" id="announce-pin-ack" class="hidden" title="确认已读">我已阅读</button>
         <button type="button" id="announce-pin-dismiss" title="关闭置顶" aria-label="关闭置顶">×</button>
       </div>
       <div id="msg-pin" class="hidden">
@@ -174,14 +190,30 @@
           <button type="button" class="on" data-sk="all">全部</button>
           <button type="button" data-sk="image">图片</button>
           <button type="button" data-sk="file">文件</button>
+          <button type="button" data-sk="video">视频</button>
           <button type="button" data-sk="date">日期</button>
           <button type="button" data-sk="sender">发送人</button>
         </div>
-        <input id="chat-search" placeholder="搜索聊天记录" />
+        <div id="chat-date-row" class="hidden">
+          <input id="chat-date" type="date" />
+          <button type="button" id="chat-date-go">跳转</button>
+        </div>
+        <div id="chat-sender-row" class="hidden"></div>
+        <div class="chat-search-row">
+          <input id="chat-search" placeholder="搜索聊天记录" />
+          <div id="chat-search-nav" class="hidden">
+            <span id="chat-search-count">0/0</span>
+            <button type="button" id="chat-search-prev" title="上一条">‹</button>
+            <button type="button" id="chat-search-next" title="下一条">›</button>
+          </div>
+        </div>
       </div>
+      <div id="unread-jump" class="hidden">有新消息</div>
       <div id="msgs"></div>
+      <button id="jump-bottom" type="button" class="hidden" title="回到底部">↓</button>
       <div id="select-bar" class="hidden">
         <span id="select-count">已选 0</span>
+        <button id="select-all" type="button">全选</button>
         <button id="select-fwd" type="button">逐条转发</button>
         <button id="select-merge" type="button">合并转发</button>
         <button id="select-fav" type="button">收藏</button>
@@ -216,7 +248,16 @@
           <label id="orig-label" title="发送原图，不压缩">
             <input id="orig-toggle" type="checkbox" />原图
           </label>
-          <input id="file" type="file" accept="image/*,video/*,audio/*,*/*" class="hidden" />
+          <select id="burn-sec" class="hidden" title="阅后即焚秒数">
+            <option value="3">3秒</option>
+            <option value="5" selected>5秒</option>
+            <option value="10">10秒</option>
+          </select>
+          <button id="poll-btn" type="button" disabled title="投票">投</button>
+          <button id="chain-btn" type="button" disabled title="接龙">龙</button>
+          <button id="loc-btn" type="button" disabled title="位置">位</button>
+          <button id="md-hint" type="button" disabled title="支持 **粗体** `代码`">Md</button>
+          <input id="file" type="file" accept="image/*,video/*,audio/*,*/*" class="hidden" multiple />
         </div>
         <textarea id="draft" rows="3" placeholder="" disabled></textarea>
         <div class="composer-foot">
@@ -230,6 +271,7 @@
           <button type="button" class="side-row" id="media-back"><span>‹ 聊天信息</span></button>
           <div id="media-tabs">
             <button type="button" class="on" data-mk="image">图片</button>
+            <button type="button" data-mk="video">视频</button>
             <button type="button" data-mk="file">文件</button>
             <button type="button" data-mk="link">链接</button>
           </div>
@@ -237,6 +279,10 @@
         </div>
         <div id="side-direct" class="hidden">
           <div id="side-peer-card" class="side-profile"></div>
+          <button type="button" class="side-row" id="qr-card-btn">
+            <span>名片二维码</span>
+            <span class="side-val">扫码加我</span>
+          </button>
         </div>
         <div id="group-bar" class="hidden">
           <div class="side-search">
@@ -271,9 +317,29 @@
               <span>群二维码</span>
               <span class="side-val">邀请入群</span>
             </button>
+            <button type="button" class="side-row" id="scan-qr-btn">
+              <span>扫描二维码</span>
+              <span class="side-val">加好友 / 入群</span>
+            </button>
             <button type="button" class="side-row" id="group-avatar-btn">
               <span>群头像</span>
               <span class="side-val" id="side-group-avatar"></span>
+            </button>
+            <button type="button" class="side-row" id="copy-gid-btn">
+              <span>群 ID</span>
+              <span class="side-val" id="side-group-id">复制</span>
+            </button>
+            <button type="button" class="side-row hidden" id="group-mode-row">
+              <span>群类型</span>
+              <span class="side-val" id="side-group-mode">普通群</span>
+            </button>
+            <button type="button" class="side-row hidden" id="history-days-row">
+              <span>新成员可见历史</span>
+              <span class="side-val" id="side-history-days">全部</span>
+            </button>
+            <button type="button" class="side-row hidden" id="announce-ack-row">
+              <span>公告需确认</span>
+              <span class="side-switch" id="announce-ack-switch"></span>
             </button>
             <input id="group-avatar-file" type="file" accept="image/*" class="hidden" />
           </div>
@@ -310,6 +376,7 @@
             <button id="clear-btn" type="button" class="side-row">清空聊天记录</button>
             <button id="send-card-btn" type="button" class="side-row hidden">发送名片</button>
             <button id="devices-btn" type="button" class="side-row">登录设备</button>
+            <button id="scan-qr-shared" type="button" class="side-row">扫描二维码</button>
             <button id="block-btn" type="button" class="side-row danger hidden">加入黑名单</button>
           </div>
           <div id="side-group-admin" class="side-list hidden">
@@ -370,9 +437,11 @@
   <div id="lightbox" class="overlay hidden">
     <button id="lightbox-prev" type="button" class="lb-nav lb-prev" aria-label="上一张">‹</button>
     <img id="lightbox-img" alt="" />
+    <video id="lightbox-video" class="hidden" controls playsinline></video>
     <button id="lightbox-next" type="button" class="lb-nav lb-next" aria-label="下一张">›</button>
     <button id="lightbox-save" type="button" class="lb-save">另存为</button>
   </div>
+  <div id="rec-overlay" class="hidden">松开发送 · 上滑取消</div>
   <div id="pick-box" class="overlay hidden">
     <div class="modal-card forward-panel">
       <header id="pick-title">选择联系人</header>
@@ -396,6 +465,7 @@
   <div id="forward-box" class="overlay hidden">
     <div class="modal-card forward-panel">
       <header>转发到</header>
+      <input id="forward-comment" class="pick-search" placeholder="留言（可选）" autocomplete="off" />
       <div id="forward-list"></div>
       <div class="modal-actions">
         <button id="forward-cancel" type="button" class="btn-ghost">取消</button>
@@ -436,6 +506,14 @@
         <label class="set-row"><span>Enter 发送 / Ctrl+Enter 换行</span><span class="side-switch on" id="set-enter-send"></span></label>
         <label class="set-row"><span>通知声音</span><span class="side-switch" id="set-sound"></span></label>
         <label class="set-row"><span>通知预览内容</span><span class="side-switch" id="set-preview"></span></label>
+        <label class="set-row"><span>草稿仅保存在本机</span><span class="side-switch" id="set-local-draft"></span></label>
+        <div class="set-row"><span>字体大小</span>
+          <select id="set-font">
+            <option value="14">小</option>
+            <option value="15" selected>标准</option>
+            <option value="16">大</option>
+          </select>
+        </div>
         <div class="set-row"><span>气泡背景</span>
           <select id="set-wall">
             <option value="">默认</option>
@@ -444,13 +522,40 @@
             <option value="night">深色</option>
           </select>
         </div>
+        <input id="set-wall-url" class="modal-input" placeholder="自定义壁纸图片 URL（可选）" />
         <div class="set-row"><span>免打扰开始</span><input id="set-dnd-start" type="time" /></div>
         <div class="set-row"><span>免打扰结束</span><input id="set-dnd-end" type="time" /></div>
+        <label class="set-row"><span>免打扰时仍提醒 @我</span><span class="side-switch on" id="set-notify-at"></span></label>
+        <label class="set-row"><span>发送已读回执</span><span class="side-switch on" id="set-read"></span></label>
+        <label class="set-row"><span>显示正在输入</span><span class="side-switch on" id="set-typing"></span></label>
+        <label class="set-row"><span>显示上次在线</span><span class="side-switch on" id="set-last-seen"></span></label>
+        <div class="set-row"><span>加我为好友</span>
+          <select id="set-add-me">
+            <option value="anyone">所有人</option>
+            <option value="verify" selected>需要验证</option>
+            <option value="qr">仅二维码</option>
+            <option value="none">不允许</option>
+          </select>
+        </div>
+        <div class="set-row"><span>阅后即焚默认</span>
+          <select id="set-burn-sec">
+            <option value="3">3 秒</option>
+            <option value="5" selected>5 秒</option>
+            <option value="10">10 秒</option>
+          </select>
+        </div>
         <div class="set-row pass-row"><span>改密码</span></div>
         <input id="set-old-pass" class="modal-input" type="password" placeholder="当前密码" autocomplete="current-password" />
         <input id="set-new-pass" class="modal-input" type="password" placeholder="新密码（至少 6 位）" autocomplete="new-password" />
         <input id="set-new-pass2" class="modal-input" type="password" placeholder="确认新密码" autocomplete="new-password" />
         <button id="set-pass-btn" type="button" class="btn-ghost">保存新密码</button>
+        <div class="set-row pass-row"><span>邮箱 / 手机</span></div>
+        <input id="set-email" class="modal-input" type="email" placeholder="绑定邮箱" autocomplete="email" />
+        <input id="set-phone" class="modal-input" type="tel" placeholder="绑定手机号" autocomplete="tel" />
+        <button id="set-contact-btn" type="button" class="btn-ghost">保存联系方式</button>
+        <button id="set-export-btn" type="button" class="btn-ghost">导出当前聊天</button>
+        <button id="set-history-btn" type="button" class="btn-ghost">登录历史</button>
+        <button id="set-delete-btn" type="button" class="btn-ghost">注销账号</button>
       </div>
       <div class="modal-actions">
         <button id="settings-ok" type="button" class="btn-primary">完成</button>
@@ -466,6 +571,8 @@
       </div>
       <div class="modal-actions">
         <button id="invite-qr-copy" type="button" class="btn-ghost">复制链接</button>
+        <button id="invite-qr-refresh" type="button" class="btn-ghost">刷新</button>
+        <button id="invite-qr-revoke" type="button" class="btn-ghost">作废</button>
         <button id="invite-qr-close" type="button" class="btn-ghost">关闭</button>
       </div>
     </div>
@@ -479,6 +586,19 @@
       </div>
     </div>
   </div>
-  <script src="/app.js?v=im-gaps"></script>
+  <div id="scan-box" class="overlay hidden">
+    <div class="modal-card">
+      <div class="modal-title">扫描二维码</div>
+      <div class="modal-body" style="text-align:center">
+        <video id="scan-video" playsinline autoplay muted></video>
+        <input id="scan-file" type="file" accept="image/*" class="hidden" />
+        <button id="scan-file-btn" type="button" class="btn-ghost">从相册选择</button>
+      </div>
+      <div class="modal-actions">
+        <button id="scan-close" type="button" class="btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+  <script src="/app.js?v=im-ux4"></script>
 </body>
 </html>

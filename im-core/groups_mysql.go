@@ -15,11 +15,12 @@ import (
 
 func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, error) {
 	g := &groupInfo{CID: cid}
-	var muted, join int
-	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url, IFNULL(muted_all, 0), IFNULL(announcement, ''), IFNULL(join_approval, 0), IFNULL(mode, '') FROM im_groups WHERE cid = ?`, cid).
-		Scan(&g.Name, &g.OwnerUID, &g.AvatarURL, &muted, &g.Announcement, &join, &g.Mode)
+	var muted, join, ack int
+	err := s.db.QueryRowContext(ctx, `SELECT name, owner_uid, avatar_url, IFNULL(muted_all, 0), IFNULL(announcement, ''), IFNULL(join_approval, 0), IFNULL(mode, ''), IFNULL(history_days, 0), IFNULL(announce_ack, 0) FROM im_groups WHERE cid = ?`, cid).
+		Scan(&g.Name, &g.OwnerUID, &g.AvatarURL, &muted, &g.Announcement, &join, &g.Mode, &g.HistoryDays, &ack)
 	g.MutedAll = muted != 0
 	g.JoinApproval = join != 0
+	g.AnnounceAck = ack != 0
 	if g.Mode == "" {
 		g.Mode = groupModeNormal
 	}
@@ -29,7 +30,7 @@ func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, err
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT uid, role, IFNULL(nickname, ''), IFNULL(muted, 0) FROM group_members WHERE cid = ?`, cid)
+	rows, err := s.db.QueryContext(ctx, `SELECT uid, role, IFNULL(nickname, ''), IFNULL(muted, 0), IFNULL(muted_until_ms, 0), IFNULL(joined_at_ms, 0) FROM group_members WHERE cid = ?`, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +38,7 @@ func (s *mysqlStore) loadGroup(ctx context.Context, cid string) (*groupInfo, err
 	for rows.Next() {
 		var m groupMember
 		var mutedMem int
-		if err := rows.Scan(&m.UID, &m.Role, &m.Nickname, &mutedMem); err != nil {
+		if err := rows.Scan(&m.UID, &m.Role, &m.Nickname, &mutedMem, &m.MutedUntilMs, &m.JoinedAtMs); err != nil {
 			return nil, err
 		}
 		m.Muted = mutedMem != 0

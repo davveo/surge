@@ -42,6 +42,7 @@ func (a *httpAPI) issueSession(ctx context.Context, uid, device string, ttl time
 			out.RefreshToken = refresh
 		}
 	}
+	a.noteLogin(ctx, uid, device, "")
 	return out, nil
 }
 
@@ -163,6 +164,8 @@ func (a *httpAPI) me(w http.ResponseWriter, r *http.Request) {
 			AvatarURL   string `json:"avatar_url"`
 			OldPassword string `json:"old_password"`
 			NewPassword string `json:"new_password"`
+			Email       string `json:"email"`
+			Phone       string `json:"phone"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
@@ -171,6 +174,7 @@ func (a *httpAPI) me(w http.ResponseWriter, r *http.Request) {
 		resp, err := a.core.UpdateProfile(r.Context(), &imv1.UpdateProfileRequest{
 			Uid: uid, DisplayName: body.DisplayName, AvatarUrl: body.AvatarURL,
 			OldPassword: body.OldPassword, NewPassword: body.NewPassword,
+			Email: body.Email, Phone: body.Phone,
 		})
 		if err != nil {
 			writeRPCError(w, err)

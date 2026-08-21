@@ -22,7 +22,7 @@ func (s *server) ClearConversation(ctx context.Context, req *imv1.HideConversati
 }
 
 func (s *server) SetMember(ctx context.Context, req *imv1.SetMemberRequest) (*imv1.GroupResponse, error) {
-	g, err := s.store.SetMember(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUid(), req.GetNickname(), req.GetRole(), req.GetMuted(), req.GetSetNickname(), req.GetSetRole(), req.GetSetMuted())
+	g, err := s.store.SetMember(ctx, req.GetOperatorUid(), req.GetCid(), req.GetMemberUid(), req.GetNickname(), req.GetRole(), req.GetMuted(), req.GetSetNickname(), req.GetSetRole(), req.GetSetMuted(), req.GetMutedUntilMs())
 	if err != nil {
 		return nil, mapErr(err)
 	}

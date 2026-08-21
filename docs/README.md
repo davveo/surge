@@ -14,11 +14,12 @@
 
 ## 阅读顺序
 
-1. [架构分层](architecture.md) — 五层职责、关键服务、接口形态
-2. [消息协议](messaging.md) — 发送路径、seq 同步、群扇出
-3. [容量与选型](capacity.md) — 百万在线预算、技术选型、风险验收
-4. [功能分期](roadmap.md) — P0 可用单聊 → P3 平台化
-5. [架构图](im-architecture.html) — 浏览器打开，可导出 PNG / PDF
+1. [功能清单](features.md) — 页面已有功能 + 后端 HTTP / WSS / RPC
+2. [架构分层](architecture.md) — 五层职责、关键服务、接口形态
+3. [消息协议](messaging.md) — 发送路径、seq 同步、群扇出
+4. [容量与选型](capacity.md) — 百万在线预算、技术选型、风险验收
+5. [功能分期](roadmap.md) — P0 可用单聊 → P3 平台化
+6. [架构图](im-architecture.html) — 浏览器打开，可导出 PNG / PDF
 
 ## 阶段速览
 

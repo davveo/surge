@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/davveo/surge/pkg/auth"
 	"github.com/davveo/surge/pkg/route"
@@ -85,6 +86,7 @@ func (a *httpAPI) groupMember(w http.ResponseWriter, r *http.Request) {
 		Nickname *string `json:"nickname"`
 		Role     *string `json:"role"`
 		Muted    *bool   `json:"muted"`
+		MuteMin  *int64  `json:"mute_minutes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CID == "" || body.UID == "" {
 		http.Error(w, `{"error":"cid and uid required"}`, http.StatusBadRequest)
@@ -102,6 +104,9 @@ func (a *httpAPI) groupMember(w http.ResponseWriter, r *http.Request) {
 	if body.Muted != nil {
 		req.Muted = *body.Muted
 		req.SetMuted = true
+		if body.MuteMin != nil && *body.MuteMin > 0 {
+			req.MutedUntilMs = time.Now().Add(time.Duration(*body.MuteMin) * time.Minute).UnixMilli()
+		}
 	}
 	resp, err := a.core.SetMember(r.Context(), req)
 	if err != nil {
@@ -271,6 +276,7 @@ func (h *Hub) listDevices(uid, selfDeviceID string) []map[string]string {
 		}
 		out = append(out, map[string]string{
 			"conn_id": c.id, "device_id": c.deviceID, "gateway_id": h.gwID, "self": self,
+			"ip": c.ip, "last_active": time.UnixMilli(c.lastActive).Format(time.RFC3339),
 		})
 	}
 	return out

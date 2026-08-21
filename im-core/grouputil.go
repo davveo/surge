@@ -47,7 +47,7 @@ func canSpeak(g *groupInfo, uid string) error {
 	if m.Role == "owner" {
 		return nil
 	}
-	if m.Muted {
+	if memberMuted(m) {
 		return errMutedAll
 	}
 	if g.MutedAll && m.Role != "admin" {

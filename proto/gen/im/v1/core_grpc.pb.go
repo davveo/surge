@@ -85,6 +85,9 @@ const (
 	IMCore_ReportMessage_FullMethodName      = "/surge.im.v1.IMCore/ReportMessage"
 	IMCore_GetSettings_FullMethodName        = "/surge.im.v1.IMCore/GetSettings"
 	IMCore_SetSettings_FullMethodName        = "/surge.im.v1.IMCore/SetSettings"
+	IMCore_ResetPassword_FullMethodName      = "/surge.im.v1.IMCore/ResetPassword"
+	IMCore_DeleteAccount_FullMethodName      = "/surge.im.v1.IMCore/DeleteAccount"
+	IMCore_RevokeGroupInvite_FullMethodName  = "/surge.im.v1.IMCore/RevokeGroupInvite"
 )
 
 // IMCoreClient is the client API for IMCore service.
@@ -157,6 +160,9 @@ type IMCoreClient interface {
 	ReportMessage(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
 	GetSettings(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*UserSettings, error)
 	SetSettings(ctx context.Context, in *UserSettings, opts ...grpc.CallOption) (*UserSettings, error)
+	ResetPassword(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*UserProfile, error)
+	DeleteAccount(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
+	RevokeGroupInvite(ctx context.Context, in *JoinInviteRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
 }
 
 type iMCoreClient struct {
@@ -761,6 +767,33 @@ func (c *iMCoreClient) SetSettings(ctx context.Context, in *UserSettings, opts .
 	return out, nil
 }
 
+func (c *iMCoreClient) ResetPassword(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*UserProfile, error) {
+	out := new(UserProfile)
+	err := c.cc.Invoke(ctx, IMCore_ResetPassword_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) DeleteAccount(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_DeleteAccount_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *iMCoreClient) RevokeGroupInvite(ctx context.Context, in *JoinInviteRequest, opts ...grpc.CallOption) (*HideConversationResponse, error) {
+	out := new(HideConversationResponse)
+	err := c.cc.Invoke(ctx, IMCore_RevokeGroupInvite_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IMCoreServer is the server API for IMCore service.
 // All implementations must embed UnimplementedIMCoreServer
 // for forward compatibility
@@ -831,6 +864,9 @@ type IMCoreServer interface {
 	ReportMessage(context.Context, *ReportRequest) (*HideConversationResponse, error)
 	GetSettings(context.Context, *ListFriendsRequest) (*UserSettings, error)
 	SetSettings(context.Context, *UserSettings) (*UserSettings, error)
+	ResetPassword(context.Context, *LoginRequest) (*UserProfile, error)
+	DeleteAccount(context.Context, *GetProfileRequest) (*HideConversationResponse, error)
+	RevokeGroupInvite(context.Context, *JoinInviteRequest) (*HideConversationResponse, error)
 	mustEmbedUnimplementedIMCoreServer()
 }
 
@@ -1035,6 +1071,15 @@ func (UnimplementedIMCoreServer) GetSettings(context.Context, *ListFriendsReques
 }
 func (UnimplementedIMCoreServer) SetSettings(context.Context, *UserSettings) (*UserSettings, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetSettings not implemented")
+}
+func (UnimplementedIMCoreServer) ResetPassword(context.Context, *LoginRequest) (*UserProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetPassword not implemented")
+}
+func (UnimplementedIMCoreServer) DeleteAccount(context.Context, *GetProfileRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteAccount not implemented")
+}
+func (UnimplementedIMCoreServer) RevokeGroupInvite(context.Context, *JoinInviteRequest) (*HideConversationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RevokeGroupInvite not implemented")
 }
 func (UnimplementedIMCoreServer) mustEmbedUnimplementedIMCoreServer() {}
 
@@ -2237,6 +2282,60 @@ func _IMCore_SetSettings_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_ResetPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).ResetPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_ResetPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).ResetPassword(ctx, req.(*LoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_DeleteAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).DeleteAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_DeleteAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).DeleteAccount(ctx, req.(*GetProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IMCore_RevokeGroupInvite_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinInviteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).RevokeGroupInvite(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_RevokeGroupInvite_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).RevokeGroupInvite(ctx, req.(*JoinInviteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IMCore_ServiceDesc is the grpc.ServiceDesc for IMCore service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2507,6 +2606,18 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetSettings",
 			Handler:    _IMCore_SetSettings_Handler,
+		},
+		{
+			MethodName: "ResetPassword",
+			Handler:    _IMCore_ResetPassword_Handler,
+		},
+		{
+			MethodName: "DeleteAccount",
+			Handler:    _IMCore_DeleteAccount_Handler,
+		},
+		{
+			MethodName: "RevokeGroupInvite",
+			Handler:    _IMCore_RevokeGroupInvite_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

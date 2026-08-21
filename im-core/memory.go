@@ -60,14 +60,18 @@ type groupInfo struct {
 	Announcement string
 	JoinApproval bool
 	Mode         string
+	HistoryDays  int32
+	AnnounceAck  bool
 	Members      []groupMember
 }
 
 type groupMember struct {
-	UID      string
-	Role     string
-	Nickname string
-	Muted    bool
+	UID          string
+	Role         string
+	Nickname     string
+	Muted        bool
+	MutedUntilMs int64
+	JoinedAtMs   int64
 }
 
 type joinReq struct {
@@ -137,7 +141,7 @@ type Store interface {
 	DeleteSticker(ctx context.Context, uid, id string) error
 	DeleteMessage(ctx context.Context, uid, cid, msgID string) error
 	ClearConversation(ctx context.Context, uid, cid string) error
-	SetMember(ctx context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool) (*groupInfo, error)
+	SetMember(ctx context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool, mutedUntil int64) (*groupInfo, error)
 	ListJoinRequests(ctx context.Context, uid, cid string) ([]joinReq, error)
 	RequestJoin(ctx context.Context, uid, cid string) (*groupInfo, error)
 	DecideJoin(ctx context.Context, operatorUID, cid, memberUID string, accept bool) (*groupInfo, error)
@@ -154,6 +158,11 @@ type Store interface {
 	ReportMessage(ctx context.Context, uid, cid, msgID, reason string) error
 	GetSettings(ctx context.Context, uid string) (*imv1.UserSettings, error)
 	SetSettings(ctx context.Context, st *imv1.UserSettings) (*imv1.UserSettings, error)
+	ResetPassword(ctx context.Context, uid, newPassword string) error
+	DeleteAccount(ctx context.Context, uid string) error
+	RevokeGroupInvite(ctx context.Context, uid, token string) error
+	DeleteMemberMessages(ctx context.Context, cid, memberUID string) error
+	PatchGroup(ctx context.Context, operatorUID, cid, mode string, historyDays int32, announceAck bool, setMode, setHistory, setAck bool) (*groupInfo, error)
 	LookupMessage(ctx context.Context, uid, cid, msgID string) (*timelineRow, error)
 }
 
@@ -645,9 +654,12 @@ func protoGroup(g *groupInfo) *imv1.GroupResponse {
 	out := &imv1.GroupResponse{
 		Cid: g.CID, Name: g.Name, OwnerUid: g.OwnerUID, AvatarUrl: g.AvatarURL,
 		MutedAll: g.MutedAll, Announcement: g.Announcement, JoinApproval: g.JoinApproval, Mode: g.Mode,
+		HistoryDays: g.HistoryDays, AnnounceAck: g.AnnounceAck,
 	}
 	for _, m := range g.Members {
-		out.Members = append(out.Members, &imv1.GroupMember{Uid: m.UID, Role: m.Role, Nickname: m.Nickname, Muted: m.Muted})
+		out.Members = append(out.Members, &imv1.GroupMember{
+			Uid: m.UID, Role: m.Role, Nickname: m.Nickname, Muted: memberMuted(&m), MutedUntilMs: m.MutedUntilMs,
+		})
 	}
 	return out
 }
@@ -681,7 +693,7 @@ func (s *memoryStore) CreateGroup(_ context.Context, ownerUID, name string, memb
 		if uid == ownerUID {
 			role = "owner"
 		}
-		g.Members = append(g.Members, groupMember{UID: uid, Role: role})
+		g.Members = append(g.Members, groupMember{UID: uid, Role: role, JoinedAtMs: now})
 		s.seedGroupConv(uid, g, now)
 	}
 	s.groups[cid] = g
@@ -725,7 +737,7 @@ func (s *memoryStore) InviteGroup(_ context.Context, operatorUID, cid string, me
 		if len(g.Members)+1 > maxGroupMembers {
 			return nil, errTooLarge
 		}
-		g.Members = append(g.Members, groupMember{UID: uid, Role: "member"})
+		g.Members = append(g.Members, groupMember{UID: uid, Role: "member", JoinedAtMs: now})
 		row := &timelineRow{msgID: "", convSeq: 0, createdAt: now, payload: &imv1.Payload{Text: "加入群聊"}}
 		s.upsertConv(uid, g.CID, "", g.Name, conv.KindGroup, row, "加入群聊", true)
 		if s.joins[cid] != nil {
