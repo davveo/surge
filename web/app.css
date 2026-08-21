@@ -351,12 +351,77 @@ body {
   cursor: pointer;
 }
 .mid-form button:hover { background: #06ad56; }
+.group-create {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+.group-create-title {
+  color: #888;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.group-create #group-name {
+  display: block;
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
+  padding: 0 10px;
+  font-size: 13px;
+  outline: none;
+}
+.group-create-members {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 8px;
+  min-height: 22px;
+}
+.group-create .pick-hint {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+  color: #888;
+  font-size: 12px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-create #group-pick-btn {
+  flex-shrink: 0;
+  height: auto;
+  border: 0;
+  background: transparent !important;
+  padding: 0;
+  color: #576b95 !important;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.group-create #group-pick-btn:hover {
+  color: #07c160 !important;
+}
+.group-create-modes-label {
+  margin: 0 0 6px;
+  color: #b0b0b0;
+  font-size: 11px;
+  line-height: 1.3;
+}
 .group-modes {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   width: 100%;
-  padding: 0 0 2px;
+  padding: 0;
 }
 .group-modes label {
   display: inline-flex;
@@ -365,7 +430,7 @@ body {
   border: 1px solid #ddd;
   border-radius: 12px;
   background: #fff;
-  padding: 0 8px;
+  padding: 0 10px;
   color: #555;
   font-size: 11px;
   cursor: pointer;
@@ -377,6 +442,21 @@ body {
   color: #07c160;
 }
 .group-modes input { display: none; }
+.group-create-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.group-create-actions button[type="submit"] {
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: #07c160;
+  padding: 0 14px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.group-create-actions button[type="submit"]:hover { background: #06ad56; }
 .mode-tag {
   margin-left: 4px;
   color: #07c160;
@@ -1619,15 +1699,9 @@ body {
   margin-right: 8px;
 }
 .pick-hint {
-  width: 100%;
   color: #888;
   font-size: 12px;
   line-height: 20px;
-}
-#group-pick-btn {
-  background: #fff !important;
-  color: #07c160 !important;
-  border: 1px solid #07c160;
 }
 #toast:not(.hidden) {
   position: fixed;
@@ -2297,7 +2371,21 @@ html.dark .day-split { color: #777; }
 html.dark .stt-text { color: #aaa; }
 html.dark .pick-search { background: #222; border-color: #444; color: #eee; }
 html.dark #pick-list .row.checked { background: #1d3328; }
-html.dark #group-pick-btn, html.dark #invite-pick-btn { background: #2a2a2a !important; }
+html.dark #invite-pick-btn { background: #2a2a2a !important; }
+html.dark .group-create { border-color: #333; }
+html.dark .group-create #group-name { background: #2a2a2a; color: #eee; }
+html.dark .group-create #group-pick-btn { background: transparent !important; color: #7d8fb3 !important; }
+html.dark .group-create #group-pick-btn:hover { color: #07c160 !important; }
+html.dark .group-create-title,
+html.dark .group-create-modes-label,
+html.dark .group-create .pick-hint { color: #888; }
+html.dark .group-modes label { background: #2a2a2a; border-color: #444; color: #aaa; }
+html.dark .group-modes label.on,
+html.dark .group-modes label:has(input:checked) {
+  background: #1d3328;
+  border-color: #07c160;
+  color: #07c160;
+}
 html.dark #new-chat-btn, html.dark #mark-all-read-btn { background: #2a2a2a; border-color: #444; color: #ddd; }
 
 
