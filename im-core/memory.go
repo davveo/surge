@@ -134,6 +134,7 @@ type Store interface {
 	ConsumeEphemeral(ctx context.Context, uid, cid, msgID string) (*imv1.RecallNotify, []string, error)
 	AddSticker(ctx context.Context, uid, url, pack string) (*imv1.Sticker, error)
 	ListStickers(ctx context.Context, uid string) ([]*imv1.Sticker, error)
+	DeleteSticker(ctx context.Context, uid, id string) error
 	DeleteMessage(ctx context.Context, uid, cid, msgID string) error
 	ClearConversation(ctx context.Context, uid, cid string) error
 	SetMember(ctx context.Context, operatorUID, cid, memberUID, nickname, role string, muted bool, setNick, setRole, setMuted bool) (*groupInfo, error)
@@ -846,6 +847,12 @@ func containsCID(rows []*timelineRow, msgID string) bool {
 func (s *memoryStore) MarkRead(_ context.Context, uid, cid string, convSeq uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if convSeq == 0 {
+		if c := s.convs[uid][cid]; c != nil && c.Unread < 1 {
+			c.Unread = 1
+		}
+		return nil
+	}
 	if s.reads[uid] == nil {
 		s.reads[uid] = map[string]uint64{}
 	}

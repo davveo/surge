@@ -222,12 +222,47 @@ func (a *httpAPI) stickers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeProtoJSON(w, resp)
+	case http.MethodDelete:
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if id == "" {
+			http.Error(w, `{"error":"id required"}`, http.StatusBadRequest)
+			return
+		}
+		resp, err := a.core.AddSticker(r.Context(), &imv1.AddStickerRequest{Uid: uid, Url: id, Pack: "__delete__"})
+		if err != nil {
+			writeRPCError(w, err)
+			return
+		}
+		writeProtoJSON(w, resp)
 	case http.MethodPost:
 		var body struct {
-			URL  string `json:"url"`
-			Pack string `json:"pack"`
+			URL    string `json:"url"`
+			Pack   string `json:"pack"`
+			ID     string `json:"id"`
+			Delete bool   `json:"delete"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.URL) == "" {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, `{"error":"url required"}`, http.StatusBadRequest)
+			return
+		}
+		if body.Delete || body.Pack == "__delete__" {
+			id := strings.TrimSpace(body.ID)
+			if id == "" {
+				id = strings.TrimSpace(body.URL)
+			}
+			if id == "" {
+				http.Error(w, `{"error":"id required"}`, http.StatusBadRequest)
+				return
+			}
+			resp, err := a.core.AddSticker(r.Context(), &imv1.AddStickerRequest{Uid: uid, Url: id, Pack: "__delete__"})
+			if err != nil {
+				writeRPCError(w, err)
+				return
+			}
+			writeProtoJSON(w, resp)
+			return
+		}
+		if strings.TrimSpace(body.URL) == "" {
 			http.Error(w, `{"error":"url required"}`, http.StatusBadRequest)
 			return
 		}

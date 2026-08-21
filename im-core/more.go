@@ -300,6 +300,28 @@ func (s *memoryStore) ListStickers(_ context.Context, uid string) ([]*imv1.Stick
 	return append([]*imv1.Sticker{}, s.stickers[uid]...), nil
 }
 
+func (s *memoryStore) DeleteSticker(_ context.Context, uid, id string) error {
+	id = strings.TrimSpace(id)
+	if uid == "" || id == "" {
+		return fmt.Errorf("%w: id required", errInvalid)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list := s.stickers[uid]
+	out := list[:0]
+	for _, st := range list {
+		if st != nil && st.Id != id {
+			out = append(out, st)
+		}
+	}
+	if len(out) == 0 {
+		delete(s.stickers, uid)
+	} else {
+		s.stickers[uid] = out
+	}
+	return nil
+}
+
 func uniqueTags(in []string) []string {
 	seen := map[string]struct{}{}
 	var out []string

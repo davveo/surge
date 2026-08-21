@@ -23,7 +23,7 @@
       },
     };
   </script>
-  <link rel="stylesheet" href="/app.css?v=merge-fix" />
+  <link rel="stylesheet" href="/app.css?v=im-gaps" />
 </head>
 <body class="h-full m-0 bg-zinc-300 text-zinc-900 font-sans">
   <div id="login" class="min-h-full grid place-items-center bg-rail">
@@ -86,7 +86,8 @@
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.6 1.8a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6Zm0 1.5a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6Zm5.2 7.1 2.7 2.7-1.1 1.1-2.7-2.7 1.1-1.1Z"/></svg>
             <input id="global-search" placeholder="搜索" />
           </label>
-          <button id="new-chat-btn" type="button" title="添加好友 / 建群">+</button>
+          <button id="mark-all-read-btn" type="button" title="全部标为已读">✓</button>
+          <button id="new-chat-btn" type="button" title="发起聊天 / 建群">+</button>
         </header>
         <div id="global-hits" class="hidden"></div>
         <div id="conv-list"></div>
@@ -105,7 +106,9 @@
         </div>
         <form id="group-form" class="mid-form wrap">
           <input id="group-name" placeholder="群名" />
-          <input id="group-members" placeholder="成员 uid，逗号分隔" />
+          <button id="group-pick-btn" type="button">选择联系人</button>
+          <span id="group-pick-hint" class="pick-hint">未选择成员</span>
+          <input id="group-members" class="hidden" placeholder="成员 uid，逗号分隔" />
           <div id="group-modes" class="group-modes">
             <label class="on"><input type="radio" name="group-mode" value="normal" checked />普通群</label>
             <label><input type="radio" name="group-mode" value="verify" />验证群</label>
@@ -172,6 +175,7 @@
           <button type="button" data-sk="image">图片</button>
           <button type="button" data-sk="file">文件</button>
           <button type="button" data-sk="date">日期</button>
+          <button type="button" data-sk="sender">发送人</button>
         </div>
         <input id="chat-search" placeholder="搜索聊天记录" />
       </div>
@@ -240,6 +244,7 @@
           </div>
           <div id="member-chips" class="side-members"></div>
           <div id="side-invite" class="side-invite hidden">
+            <button id="invite-pick-btn" type="button">从通讯录选择</button>
             <input id="invite-uid" placeholder="输入好友账号" autocomplete="off" />
             <button id="invite-btn" type="button">添加</button>
           </div>
@@ -363,7 +368,30 @@
     </div>
   </div>
   <div id="lightbox" class="overlay hidden">
+    <button id="lightbox-prev" type="button" class="lb-nav lb-prev" aria-label="上一张">‹</button>
     <img id="lightbox-img" alt="" />
+    <button id="lightbox-next" type="button" class="lb-nav lb-next" aria-label="下一张">›</button>
+    <button id="lightbox-save" type="button" class="lb-save">另存为</button>
+  </div>
+  <div id="pick-box" class="overlay hidden">
+    <div class="modal-card forward-panel">
+      <header id="pick-title">选择联系人</header>
+      <input id="pick-search" class="pick-search" placeholder="搜索" autocomplete="off" />
+      <div id="pick-list"></div>
+      <div class="modal-actions">
+        <button id="pick-cancel" type="button" class="btn-ghost">取消</button>
+        <button id="pick-ok" type="button" class="btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+  <div id="merge-box" class="overlay hidden">
+    <div class="modal-card forward-panel">
+      <header>聊天记录</header>
+      <div id="merge-list" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="merge-ok" type="button" class="btn-ghost">关闭</button>
+      </div>
+    </div>
   </div>
   <div id="forward-box" class="overlay hidden">
     <div class="modal-card forward-panel">
@@ -451,6 +479,6 @@
       </div>
     </div>
   </div>
-  <script src="/app.js?v=merge-fix"></script>
+  <script src="/app.js?v=im-gaps"></script>
 </body>
 </html>

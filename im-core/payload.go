@@ -114,8 +114,13 @@ func previewOf(p *imv1.Payload) string {
 		return "[聊天记录]"
 	case imv1.Payload_FILE:
 		name := ""
+		ct := ""
 		if p.Media != nil {
 			name = p.Media.Filename
+			ct = strings.ToLower(p.Media.ContentType)
+		}
+		if strings.HasPrefix(ct, "audio/") || isVoiceFilename(name) {
+			return "[语音]"
 		}
 		if name == "" {
 			return "[文件]"
@@ -132,6 +137,22 @@ func previewOf(p *imv1.Payload) string {
 		}
 		return clipText(p.GetText(), 128)
 	}
+}
+
+func isVoiceFilename(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" {
+		return false
+	}
+	if strings.Contains(n, "voice") || strings.Contains(n, "audio") {
+		return true
+	}
+	for _, ext := range []string{".webm", ".ogg", ".m4a", ".mp3", ".wav", ".aac"} {
+		if strings.HasSuffix(n, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractMentions(text string) []string {

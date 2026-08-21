@@ -108,6 +108,10 @@
     typingMap: {},
     enterSend: true,
     sendOriginal: false,
+    draftMentions: [],
+    holdUnreadCid: "",
+    groupPickMembers: [],
+    lightbox: { urls: [], index: 0 },
   };
 
   const FILEHELPER = "filehelper";
@@ -500,10 +504,34 @@
     });
   }
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if ($("modal") && !$("modal").classList.contains("hidden")) {
-      $("modal-cancel").click();
-      if ($("modal-cancel").classList.contains("hidden")) $("modal-ok").click();
+    if (e.key === "Escape") {
+      if ($("lightbox") && !$("lightbox").classList.contains("hidden")) {
+        closeLightbox();
+        return;
+      }
+      if ($("pick-box") && !$("pick-box").classList.contains("hidden")) {
+        closeContactPicker();
+        return;
+      }
+      if ($("merge-box") && !$("merge-box").classList.contains("hidden")) {
+        $("merge-box").classList.add("hidden");
+        return;
+      }
+      if ($("modal") && !$("modal").classList.contains("hidden")) {
+        $("modal-cancel").click();
+        if ($("modal-cancel").classList.contains("hidden")) $("modal-ok").click();
+      }
+      return;
+    }
+    if ($("lightbox") && !$("lightbox").classList.contains("hidden")) {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        stepLightbox(-1);
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        stepLightbox(1);
+      }
     }
   });
 
@@ -900,6 +928,146 @@
     });
   }
 
+  async function setConvPinned(cid, next) {
+    if (!cid) return;
+    await api("/v1/pin", { method: "POST", body: JSON.stringify({ cid, pinned: next }) });
+    if (next) state.pins[cid] = true;
+    else delete state.pins[cid];
+    if (cid === state.activeCid) setSwitch("pin-switch", next);
+    await loadConvs();
+  }
+
+  async function setConvMuted(cid, next) {
+    if (!cid) return;
+    await api("/v1/mute", { method: "POST", body: JSON.stringify({ cid, muted: next }) });
+    if (next) state.muted[cid] = true;
+    else delete state.muted[cid];
+    if (cid === state.activeCid) setSwitch("mute-switch", next);
+    await loadConvs();
+  }
+
+  async function hideConversation(cid) {
+    if (!cid) return;
+    const conv = state.convs.find((c) => c.cid === cid) || {};
+    const snap = {
+      cid,
+      peer_uid: field(conv, "peerUid", "peer_uid") || (cid === state.activeCid ? state.activePeer : "") || "",
+      peerUid: field(conv, "peerUid", "peer_uid") || (cid === state.activeCid ? state.activePeer : "") || "",
+      title: convTitle(conv) || (cid === state.activeCid && $("chat-title") && $("chat-title").textContent) || "",
+      kind: conv.kind || (isGroup(cid) ? "group" : "p2p"),
+      last_text: conv.lastText || conv.last_text || "",
+      peer_profile: peerProfile(conv),
+    };
+    await api("/v1/conversation-hide", { method: "POST", body: JSON.stringify({ cid }) });
+    rememberHidden(snap);
+    state.showHidden = false;
+    if (cid === state.activeCid) {
+      state.activeCid = "";
+      state.activePeer = "";
+      state.messages = [];
+      $("chat-title").textContent = "选择一个会话";
+      $("chat-sub").textContent = "";
+      renderChatHeadAvatar();
+      syncAnnouncePin();
+      $("chat-search-bar").classList.add("hidden");
+      $("group-bar").classList.add("hidden");
+      toggleHidden("side-shared", true);
+      toggleHidden("side-direct", true);
+      toggleHidden("side-group-admin", true);
+      setChatSide(false);
+      toggleHidden("chat-search-toggle", true);
+      toggleHidden("hide-btn", true);
+      toggleHidden("pin-btn", true);
+      toggleHidden("mute-btn", true);
+      toggleHidden("remark-btn", true);
+      toggleHidden("tag-btn", true);
+      toggleHidden("e2ee-btn", true);
+      toggleHidden("block-btn", true);
+      setComposerEnabled(false);
+      renderMsgs();
+    }
+    toast("已隐藏，可在会话列表底部找回");
+    await loadConvs();
+  }
+
+  async function markConvUnread(cid) {
+    if (!cid) return;
+    if (cid === state.activeCid) state.holdUnreadCid = cid;
+    try {
+      await api("/v1/mark-unread", { method: "POST", body: JSON.stringify({ cid }) });
+    } catch (_) {
+      try {
+        sendFrame({ read: { cid, convSeq: "0" } });
+      } catch (__) {}
+    }
+    const conv = state.convs.find((c) => c.cid === cid);
+    if (conv) conv.unread = Math.max(Number(conv.unread || 0), 1);
+    renderLists();
+  }
+
+  async function markAllRead() {
+    const list = (state.convs || []).filter(
+      (c) => Number(c.unread || 0) > 0 || Number(c.unreadMention || c.unread_mention || 0) > 0
+    );
+    if (!list.length) {
+      toast("没有未读消息");
+      return;
+    }
+    for (const c of list) {
+      const seq = Number(c.lastConvSeq || c.last_conv_seq || 0);
+      if (!seq) continue;
+      try {
+        sendFrame({ read: { cid: c.cid, convSeq: String(seq) } });
+      } catch (_) {}
+      c.unread = 0;
+      c.unreadMention = 0;
+      c.unread_mention = 0;
+    }
+    if (state.holdUnreadCid) state.holdUnreadCid = "";
+    renderLists();
+    toast("已全部标为已读");
+  }
+
+  function showConvMenu(x, y, cid, hidden) {
+    hideMsgMenu();
+    const items = [];
+    if (hidden) {
+      items.push({
+        label: "恢复显示",
+        run: () => {
+          const row = (state.hiddenConvs || []).find((c) => c.cid === cid) || {};
+          openChat(field(row, "peerUid", "peer_uid") || "", cid);
+        },
+      });
+    }
+    const pinned = isPinned(cid);
+    items.push({ label: pinned ? "取消置顶" : "置顶", run: () => setConvPinned(cid, !pinned).catch((err) => dlgAlert(err.message)) });
+    const muted = isMuted(cid);
+    items.push({ label: muted ? "取消免打扰" : "消息免打扰", run: () => setConvMuted(cid, !muted).catch((err) => dlgAlert(err.message)) });
+    if (!hidden) {
+      items.push({ label: "不显示", run: () => hideConversation(cid).catch((err) => dlgAlert(err.message)) });
+    }
+    items.push({ label: "标为未读", run: () => markConvUnread(cid) });
+    const menu = $("msg-menu");
+    if (!menu) return;
+    menu.innerHTML = items
+      .map((it, i) => `<button type="button" data-i="${i}"><span>${it.label}</span></button>`)
+      .join("");
+    menu.querySelectorAll("button").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        hideMsgMenu();
+        const it = items[Number(btn.dataset.i)];
+        if (it && it.run) it.run();
+      };
+    });
+    menu.classList.remove("hidden");
+    const w = menu.offsetWidth || 160;
+    const h = menu.offsetHeight || 120;
+    menu.style.left = Math.min(x, window.innerWidth - w - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - h - 8) + "px";
+  }
+
   function renderLists() {
     const convEl = $("conv-list");
     const sorted = sortedConvs();
@@ -965,7 +1133,13 @@
         };
         return;
       }
+      const hidden = row.classList.contains("dim");
       row.onclick = () => openChat(row.dataset.peer, row.dataset.cid);
+      row.oncontextmenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showConvMenu(e.clientX, e.clientY, row.dataset.cid, hidden);
+      };
     });
 
     const fEl = $("friend-list");
@@ -1265,12 +1439,30 @@
     return items.length > 0;
   }
 
+  function mergeItemText(it) {
+    const t = encodePayloadType(it && (it.type || it.Type));
+    const text = (it && (it.text || it.Text)) || "";
+    if (t === 4) return "[图片]";
+    if (t === 5) return text ? clipPreview(text) : "[文件]";
+    if (t === 6) return "[视频]";
+    if (t === 7) return text ? "[名片] " + text : "[名片]";
+    if (t === 8) return "[聊天记录]";
+    return text || "[消息]";
+  }
+
+  function clipPreview(s) {
+    s = String(s || "");
+    return s.length > 80 ? s.slice(0, 80) + "…" : s;
+  }
+
   function renderBody(m) {
     if (isVideoMsg(m)) {
       const media = mediaOf(m.payload);
       const href = media.url || "";
       if (!href) return escapeHtml("[视频]");
-      return `<video class="msg-video" controls preload="metadata" src="${escapeHtml(href)}"></video>`;
+      const poster = media.thumbUrl || media.thumb_url || "";
+      const posterAttr = poster ? ` poster="${escapeHtml(poster)}"` : "";
+      return `<video class="msg-video" controls preload="metadata"${posterAttr} src="${escapeHtml(href)}"></video>`;
     }
     if (isCardMsg(m)) {
       const uid = (m.payload && (m.payload.cardUid || m.payload.card_uid)) || "";
@@ -1282,7 +1474,7 @@
       const lines = items.slice(0, 4).map((it) => {
         const from = it.fromUid || it.from_uid || "";
         const name = nickOf(from) || from;
-        return `<div class="m-line">${escapeHtml(name + ": " + (it.text || "[消息]"))}</div>`;
+        return `<div class="m-line">${escapeHtml(name + ": " + mergeItemText(it))}</div>`;
       }).join("");
       return `<div class="merge-msg"><div class="c-name">聊天记录</div>${lines}<div class="m-sub">共 ${items.length} 条</div></div>`;
     }
@@ -1302,7 +1494,7 @@
       const dur = Number(media.durationMs || media.duration_ms || 0);
       const sec = dur > 0 ? Math.max(1, Math.round(dur / 1000)) : 0;
       const bars = Array.from({ length: 16 }, (_, i) => `<i style="height:${8 + ((i * 7) % 12)}px"></i>`).join("");
-      return `<div class="voice-bar" data-src="${escapeHtml(href)}" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}"><button type="button" class="voice-play" aria-label="播放">▶</button><div class="voice-wave">${bars}</div><span class="voice-dur">${sec ? sec + "″" : ""}</span></div><div class="voice-tools"><button type="button" data-act="stt" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}">${tr ? "收起文字" : "转文字"}</button>${tr ? `<div class="stt-text">${escapeHtml(tr)}</div>` : ""}</div>`;
+      return `<div class="voice-bar" data-src="${escapeHtml(href)}" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}"><button type="button" class="voice-play" aria-label="播放">▶</button><div class="voice-wave">${bars}</div><span class="voice-dur">${sec ? sec + "″" : ""}</span></div><div class="voice-tools"><button type="button" data-act="stt" data-id="${escapeHtml(field(m, "msgId", "msg_id") || "")}">转文字</button><div class="stt-text hidden">${tr ? escapeHtml(tr) : ""}</div></div>`;
     }
     if (isFileMsg(m)) {
       const media = mediaOf(m.payload);
@@ -1338,6 +1530,31 @@
     return seq;
   }
 
+  function createdAtMs(m) {
+    return Number(field(m, "createdAtMs", "created_at_ms") || 0);
+  }
+
+  function dayKeyOf(ms) {
+    if (!ms) return "";
+    const d = new Date(ms);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function daySplitLabel(ms) {
+    if (!ms) return "";
+    const d = new Date(ms);
+    const now = new Date();
+    const start = (x) => {
+      const t = new Date(x);
+      t.setHours(0, 0, 0, 0);
+      return t.getTime();
+    };
+    const diff = Math.round((start(now) - start(d)) / 86400000);
+    if (diff === 0) return "今天";
+    if (diff === 1) return "昨天";
+    return dayKeyOf(ms);
+  }
+
   function renderMsgs(opts) {
     const box = $("msgs");
     const stick = !opts || opts.stick !== false;
@@ -1351,7 +1568,13 @@
         const mine = senderOf(m) === state.uid;
         const recalled = m.recalled || (m.payload && (m.payload.type === "RECALL" || m.payload.type === 2));
         const burned = recalled && ((m.payload && m.payload.text) === "已销毁");
-        const split = i === splitAt ? `<div class="unread-split" id="unread-split">以下为新消息</div>` : "";
+        const ms = createdAtMs(m);
+        const prevMs = i ? createdAtMs(state.messages[i - 1]) : 0;
+        const day =
+          ms && dayKeyOf(ms) !== dayKeyOf(prevMs)
+            ? `<div class="day-split">${escapeHtml(daySplitLabel(ms))}</div>`
+            : "";
+        const split = (i === splitAt ? `<div class="unread-split" id="unread-split">以下为新消息</div>` : "");
         if ((isSystemMsg(m) && !recalled) || recalled) {
           const created = Number(field(m, "createdAtMs", "created_at_ms") || 0);
           const canRe = !burned && mine && m._reeditText && created && Date.now() - created < RECALL_MS;
@@ -1363,7 +1586,7 @@
                 : "对方撤回了一条消息"
             : maskGroupText((m.payload && m.payload.text) || "");
           const reBtn = canRe ? `<button type="button" class="reedit-btn" data-i="${i}">重新编辑</button>` : "";
-          return `${split}<div class="msg-row system"><span class="sys-notice">${escapeHtml(sysText)}${reBtn}</span></div>`;
+          return `${day}${split}<div class="msg-row system"><span class="sys-notice">${escapeHtml(sysText)}${reBtn}</span></div>`;
         }
         const st = m.status ? " " + m.status : "";
         const recCls = recalled ? " recalled" : "";
@@ -1416,7 +1639,7 @@
         const hover = id && !state.selecting
           ? `<div class="msg-hover" data-id="${escapeHtml(id)}">${hoverToolbarHTML()}</div>`
           : "";
-        return `${split}<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}${reacts ? " has-react" : ""}${state.selecting ? " selecting" : ""}">${check}${mine ? "" : face}<div class="msg-col">${who}<div class="bubble-wrap"><div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}${hl}" data-id="${id}" data-seq="${seq}">${failDot}${quote}${recalled ? escapeHtml(body) : body}${burnHint}${read}${gRead}</div>${hover}</div>${reacts}</div>${mine ? face : ""}</div>`;
+        return `${day}${split}<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}${reacts ? " has-react" : ""}${state.selecting ? " selecting" : ""}">${check}${mine ? "" : face}<div class="msg-col">${who}<div class="bubble-wrap"><div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}${hl}" data-id="${id}" data-seq="${seq}">${failDot}${quote}${recalled ? escapeHtml(body) : body}${burnHint}${read}${gRead}</div>${hover}</div>${reacts}</div>${mine ? face : ""}</div>`;
       })
       .join("");
     box.querySelectorAll("img.thumb").forEach((img) => {
@@ -1425,6 +1648,16 @@
         openLightbox(img.dataset.full || img.src);
       };
     });
+    box.querySelectorAll(".merge-msg").forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const bubble = el.closest(".bubble");
+        const id = bubble && bubble.dataset.id;
+        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === id);
+        openMergeDetail(m);
+      };
+    });
+    box.querySelectorAll("video.msg-video").forEach((v) => bindVideoPoster(v));
     box.querySelectorAll(".quote-card").forEach((el) => {
       el.onclick = (e) => {
         e.stopPropagation();
@@ -1459,7 +1692,7 @@
         showMsgMenu(e.clientX, e.clientY, el.dataset.id, el.closest(".msg-row"));
       };
       el.onclick = (e) => {
-        if (e.target.closest("a,button,img,.voice-bar,.quote-card,.card-msg")) return;
+        if (e.target.closest("a,button,img,.voice-bar,.quote-card,.card-msg,.merge-msg,video")) return;
         if (!window.matchMedia || !window.matchMedia("(hover: none)").matches) return;
         const row = el.closest(".msg-row");
         if (!row) return;
@@ -1831,28 +2064,17 @@
   }
 
   function openForwardFromPayloads(payloads) {
-    const list = $("forward-list");
-    if (!list) return;
-    list.innerHTML = state.convs
-      .map((c) => {
-        const peer = field(c, "peerUid", "peer_uid") || "";
-        return `<div class="row" data-cid="${c.cid}" data-peer="${peer}">${avatarHTML(convAvatar(c), convTitle(c), isGroup(c.cid) ? "" : peer)}<div class="row-main"><div class="row-title">${escapeHtml(convTitle(c))}</div></div></div>`;
-      })
-      .join("");
-    list.querySelectorAll(".row[data-cid]").forEach((row) => {
-      row.onclick = async () => {
-        $("forward-box").classList.add("hidden");
-        try {
-          for (const p of payloads) {
-            await sendPayload(JSON.parse(JSON.stringify(p)), { cid: row.dataset.cid, peerUid: row.dataset.peer, forward: true });
-          }
-          toast("已转发");
-        } catch (err) {
-          dlgAlert(err.message);
+    fillForwardList(async (cid, peer) => {
+      $("forward-box").classList.add("hidden");
+      try {
+        for (const p of payloads) {
+          await sendPayload(JSON.parse(JSON.stringify(p)), { cid, peerUid: peer, forward: true });
         }
-      };
-    });
-    $("forward-box").classList.remove("hidden");
+        toast("已转发");
+      } catch (err) {
+        dlgAlert(err.message);
+      }
+    }, payloads);
   }
 
   async function pinChatMsg(msgId) {
@@ -1895,8 +2117,34 @@
     }
   }
 
-  function showVoiceText() {
-    toast("转文字会在按住录音时自动识别；已发出的语音可看录音时的文字");
+  function showVoiceText(msgId) {
+    const m = state.messages.find((x) => field(x, "msgId", "msg_id") === msgId);
+    const media = mediaOf(m && m.payload);
+    const tr = (media && media.transcript) || "";
+    const btn = document.querySelector(`[data-act=stt][data-id="${CSS.escape ? CSS.escape(msgId || "") : msgId}"]`);
+    const wrap = btn && btn.parentElement;
+    let box = wrap && wrap.querySelector(".stt-text");
+    if (!box && wrap) {
+      box = document.createElement("div");
+      box.className = "stt-text";
+      wrap.appendChild(box);
+    }
+    if (!box) return;
+    if (tr) {
+      const open = box.classList.contains("hidden");
+      box.textContent = tr;
+      box.classList.toggle("hidden", !open);
+      if (btn) btn.textContent = open ? "收起文字" : "转文字";
+      return;
+    }
+    if (box.classList.contains("hidden") || !box.textContent) {
+      box.textContent = "这条语音没有文字";
+      box.classList.remove("hidden");
+      if (btn) btn.textContent = "收起文字";
+    } else {
+      box.classList.add("hidden");
+      if (btn) btn.textContent = "转文字";
+    }
   }
 
   async function openMemberCard(uid) {
@@ -2406,6 +2654,41 @@
     }
   }
 
+  function senderMatch(m, q) {
+    const qq = String(q || "").trim().toLowerCase();
+    if (!qq) return false;
+    const from = senderOf(m) || "";
+    const name = displayMemberNick(from) || nickOf(from) || from;
+    return (from && from.toLowerCase().indexOf(qq) >= 0) || (name && String(name).toLowerCase().indexOf(qq) >= 0);
+  }
+
+  async function filterChatBySender(q) {
+    if (!state.activeCid || !q) return;
+    const matchLocal = (state.messages || []).filter((m) => senderMatch(m, q));
+    try {
+      const data = await api("/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&q=" + encodeURIComponent(q) + "&limit=200");
+      const all = data.messages || [];
+      const hits = all.filter((m) => {
+        m.cid = state.activeCid;
+        return senderMatch(m, q);
+      });
+      state.messages = hits.length ? hits : matchLocal.slice();
+      if (!state.messages.length && all.length) {
+        state.messages = all.filter((m) => senderMatch(m, q));
+      }
+      renderMsgs({ stick: false });
+      const first = state.messages[0];
+      if (first) highlightMsg(field(first, "msgId", "msg_id"));
+      else toast("没有该发送人的消息");
+    } catch (_) {
+      state.messages = matchLocal;
+      renderMsgs({ stick: false });
+      const first = matchLocal[0];
+      if (first) highlightMsg(field(first, "msgId", "msg_id"));
+      else toast("没有该发送人的消息");
+    }
+  }
+
   async function loadTagGroups() {
     try {
       const data = await api("/v1/friend-tags");
@@ -2552,18 +2835,20 @@
       actions = `<button type="button" class="btn-goto" data-act="goto">前往验证</button>`;
     }
     el.innerHTML = `
-      <div class="verify-card">
-        <div class="verify-user">
-          ${avatarHTML(avatarOf(uid), name, uid)}
-          <div class="verify-name">${escapeHtml(name)}</div>
+      <div class="verify-detail-body">
+        <div class="verify-card">
+          <div class="verify-user">
+            ${avatarHTML(avatarOf(uid), name, uid)}
+            <div class="verify-name">${escapeHtml(name)}</div>
+          </div>
+          <div class="verify-hello">
+            <div class="verify-hello-text">${escapeHtml(hello)}</div>
+            ${found.kind === "in" ? `<button type="button" class="verify-reply" data-act="reply">回复</button>` : ""}
+          </div>
+          <div class="verify-meta"><span>来源</span><span>${escapeHtml(source)}</span></div>
         </div>
-        <div class="verify-hello">
-          <div class="verify-hello-text">${escapeHtml(hello)}</div>
-          ${found.kind === "in" ? `<button type="button" class="verify-reply" data-act="reply">回复</button>` : ""}
-        </div>
-        <div class="verify-meta"><span>来源</span><span>${escapeHtml(source)}</span></div>
-      </div>
-      ${actions}`;
+        ${actions}
+      </div>`;
     el.querySelectorAll("[data-act]").forEach((btn) => {
       btn.onclick = async (e) => {
         e.stopPropagation();
@@ -2935,6 +3220,7 @@
 
   function markRead() {
     if (!state.activeCid) return;
+    if (state.holdUnreadCid === state.activeCid) return;
     let max = 0;
     for (const m of state.messages) {
       const s = Number(field(m, "convSeq", "conv_seq") || 0);
@@ -3208,6 +3494,7 @@
     try {
     if (state.activeCid && state.activeCid !== cid) saveDraft();
     if (state.activeCid !== cid) {
+      if (state.holdUnreadCid === cid) state.holdUnreadCid = "";
       const prev = state.convs.find((c) => c.cid === cid) || (state.hiddenConvs || []).find((c) => c.cid === cid);
       state.unreadAtOpen = Number((prev && (prev.unread || 0)) || 0);
       state.jumpUnread = state.unreadAtOpen > 0;
@@ -3922,16 +4209,34 @@
 
   function mentionUidsOf(text) {
     const out = [];
+    const seen = {};
+    const push = (id) => {
+      if (!id || seen[id] || id === "所有人") return;
+      seen[id] = true;
+      out.push(id);
+    };
     if (/@所有人\b/.test(text || "") && isGroup(state.activeCid) && state.group) {
       (state.group.members || []).forEach((m) => {
         const id = uidOf(m);
-        if (id && id !== state.uid) out.push(id);
+        if (id && id !== state.uid) push(id);
+      });
+    }
+    (state.draftMentions || []).forEach((id) => {
+      const nick = memberNick(id) || id;
+      if ((text || "").indexOf("@" + nick) >= 0 || (text || "").indexOf("@" + id) >= 0) push(id);
+    });
+    if (isGroup(state.activeCid) && state.group) {
+      (state.group.members || []).forEach((m) => {
+        const id = uidOf(m);
+        if (!id || id === state.uid) return;
+        const nick = memberNick(id);
+        if (nick && nick !== id && (text || "").indexOf("@" + nick) >= 0) push(id);
       });
     }
     const re = /@([A-Za-z0-9._@+-]{1,64})/g;
     let m;
     while ((m = re.exec(text || ""))) {
-      if (out.indexOf(m[1]) < 0) out.push(m[1]);
+      if (m[1] !== "所有人") push(m[1]);
     }
     return out;
   }
@@ -4060,6 +4365,7 @@
     if (typeof payload.text === "string") payload.text = wellFormed(payload.text);
     if (!(dest && dest.forward)) {
       payload.mentionUids = mentionUidsOf(payload.text || "");
+      if (cid === state.activeCid) state.draftMentions = [];
       payload = await attachLinkPreview(payload);
       if (!(dest && dest.forward) && isBurnWanted(cid)) payload.ephemeral = true;
       const sendMode = cid === state.activeCid ? activeGroupMode() : convGroupMode((state.convs || []).find((c) => c.cid === cid));
@@ -4116,6 +4422,15 @@
     if (file && (file.type || "").indexOf("image/") === 0 && file.type !== "image/gif" && !state.sendOriginal && !($("orig-toggle") && $("orig-toggle").checked)) {
       file = await compressImage(file);
     }
+    const video = (file.type || "").indexOf("video/") === 0;
+    let posterBlob = null;
+    if (video) {
+      try {
+        posterBlob = await captureVideoPoster(file);
+      } catch (_) {
+        posterBlob = null;
+      }
+    }
     const presign = await api("/v1/media/presign", {
       method: "POST",
       body: JSON.stringify({ filename: file.name, content_type: file.type, size: file.size }),
@@ -4139,26 +4454,83 @@
     $("upload-progress").classList.add("hidden");
     $("upload-bar").style.width = "0";
     const image = (file.type || "").indexOf("image/") === 0;
-    const video = (file.type || "").indexOf("video/") === 0;
+    let thumbUrl = done.thumb_url || "";
+    let thumbKey = done.thumb_key || "";
+    if (video && !thumbUrl && posterBlob) {
+      try {
+        const thumbFile = new File([posterBlob], "poster.jpg", { type: "image/jpeg" });
+        const tp = await api("/v1/media/presign", {
+          method: "POST",
+          body: JSON.stringify({ filename: thumbFile.name, content_type: thumbFile.type, size: thumbFile.size }),
+        });
+        await fetch(tp.put_url, { method: "PUT", body: thumbFile });
+        const td = await api("/v1/media/complete", {
+          method: "POST",
+          body: JSON.stringify({ object_key: tp.object_key, filename: thumbFile.name }),
+        });
+        thumbUrl = td.get_url || td.thumb_url || "";
+        thumbKey = td.object_key || tp.object_key || "";
+      } catch (_) {}
+    }
     await sendPayload({
       type: image ? "IMAGE" : video ? "VIDEO" : "FILE",
       text: $("draft").value.trim(),
       media: {
         objectKey: done.object_key,
-        thumbKey: done.thumb_key,
+        thumbKey: thumbKey,
         contentType: done.content_type,
         filename: file.name,
         size: done.size,
         width: done.width,
         height: done.height,
         url: done.get_url,
-        thumbUrl: done.thumb_url,
+        thumbUrl: thumbUrl,
         transcript: file._transcript || "",
       },
     });
     $("draft").value = "";
     localStorage.removeItem(draftKey());
     fitDraft();
+  }
+
+  function captureVideoPoster(file) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (blob) => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        resolve(blob || null);
+      };
+      const url = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      const grab = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = video.videoWidth || 0;
+          c.height = video.videoHeight || 0;
+          if (!c.width || !c.height) return done(null);
+          c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+          c.toBlob((b) => done(b), "image/jpeg", 0.82);
+        } catch (_) {
+          done(null);
+        }
+      };
+      video.onloadeddata = () => {
+        try {
+          video.currentTime = Math.min(0.1, (video.duration || 1) * 0.01);
+        } catch (_) {
+          grab();
+        }
+      };
+      video.onseeked = grab;
+      video.onerror = () => done(null);
+      setTimeout(() => done(null), 2500);
+      video.src = url;
+    });
   }
 
   function compressImage(file) {
@@ -4277,11 +4649,136 @@
     if (tab === "chats" && state.verifyOpen) closeVerify();
     if (tab === "favs") loadFavorites();
   }
-  onClick("new-chat-btn", () => {
-    setTab("contacts");
-    const el = $("add-uid");
-    if (el) el.focus();
+  function pickerContacts(opts) {
+    opts = opts || {};
+    const exclude = {};
+    (opts.exclude || []).forEach((u) => {
+      if (u) exclude[u] = true;
+    });
+    exclude[state.uid] = true;
+    const out = [];
+    const seen = {};
+    const push = (uid, name, avatar) => {
+      if (!uid || exclude[uid] || seen[uid]) return;
+      seen[uid] = true;
+      out.push({ uid, name: name || nickOf(uid) || uid, avatar: avatar || avatarOf(uid) });
+    };
+    if (opts.includeHelper) push(FILEHELPER, "文件传输助手", "");
+    (state.friends || []).forEach((f) => {
+      const uid = friendUid(f);
+      if (isFileHelper(uid) && !opts.includeHelper) return;
+      push(uid, friendName(f), friendAvatar(f));
+    });
+    return out;
+  }
+
+  function renderPickList(contacts, selected, q) {
+    const list = $("pick-list");
+    if (!list) return;
+    const qq = String(q || "").trim().toLowerCase();
+    const rows = contacts.filter((c) => {
+      if (!qq) return true;
+      return (c.name && c.name.toLowerCase().indexOf(qq) >= 0) || (c.uid && c.uid.toLowerCase().indexOf(qq) >= 0);
+    });
+    list.innerHTML = rows.length
+      ? rows
+          .map((c) => {
+            const on = selected[c.uid] ? " checked" : "";
+            return `<div class="row${on}" data-uid="${escapeHtml(c.uid)}"><input type="checkbox" class="pick-check" ${selected[c.uid] ? "checked" : ""} />${avatarHTML(c.avatar, c.name, c.uid)}<div class="row-main"><div class="row-title">${escapeHtml(c.name)}</div><div class="row-sub">${escapeHtml(c.uid)}</div></div></div>`;
+          })
+          .join("")
+      : `<div class="row"><div class="row-sub">没有可选择的联系人</div></div>`;
+    list.querySelectorAll(".row[data-uid]").forEach((row) => {
+      row.onclick = (e) => {
+        e.preventDefault();
+        const uid = row.dataset.uid;
+        if (state._pick && !state._pick.multi) {
+          selected[uid] = true;
+          confirmContactPicker([uid]);
+          return;
+        }
+        if (selected[uid]) delete selected[uid];
+        else selected[uid] = true;
+        row.classList.toggle("checked", !!selected[uid]);
+        const ck = row.querySelector("input");
+        if (ck) ck.checked = !!selected[uid];
+      };
+    });
+  }
+
+  function closeContactPicker() {
+    const box = $("pick-box");
+    if (box) box.classList.add("hidden");
+    state._pick = null;
+  }
+
+  function confirmContactPicker(uids) {
+    const cb = state._pick && state._pick.onConfirm;
+    closeContactPicker();
+    if (cb) cb(uids || []);
+  }
+
+  function openContactPicker(opts) {
+    opts = opts || {};
+    const box = $("pick-box");
+    if (!box) return;
+    const contacts = pickerContacts(opts);
+    const selected = {};
+    (opts.selected || []).forEach((uid) => {
+      if (uid) selected[uid] = true;
+    });
+    state._pick = { multi: opts.multi !== false, onConfirm: opts.onConfirm, selected };
+    if ($("pick-title")) $("pick-title").textContent = opts.title || "选择联系人";
+    if ($("pick-ok")) $("pick-ok").textContent = opts.confirmLabel || "确定";
+    if ($("pick-ok")) $("pick-ok").classList.toggle("hidden", opts.multi === false);
+    if ($("pick-search")) $("pick-search").value = "";
+    renderPickList(contacts, selected, "");
+    if ($("pick-search")) {
+      $("pick-search").oninput = () => renderPickList(contacts, selected, $("pick-search").value);
+    }
+    box.classList.remove("hidden");
+    if ($("pick-search")) $("pick-search").focus();
+  }
+  onClick("pick-cancel", closeContactPicker);
+  onClick("pick-ok", () => {
+    const selected = (state._pick && state._pick.selected) || {};
+    confirmContactPicker(Object.keys(selected));
   });
+  if ($("pick-box")) {
+    $("pick-box").onclick = (e) => {
+      if (e.target === $("pick-box")) closeContactPicker();
+    };
+  }
+
+  onClick("new-chat-btn", () => {
+    openContactPicker({
+      title: "发起聊天",
+      multi: true,
+      includeHelper: true,
+      confirmLabel: "确定",
+      onConfirm: async (uids) => {
+        if (!uids.length) return;
+        if (uids.length === 1) {
+          const uid = uids[0];
+          await openChat(uid, cidOf(state.uid, uid));
+          return;
+        }
+        const name = await dlgPrompt("群聊名称", "", "发起群聊");
+        if (name == null || !String(name).trim()) return;
+        try {
+          const g = await api("/v1/groups", {
+            method: "POST",
+            body: JSON.stringify({ name: String(name).trim(), members: uids, mode: "normal" }),
+          });
+          await loadConvs();
+          if (g.cid) await openChat("", g.cid);
+        } catch (err) {
+          dlgAlert(err.message);
+        }
+      },
+    });
+  });
+  onClick("mark-all-read-btn", () => markAllRead());
   onClick("new-friends-row", () => openVerifyList());
   onClick("verify-back", () => {
     if (state.verifyPeer) openVerifyList();
@@ -4339,23 +4836,48 @@
   $("group-form").onsubmit = async (e) => {
     e.preventDefault();
     const name = $("group-name").value.trim();
-    const members = $("group-members")
-      .value.split(/[,，\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const fromPick = state.groupPickMembers || [];
+    const fromInput = $("group-members")
+      ? $("group-members")
+          .value.split(/[,，\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    const members = fromPick.length ? fromPick : fromInput;
     const modeEl = document.querySelector('input[name="group-mode"]:checked');
     const mode = (modeEl && modeEl.value) || "normal";
     if (!name) return;
     try {
       const g = await api("/v1/groups", { method: "POST", body: JSON.stringify({ name, members, mode }) });
       $("group-name").value = "";
-      $("group-members").value = "";
+      if ($("group-members")) $("group-members").value = "";
+      state.groupPickMembers = [];
+      syncGroupPickHint();
       await loadConvs();
       if (g.cid) await openChat("", g.cid);
     } catch (err) {
       dlgAlert(err.message);
     }
   };
+  onClick("group-pick-btn", () => {
+    openContactPicker({
+      title: "选择群成员",
+      multi: true,
+      confirmLabel: "确定",
+      selected: state.groupPickMembers,
+      onConfirm: (uids) => {
+        state.groupPickMembers = uids.slice();
+        if ($("group-members")) $("group-members").value = uids.join(",");
+        syncGroupPickHint();
+      },
+    });
+  });
+  function syncGroupPickHint() {
+    const el = $("group-pick-hint");
+    if (!el) return;
+    const n = (state.groupPickMembers || []).length;
+    el.textContent = n ? "已选 " + n + " 人" : "未选择成员";
+  }
   document.querySelectorAll('input[name="group-mode"]').forEach((el) => {
     el.addEventListener("change", () => {
       document.querySelectorAll("#group-modes label").forEach((lab) => lab.classList.toggle("on", lab.querySelector("input").checked));
@@ -4378,6 +4900,30 @@
       dlgAlert(err.message);
     }
   };
+  onClick("invite-pick-btn", () => {
+    if (!state.activeCid || !isGroup(state.activeCid)) return;
+    const exclude = ((state.group && state.group.members) || []).map((m) => uidOf(m)).filter(Boolean);
+    openContactPicker({
+      title: "邀请好友入群",
+      multi: true,
+      exclude,
+      confirmLabel: "邀请",
+      onConfirm: async (uids) => {
+        if (!uids.length) return;
+        try {
+          await api("/v1/group-invite", {
+            method: "POST",
+            body: JSON.stringify({ cid: state.activeCid, members: uids }),
+          });
+          toggleHidden("side-invite", true);
+          await refreshGroup();
+          await loadConvs();
+        } catch (err) {
+          dlgAlert(err.message);
+        }
+      },
+    });
+  });
 
   $("rename-btn").onclick = async () => {
     const name = $("group-rename").value.trim();
@@ -4476,6 +5022,7 @@
     const text = $("draft").value.trim();
     if (!text) return;
     $("draft").value = "";
+    state.draftMentions = [];
     localStorage.removeItem(draftKey());
     fitDraft();
     await sendPayload({ type: "TEXT", text });
@@ -4933,6 +5480,11 @@
         if (day) filterChatByDate(day);
         return;
       }
+      if (btn.dataset.sk === "sender") {
+        const q = await dlgPrompt("输入昵称或 uid", "", "按发送人查找");
+        if (q) filterChatBySender(q);
+        return;
+      }
       if (btn.dataset.sk === "image" || btn.dataset.sk === "file") {
         filterChatByKind(btn.dataset.sk);
         return;
@@ -5111,74 +5663,26 @@
     }
     exitSelect();
   });
-      $("mute-btn").onclick = async () => {
+  $("mute-btn").onclick = async () => {
     if (!state.activeCid) return;
-    const next = !isMuted(state.activeCid);
     try {
-      await api("/v1/mute", { method: "POST", body: JSON.stringify({ cid: state.activeCid, muted: next }) });
-      if (next) state.muted[state.activeCid] = true;
-      else delete state.muted[state.activeCid];
-      setSwitch("mute-switch", next);
-      await loadConvs();
+      await setConvMuted(state.activeCid, !isMuted(state.activeCid));
     } catch (err) {
       dlgAlert(err.message);
     }
   };
   $("pin-btn").onclick = async () => {
     if (!state.activeCid) return;
-    const next = !isPinned(state.activeCid);
     try {
-      await api("/v1/pin", { method: "POST", body: JSON.stringify({ cid: state.activeCid, pinned: next }) });
-      if (next) state.pins[state.activeCid] = true;
-      else delete state.pins[state.activeCid];
-      setSwitch("pin-switch", next);
-      await loadConvs();
+      await setConvPinned(state.activeCid, !isPinned(state.activeCid));
     } catch (err) {
       dlgAlert(err.message);
     }
   };
   $("hide-btn").onclick = async () => {
     if (!state.activeCid) return;
-    const cid = state.activeCid;
-    const conv = state.convs.find((c) => c.cid === cid) || {};
-    const snap = {
-      cid,
-      peer_uid: field(conv, "peerUid", "peer_uid") || state.activePeer || "",
-      peerUid: field(conv, "peerUid", "peer_uid") || state.activePeer || "",
-      title: convTitle(conv) || ($("chat-title") && $("chat-title").textContent) || "",
-      kind: conv.kind || (isGroup(cid) ? "group" : "p2p"),
-      last_text: conv.lastText || conv.last_text || "",
-      peer_profile: peerProfile(conv),
-    };
     try {
-      await api("/v1/conversation-hide", { method: "POST", body: JSON.stringify({ cid }) });
-      rememberHidden(snap);
-      state.showHidden = false;
-      state.activeCid = "";
-      state.activePeer = "";
-      state.messages = [];
-      $("chat-title").textContent = "选择一个会话";
-      $("chat-sub").textContent = "";
-      renderChatHeadAvatar();
-      syncAnnouncePin();
-      $("chat-search-bar").classList.add("hidden");
-      $("group-bar").classList.add("hidden");
-      toggleHidden("side-shared", true);
-      toggleHidden("side-direct", true);
-      toggleHidden("side-group-admin", true);
-      setChatSide(false);
-      toggleHidden("chat-search-toggle", true);
-      toggleHidden("hide-btn", true);
-      toggleHidden("pin-btn", true);
-      toggleHidden("mute-btn", true);
-      toggleHidden("remark-btn", true);
-      toggleHidden("tag-btn", true);
-      toggleHidden("e2ee-btn", true);
-      toggleHidden("block-btn", true);
-      setComposerEnabled(false);
-      renderMsgs();
-      toast("已隐藏，可在会话列表底部找回");
-      await loadConvs();
+      await hideConversation(state.activeCid);
     } catch (err) {
       dlgAlert(err.message);
     }
@@ -5380,6 +5884,8 @@
     api("/v1/stickers")
       .then((data) => {
         (data.stickers || []).forEach((st) => {
+          const wrap = document.createElement("div");
+          wrap.className = "sticker-cell";
           const btn = document.createElement("button");
           btn.type = "button";
           const img = document.createElement("img");
@@ -5394,7 +5900,23 @@
               stickerId: st.id,
               media: { objectKey: "sticker/" + st.id, url: st.url, filename: "sticker" },
             });
-          inner.appendChild(btn);
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "sticker-del";
+          del.textContent = "×";
+          del.title = "删除";
+          del.onclick = async (e) => {
+            e.stopPropagation();
+            try {
+              await api("/v1/stickers?id=" + encodeURIComponent(st.id), { method: "DELETE" });
+              fillEmojiPack(box, 2);
+            } catch (err) {
+              dlgAlert(err.message);
+            }
+          };
+          wrap.appendChild(btn);
+          wrap.appendChild(del);
+          inner.appendChild(wrap);
         });
         const add = document.createElement("button");
         add.type = "button";
@@ -5443,44 +5965,232 @@
     if (menu && !menu.classList.contains("hidden") && !menu.contains(e.target)) hideMsgMenu();
   });
 
-  function openLightbox(src) {
+  function chatImageURLs() {
+    return (state.messages || [])
+      .filter(isImageMsg)
+      .map((m) => {
+        const media = mediaOf(m.payload);
+        return media.url || media.thumbUrl || media.thumb_url || "";
+      })
+      .filter(Boolean);
+  }
+
+  function showLightbox() {
+    const lb = state.lightbox || { urls: [], index: 0 };
+    const src = lb.urls[lb.index];
     if (!src) return;
     $("lightbox-img").src = src;
     $("lightbox").classList.remove("hidden");
+    const many = lb.urls.length > 1;
+    if ($("lightbox-prev")) $("lightbox-prev").classList.toggle("hidden", !many);
+    if ($("lightbox-next")) $("lightbox-next").classList.toggle("hidden", !many);
   }
-  $("lightbox").onclick = () => $("lightbox").classList.add("hidden");
+
+  function stepLightbox(dir) {
+    const lb = state.lightbox;
+    if (!lb || !lb.urls.length) return;
+    lb.index = (lb.index + dir + lb.urls.length) % lb.urls.length;
+    showLightbox();
+  }
+
+  function closeLightbox() {
+    $("lightbox").classList.add("hidden");
+    $("lightbox-img").src = "";
+  }
+
+  function bindVideoPoster(video) {
+    if (!video || video.poster || video.dataset.posterTried) return;
+    video.dataset.posterTried = "1";
+    const grab = () => {
+      if (video.poster) return;
+      try {
+        if (video.paused === false) return;
+        const c = document.createElement("canvas");
+        c.width = video.videoWidth || 0;
+        c.height = video.videoHeight || 0;
+        if (!c.width) return;
+        c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+        video.poster = c.toDataURL("image/jpeg", 0.6);
+      } catch (_) {}
+    };
+    const seekGrab = () => {
+      if (!video.paused || video.currentTime > 0.2) {
+        grab();
+        return;
+      }
+      const onSeek = () => {
+        video.removeEventListener("seeked", onSeek);
+        grab();
+      };
+      video.addEventListener("seeked", onSeek);
+      try {
+        video.currentTime = 0.05;
+      } catch (_) {
+        grab();
+      }
+    };
+    if (video.readyState >= 2) seekGrab();
+    else video.addEventListener("loadeddata", seekGrab, { once: true });
+  }
+
+  function openMergeDetail(m) {
+    const box = $("merge-box");
+    const list = $("merge-list");
+    if (!box || !list || !m) return;
+    const items = (m.payload && (m.payload.mergeItems || m.payload.merge_items)) || [];
+    list.innerHTML = items.length
+      ? items
+          .map((it) => {
+            const from = it.fromUid || it.from_uid || "";
+            const name = nickOf(from) || from;
+            return `<div class="row"><div class="row-main"><div class="row-title">${escapeHtml(name)}</div><div class="row-sub">${escapeHtml(mergeItemText(it))}</div></div></div>`;
+          })
+          .join("")
+      : `<div class="row"><div class="row-sub">没有聊天记录</div></div>`;
+    box.classList.remove("hidden");
+  }
+  onClick("merge-ok", () => $("merge-box") && $("merge-box").classList.add("hidden"));
+  if ($("merge-box")) {
+    $("merge-box").onclick = (e) => {
+      if (e.target === $("merge-box")) $("merge-box").classList.add("hidden");
+    };
+  }
+
+  async function saveLightbox() {
+    const src = state.lightbox && state.lightbox.urls[state.lightbox.index];
+    if (!src) return;
+    const name = (src.split("?")[0].split("/").pop() || "image.jpg").replace(/[^\w.-]+/g, "_") || "image.jpg";
+    try {
+      const r = await fetch(src);
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (_) {
+      const a = document.createElement("a");
+      a.href = src;
+      a.download = name;
+      a.target = "_blank";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  }
+
+  function openLightbox(src) {
+    if (!src) return;
+    const urls = chatImageURLs();
+    let index = urls.indexOf(src);
+    if (index < 0) {
+      urls.unshift(src);
+      index = 0;
+    }
+    state.lightbox = { urls, index };
+    showLightbox();
+  }
+  if ($("lightbox")) {
+    $("lightbox").onclick = (e) => {
+      if (e.target === $("lightbox")) closeLightbox();
+    };
+  }
+  onClick("lightbox-prev", (e) => {
+    e.stopPropagation();
+    stepLightbox(-1);
+  });
+  onClick("lightbox-next", (e) => {
+    e.stopPropagation();
+    stepLightbox(1);
+  });
+  onClick("lightbox-save", (e) => {
+    e.stopPropagation();
+    saveLightbox();
+  });
+  if ($("lightbox-img")) $("lightbox-img").onclick = (e) => e.stopPropagation();
+
+  function fillForwardList(onPick, payloads) {
+    const list = $("forward-list");
+    if (!list) return;
+    const convCids = {};
+    const convHTML = state.convs
+      .filter((c) => c.cid !== state.activeCid)
+      .map((c) => {
+        convCids[c.cid] = true;
+        const peer = field(c, "peerUid", "peer_uid") || "";
+        return `<div class="row" data-cid="${c.cid}" data-peer="${peer}">${avatarHTML(convAvatar(c), convTitle(c), isGroup(c.cid) ? "" : peer)}<div class="row-main"><div class="row-title">${escapeHtml(convTitle(c))}</div></div></div>`;
+      })
+      .join("");
+    const friendHTML = pickerContacts({ includeHelper: true })
+      .filter((c) => {
+        const cid = cidOf(state.uid, c.uid);
+        return cid !== state.activeCid && !convCids[cid];
+      })
+      .map((c) => {
+        return `<div class="row" data-cid="${cidOf(state.uid, c.uid)}" data-peer="${escapeHtml(c.uid)}">${avatarHTML(c.avatar, c.name, c.uid)}<div class="row-main"><div class="row-title">${escapeHtml(c.name)}</div><div class="row-sub">${escapeHtml(c.uid)}</div></div></div>`;
+      })
+      .join("");
+    const multi = payloads
+      ? `<div class="row" data-act="multi"><div class="row-main"><div class="row-title">多选好友…</div><div class="row-sub">一次转发给多人</div></div></div>`
+      : "";
+    list.innerHTML =
+      (convHTML ? `<div class="mid-label">最近聊天</div>${convHTML}` : "") +
+      (friendHTML ? `<div class="mid-label">通讯录</div>${friendHTML}` : "") +
+      multi;
+    if (!convHTML && !friendHTML) list.innerHTML = `<div class="row"><div class="row-sub">没有可转发的对象</div></div>`;
+    list.querySelectorAll(".row[data-cid]").forEach((row) => {
+      row.onclick = () => onPick(row.dataset.cid, row.dataset.peer);
+    });
+    const multiRow = list.querySelector("[data-act=multi]");
+    if (multiRow && payloads) {
+      multiRow.onclick = () => {
+        $("forward-box").classList.add("hidden");
+        openContactPicker({
+          title: "转发给",
+          multi: true,
+          includeHelper: true,
+          confirmLabel: "发送",
+          onConfirm: async (uids) => {
+            try {
+              for (const uid of uids) {
+                const cid = cidOf(state.uid, uid);
+                for (const p of payloads) {
+                  await sendPayload(JSON.parse(JSON.stringify(p)), { cid, peerUid: uid, forward: true });
+                }
+              }
+              if (uids.length) toast("已转发");
+            } catch (err) {
+              dlgAlert(err.message);
+            }
+          },
+        });
+      };
+    }
+    $("forward-box").classList.remove("hidden");
+  }
 
   function openForward(msgIdOrIds) {
     const ids = Array.isArray(msgIdOrIds) ? msgIdOrIds : [msgIdOrIds];
     const srcs = ids.map((id) => state.messages.find((m) => field(m, "msgId", "msg_id") === id)).filter((m) => m && m.payload);
     if (!srcs.length) return;
     state.forwarding = srcs;
-    const list = $("forward-list");
-    list.innerHTML = state.convs
-      .filter((c) => c.cid !== state.activeCid)
-      .map((c) => {
-        const peer = field(c, "peerUid", "peer_uid") || "";
-        return `<div class="row" data-cid="${c.cid}" data-peer="${peer}">${avatarHTML(convAvatar(c), convTitle(c), isGroup(c.cid) ? "" : peer)}<div class="row-main"><div class="row-title">${escapeHtml(convTitle(c))}</div></div></div>`;
-      })
-      .join("");
-    if (!list.innerHTML) list.innerHTML = `<div class="row"><div class="row-sub">没有可转发的会话</div></div>`;
-    list.querySelectorAll(".row[data-cid]").forEach((row) => {
-      row.onclick = async () => {
-        $("forward-box").classList.add("hidden");
-        try {
-          for (const src of srcs) {
-            const payload = JSON.parse(JSON.stringify(src.payload));
-            await sendPayload(payload, { cid: row.dataset.cid, peerUid: row.dataset.peer, forward: true });
-          }
-          toast("已转发");
-          exitSelect();
-        } catch (err) {
-          dlgAlert(err.message);
+    const payloads = srcs.map((src) => JSON.parse(JSON.stringify(src.payload)));
+    fillForwardList(async (cid, peer) => {
+      $("forward-box").classList.add("hidden");
+      try {
+        for (const payload of payloads) {
+          await sendPayload(JSON.parse(JSON.stringify(payload)), { cid, peerUid: peer, forward: true });
         }
-        state.forwarding = null;
-      };
-    });
-    $("forward-box").classList.remove("hidden");
+        toast("已转发");
+        exitSelect();
+      } catch (err) {
+        dlgAlert(err.message);
+      }
+      state.forwarding = null;
+    }, payloads);
   }
   $("forward-cancel").onclick = () => {
     state.forwarding = null;
@@ -5567,7 +6277,8 @@
     }
     members.forEach((m) => {
       const id = uidOf(m);
-      rows.push(`<div class="row" data-uid="${escapeHtml(id)}">${escapeHtml(memberNick(id))}<span class="row-sub"> ${escapeHtml(id)}</span></div>`);
+      const nick = memberNick(id);
+      rows.push(`<div class="row" data-uid="${escapeHtml(id)}" data-nick="${escapeHtml(nick)}">${escapeHtml(nick)}<span class="row-sub"> ${escapeHtml(id)}</span></div>`);
     });
     if (!rows.length) {
       box.classList.add("hidden");
@@ -5577,7 +6288,12 @@
     box.classList.remove("hidden");
     box.querySelectorAll(".row").forEach((row) => {
       row.onclick = () => {
-        $("draft").value = val.slice(0, at) + "@" + row.dataset.uid + " ";
+        const nick = row.dataset.uid === "所有人" ? "所有人" : row.dataset.nick || memberNick(row.dataset.uid) || row.dataset.uid;
+        $("draft").value = val.slice(0, at) + "@" + nick + " ";
+        if (row.dataset.uid && row.dataset.uid !== "所有人") {
+          state.draftMentions = state.draftMentions || [];
+          if (state.draftMentions.indexOf(row.dataset.uid) < 0) state.draftMentions.push(row.dataset.uid);
+        }
         box.classList.add("hidden");
         $("draft").focus();
       };

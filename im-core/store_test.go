@@ -79,3 +79,60 @@ func TestRejectSelfChat(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestDeleteSticker(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	ctx := context.Background()
+	a, err := st.AddSticker(ctx, "u1", "http://x/a.png", "mine")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddSticker(ctx, "u1", "http://x/b.png", "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteSticker(ctx, "u1", a.Id); err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListStickers(ctx, "u1")
+	if err != nil || len(list) != 1 || list[0].Id == a.Id {
+		t.Fatalf("after delete %+v %v", list, err)
+	}
+	if err := st.DeleteSticker(ctx, "u2", a.Id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMarkUnread(t *testing.T) {
+	st := newMemoryStore(newMemSeq())
+	ctx := context.Background()
+	sent, err := st.Send(ctx, "u1", "c1", "", "u2", &imv1.Payload{Type: imv1.Payload_TEXT, Text: "hi"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cid := sent.ack.Cid
+	list, err := st.ListConversations(ctx, "u2")
+	if err != nil || len(list) != 1 || list[0].Unread < 1 {
+		t.Fatalf("peer unread %+v %v", list, err)
+	}
+	if err := st.MarkRead(ctx, "u2", cid, sent.ack.ConvSeq); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u2")
+	if len(list) != 1 || list[0].Unread != 0 {
+		t.Fatalf("after read %+v", list)
+	}
+	if err := st.MarkRead(ctx, "u2", cid, 0); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u2")
+	if len(list) != 1 || list[0].Unread < 1 {
+		t.Fatalf("mark unread %+v", list)
+	}
+	if err := st.MarkRead(ctx, "u2", cid, sent.ack.ConvSeq); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = st.ListConversations(ctx, "u2")
+	if len(list) != 1 || list[0].Unread != 0 {
+		t.Fatalf("read after unread %+v", list)
+	}
+}

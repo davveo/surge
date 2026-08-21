@@ -64,6 +64,7 @@ func (a *httpAPI) routes() http.Handler {
 	mux.HandleFunc("/v1/group-dissolve", a.groupDissolve)
 	mux.HandleFunc("/v1/group-transfer", a.groupTransfer)
 	mux.HandleFunc("/v1/conversation-hide", a.hideConv)
+	mux.HandleFunc("/v1/mark-unread", a.markUnread)
 	mux.HandleFunc("/v1/read-state", a.readState)
 	mux.HandleFunc("/v1/search", a.searchAll)
 	mux.HandleFunc("/v1/group-mute-all", a.groupMuteAll)

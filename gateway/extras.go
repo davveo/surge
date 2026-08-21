@@ -232,6 +232,30 @@ func (a *httpAPI) groupTransfer(w http.ResponseWriter, r *http.Request) {
 	writeProtoJSON(w, resp)
 }
 
+func (a *httpAPI) markUnread(w http.ResponseWriter, r *http.Request) {
+	uid, ok := a.uidFromAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CID string `json:"cid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.CID) == "" {
+		http.Error(w, `{"error":"cid required"}`, http.StatusBadRequest)
+		return
+	}
+	resp, err := a.core.MarkRead(r.Context(), &imv1.MarkReadRequest{Uid: uid, Cid: body.CID, ConvSeq: 0})
+	if err != nil {
+		writeRPCError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
 func (a *httpAPI) hideConv(w http.ResponseWriter, r *http.Request) {
 	uid, ok := a.uidFromAuth(w, r)
 	if !ok {

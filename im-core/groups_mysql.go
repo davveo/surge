@@ -263,6 +263,10 @@ func (s *mysqlStore) Recall(ctx context.Context, uid, cid, msgID string) (*imv1.
 }
 
 func (s *mysqlStore) MarkRead(ctx context.Context, uid, cid string, convSeq uint64) error {
+	if convSeq == 0 {
+		_, err := s.db.ExecContext(ctx, `UPDATE conversations SET unread = GREATEST(unread, 1) WHERE uid = ? AND cid = ?`, uid, cid)
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO read_cursors (uid, cid, conv_seq) VALUES (?, ?, ?)
 		ON DUPLICATE KEY UPDATE conv_seq = GREATEST(conv_seq, VALUES(conv_seq))`, uid, cid, convSeq)

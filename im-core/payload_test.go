@@ -13,6 +13,18 @@ func TestPreviewOf(t *testing.T) {
 	if previewOf(&imv1.Payload{Type: imv1.Payload_FILE, Media: &imv1.Media{Filename: "a.pdf"}}) != "[文件] a.pdf" {
 		t.Fatal("file")
 	}
+	if previewOf(&imv1.Payload{Type: imv1.Payload_FILE, Media: &imv1.Media{ContentType: "audio/webm", Filename: "voice.webm"}}) != "[语音]" {
+		t.Fatal("voice content-type")
+	}
+	if previewOf(&imv1.Payload{Type: imv1.Payload_FILE, Media: &imv1.Media{Filename: "voice-note.ogg"}}) != "[语音]" {
+		t.Fatal("voice filename")
+	}
+	if previewOf(&imv1.Payload{Type: imv1.Payload_FILE, Media: &imv1.Media{Filename: "clip.m4a"}}) != "[语音]" {
+		t.Fatal("m4a")
+	}
+	if previewOf(&imv1.Payload{Type: imv1.Payload_FILE, Media: &imv1.Media{Filename: "audio.bin"}}) != "[语音]" {
+		t.Fatal("audio name")
+	}
 }
 
 func TestValidateMedia(t *testing.T) {

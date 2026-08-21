@@ -77,6 +77,12 @@ func (s *server) ConsumeEphemeral(ctx context.Context, req *imv1.RecallMessageRe
 }
 
 func (s *server) AddSticker(ctx context.Context, req *imv1.AddStickerRequest) (*imv1.Sticker, error) {
+	if req.GetPack() == "__delete__" {
+		if err := s.store.DeleteSticker(ctx, req.GetUid(), req.GetUrl()); err != nil {
+			return nil, mapErr(err)
+		}
+		return &imv1.Sticker{Id: req.GetUrl()}, nil
+	}
 	st, err := s.store.AddSticker(ctx, req.GetUid(), req.GetUrl(), req.GetPack())
 	if err != nil {
 		return nil, mapErr(err)

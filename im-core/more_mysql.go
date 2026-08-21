@@ -331,3 +331,12 @@ func (s *mysqlStore) ListStickers(ctx context.Context, uid string) ([]*imv1.Stic
 	}
 	return out, rows.Err()
 }
+
+func (s *mysqlStore) DeleteSticker(ctx context.Context, uid, id string) error {
+	id = strings.TrimSpace(id)
+	if uid == "" || id == "" {
+		return fmt.Errorf("%w: id required", errInvalid)
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM stickers WHERE uid = ? AND id = ?`, uid, id)
+	return err
+}
