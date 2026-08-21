@@ -848,6 +848,7 @@ body {
 }
 .msg-row.me .msg-col { align-items: flex-end; }
 .msg-row.peer .msg-col { align-items: flex-start; }
+.msg-row.has-react { margin-bottom: 20px; }
 .msg-nick {
   margin-bottom: 4px;
   max-width: 100%;
@@ -1671,21 +1672,33 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 4px;
+  margin-top: 8px;
+  position: static;
+  max-width: 100%;
 }
+.msg-row.me .reacts { justify-content: flex-end; }
+.msg-row.peer .reacts { justify-content: flex-start; }
 .react-chip {
-  border: 1px solid #e5e5e5;
-  background: #fff;
-  border-radius: 12px;
-  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   height: 22px;
-  font-size: 12px;
+  padding: 0 8px;
+  border: 1px solid #07c160;
+  background: #fff;
+  border-radius: 11px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+  font-size: 13px;
+  line-height: 1;
   cursor: pointer;
 }
-.react-chip.mine { border-color: #07c160; background: #f0fff6; }
+.react-chip.mine {
+  border-color: #07c160;
+  background: #f0fff6;
+}
 #react-pick:not(.hidden) {
   position: fixed;
-  z-index: 80;
+  z-index: 90;
   display: flex;
   gap: 4px;
   background: #fff;
@@ -1763,6 +1776,8 @@ html.dark .chat, html.dark .chat-main { background: #1c1c1c; }
 html.dark .chat-head, html.dark .mid-head { background: #2a2a2a; border-color: #333; color: #ddd; }
 html.dark #msgs { --chat-bg: #151515; }
 html.dark .bubble.peer { background: #2f2f2f; color: #eee; }
+html.dark .react-chip { background: #2a2a2a; border-color: #07c160; color: #eee; }
+html.dark .react-chip.mine { background: #1d3a28; }
 html.dark .row:hover, html.dark .row.active { background: #2a2a2a; }
 html.dark .row-title { color: #eee; }
 html.dark .row-sub, html.dark .mid-label { color: #888; }

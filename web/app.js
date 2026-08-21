@@ -570,13 +570,13 @@
   }
 
   function groupModeOf(g) {
-    const raw = String((g && (g.mode || g.Mode)) || "").toLowerCase();
+    const raw = String((g && (field(g, "mode") || g.Mode)) || "").toLowerCase();
     return raw || "normal";
   }
 
   function convGroupMode(c) {
     if (!c || !isGroup(c.cid)) return "normal";
-    if (state.group && state.group.cid === c.cid) {
+    if (state.group && (field(state.group, "cid") || "") === c.cid) {
       const m = groupModeOf(state.group);
       if (m) return m;
     }
@@ -588,7 +588,8 @@
   }
 
   function activeGroupMode() {
-    if (isGroup(state.activeCid) && state.group) return groupModeOf(state.group);
+    const g = activeGroup();
+    if (g) return groupModeOf(g);
     const c = (state.convs || []).find((x) => x.cid === state.activeCid);
     return convGroupMode(c);
   }
@@ -730,6 +731,34 @@
     }
   }
 
+  function burnMapKey() {
+    return "surge:burn:" + state.uid;
+  }
+  function loadBurnMap() {
+    try {
+      return JSON.parse(localStorage.getItem(burnMapKey()) || "{}") || {};
+    } catch (_) {
+      return {};
+    }
+  }
+  function burnForced(cid) {
+    cid = cid || state.activeCid;
+    return isGroup(cid) && (cid === state.activeCid ? activeGroupMode() : convGroupMode((state.convs || []).find((c) => c.cid === cid))) === "ephemeral";
+  }
+  function isBurnWanted(cid) {
+    cid = cid || state.activeCid;
+    if (!cid) return false;
+    if (burnForced(cid)) return true;
+    return !!loadBurnMap()[cid];
+  }
+  function setBurnWanted(cid, on) {
+    if (!cid || burnForced(cid)) return;
+    const map = loadBurnMap();
+    if (on) map[cid] = true;
+    else delete map[cid];
+    localStorage.setItem(burnMapKey(), JSON.stringify(map));
+  }
+
   function isEphemeral(m) {
     const p = m && m.payload;
     return !!(p && (p.ephemeral || p.Ephemeral));
@@ -738,15 +767,16 @@
   function syncBurnUI() {
     const box = $("burn-toggle");
     const lab = $("burn-label");
-    const forced = isGroup(state.activeCid) && activeGroupMode() === "ephemeral";
+    const cid = state.activeCid;
+    const forced = burnForced(cid);
     if (box) {
-      if (forced) box.checked = true;
-      box.disabled = forced || !!speakBlockedReason() || !state.activeCid;
+      box.checked = isBurnWanted(cid);
+      box.disabled = forced || !!speakBlockedReason() || !cid;
     }
-    const on = !!(box && box.checked);
+    const on = isBurnWanted(cid);
     if (lab) lab.classList.toggle("burn-on", on);
     const draft = $("draft");
-    if (draft && !speakBlockedReason()) draft.placeholder = on || forced ? "阅后即焚消息…" : "";
+    if (draft && !speakBlockedReason()) draft.placeholder = on ? "阅后即焚消息…" : "";
   }
 
   function fitDraft() {
@@ -1271,7 +1301,7 @@
               })()
             : "";
         const reacts = reactionHTML(m);
-        return `<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}">${check}${mine ? "" : face}<div class="msg-col">${who}<div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}${hl}" data-id="${id}" data-seq="${seq}">${failDot}${quote}${recalled ? escapeHtml(body) : body}${burnHint}${read}${gRead}</div>${reacts}</div>${mine ? face : ""}</div>`;
+        return `<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}${reacts ? " has-react" : ""}">${check}${mine ? "" : face}<div class="msg-col">${who}<div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}${hl}" data-id="${id}" data-seq="${seq}">${failDot}${quote}${recalled ? escapeHtml(body) : body}${burnHint}${read}${gRead}</div>${reacts}</div>${mine ? face : ""}</div>`;
       })
       .join("");
     box.querySelectorAll("img.thumb").forEach((img) => {
@@ -1370,7 +1400,8 @@
     if (!menu) return;
     menu.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}">${it[0]}</button>`).join("");
     menu.querySelectorAll("button").forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
         hideMsgMenu();
         items[Number(btn.dataset.i)][1]();
       };
@@ -1427,25 +1458,33 @@
   function showReactPick(x, y, msgId) {
     const el = $("react-pick");
     if (!el) return;
-    el.innerHTML = REACT_EMOJIS.map((e) => `<button type="button" data-e="${e}">${e}</button>`).join("");
+    el.innerHTML = REACT_EMOJIS.map((e) => `<button type="button">${e}</button>`).join("");
     el.querySelectorAll("button").forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
         el.classList.add("hidden");
-        toggleReact(msgId, btn.dataset.e);
+        toggleReact(msgId, btn.textContent);
       };
     });
     el.classList.remove("hidden");
-    el.style.left = Math.min(x, window.innerWidth - 220) + "px";
-    el.style.top = Math.min(y, window.innerHeight - 48) + "px";
+    el.style.left = Math.min(x, window.innerWidth - 240) + "px";
+    el.style.top = Math.min(y + 8, window.innerHeight - 52) + "px";
+    // The click that opened this picker still bubbles to document; ignore it.
+    state.reactPickUntil = Date.now() + 300;
   }
 
   async function toggleReact(msgId, emoji) {
-    if (!msgId || !state.activeCid) return;
+    msgId = String(msgId || "").trim();
+    emoji = String(emoji || "").trim();
+    if (!msgId || !state.activeCid) {
+      toast("消息发送后再回应");
+      return;
+    }
     try {
       const data = await api("/v1/react", { method: "POST", body: JSON.stringify({ cid: state.activeCid, msg_id: msgId, emoji }) });
       const m = state.messages.find((x) => field(x, "msgId", "msg_id") === msgId);
       if (m) {
-        m.reactions = data.reactions || [];
+        m.reactions = data.reactions || data.Reactions || [];
         renderMsgs({ stick: false });
       }
     } catch (err) {
@@ -2237,18 +2276,18 @@
 
   function rememberGroup(g) {
     if (!g) return;
-    const cid = g.cid || "";
+    const cid = field(g, "cid") || "";
     if (cid) {
       state.groupCache = state.groupCache || {};
       state.groupCache[cid] = g;
     }
-    if (!cid || cid === state.activeCid) state.group = g;
+    if (cid && cid === state.activeCid) state.group = g;
   }
 
   function activeGroup() {
     if (!isGroup(state.activeCid)) return null;
     const g = state.group;
-    if (g && (!g.cid || g.cid === state.activeCid)) return g;
+    if (g && (field(g, "cid") || "") === state.activeCid) return g;
     return (state.groupCache && state.groupCache[state.activeCid]) || null;
   }
 
@@ -2698,12 +2737,13 @@
     state.activeCid = cid;
     forgetHidden(cid);
     if (isGroup(cid)) {
-      if (!(state.group && state.group.cid === cid)) {
+      if (!(state.group && (field(state.group, "cid") || "") === cid)) {
         state.group = (state.groupCache && state.groupCache[cid]) || null;
       }
     } else {
       state.group = null;
     }
+    syncBurnUI();
     state.peerReadSeq = 0;
     state.hasMore = false;
     state.searchQ = "";
@@ -3503,7 +3543,7 @@
     if (!(dest && dest.forward)) {
       payload.mentionUids = mentionUidsOf(payload.text || "");
       payload = await attachLinkPreview(payload);
-      if ($("burn-toggle") && $("burn-toggle").checked) payload.ephemeral = true;
+      if (!(dest && dest.forward) && isBurnWanted(cid)) payload.ephemeral = true;
       const sendMode = cid === state.activeCid ? activeGroupMode() : convGroupMode((state.convs || []).find((c) => c.cid === cid));
       if (isGroup(cid) && sendMode === "ephemeral") payload.ephemeral = true;
       if (state.e2eeOn && !isGroup(cid) && payload.text && !payload.e2ee) {
@@ -3887,7 +3927,12 @@
     fitDraft();
     await sendPayload({ type: "TEXT", text });
   };
-  if ($("burn-toggle")) $("burn-toggle").onchange = syncBurnUI;
+  if ($("burn-toggle")) {
+    $("burn-toggle").onchange = () => {
+      setBurnWanted(state.activeCid, $("burn-toggle").checked);
+      syncBurnUI();
+    };
+  }
 
   $("attach-btn").onclick = () => $("file").click();
   if ($("shot-btn")) $("shot-btn").onclick = () => captureScreenshot();
@@ -4327,7 +4372,14 @@
   }
   document.addEventListener("click", (e) => {
     const pick = $("react-pick");
-    if (pick && !pick.classList.contains("hidden") && !pick.contains(e.target)) pick.classList.add("hidden");
+    if (
+      pick &&
+      !pick.classList.contains("hidden") &&
+      !pick.contains(e.target) &&
+      !(state.reactPickUntil && Date.now() < state.reactPickUntil)
+    ) {
+      pick.classList.add("hidden");
+    }
   });
   onClick("qr-card-close", closeQrCard);
   if ($("qr-card-box")) {
