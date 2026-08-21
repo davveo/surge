@@ -116,6 +116,18 @@ func inferPayloadType(payload map[string]json.RawMessage) int32 {
 	if sticker, ok := payload["stickerId"]; ok && len(bytes.TrimSpace(sticker)) > 2 {
 		return int32(imv1.Payload_IMAGE)
 	}
+	if card, ok := payload["cardUid"]; ok && len(bytes.TrimSpace(card)) > 2 {
+		return int32(imv1.Payload_CARD)
+	}
+	if card, ok := payload["card_uid"]; ok && len(bytes.TrimSpace(card)) > 2 {
+		return int32(imv1.Payload_CARD)
+	}
+	if n := jsonArrayLen(payload["mergeItems"]); n > 0 {
+		return int32(imv1.Payload_MERGE)
+	}
+	if n := jsonArrayLen(payload["merge_items"]); n > 0 {
+		return int32(imv1.Payload_MERGE)
+	}
 	if mediaRaw, ok := payload["media"]; ok {
 		var media map[string]json.RawMessage
 		if err := json.Unmarshal(mediaRaw, &media); err == nil {
@@ -131,6 +143,9 @@ func inferPayloadType(payload map[string]json.RawMessage) int32 {
 				if strings.HasPrefix(ct, "image/") {
 					return int32(imv1.Payload_IMAGE)
 				}
+				if strings.HasPrefix(ct, "video/") {
+					return int32(imv1.Payload_VIDEO)
+				}
 				return int32(imv1.Payload_FILE)
 			}
 		}
@@ -139,6 +154,18 @@ func inferPayloadType(payload map[string]json.RawMessage) int32 {
 		return int32(imv1.Payload_TEXT)
 	}
 	return 0
+}
+
+func jsonArrayLen(raw json.RawMessage) int {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return 0
+	}
+	return len(arr)
 }
 
 func jsonString(raw json.RawMessage) string {
@@ -165,6 +192,12 @@ func payloadTypeJSONName(n int32) string {
 		return "IMAGE"
 	case imv1.Payload_FILE:
 		return "FILE"
+	case imv1.Payload_VIDEO:
+		return "VIDEO"
+	case imv1.Payload_CARD:
+		return "CARD"
+	case imv1.Payload_MERGE:
+		return "MERGE"
 	default:
 		return ""
 	}
@@ -210,6 +243,12 @@ func parsePayloadTypeString(s string) (int32, bool) {
 		return int32(imv1.Payload_IMAGE), true
 	case "FILE", "AUDIO", "VOICE":
 		return int32(imv1.Payload_FILE), true
+	case "VIDEO":
+		return int32(imv1.Payload_VIDEO), true
+	case "CARD":
+		return int32(imv1.Payload_CARD), true
+	case "MERGE":
+		return int32(imv1.Payload_MERGE), true
 	default:
 		return 0, false
 	}

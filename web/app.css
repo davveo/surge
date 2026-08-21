@@ -880,6 +880,7 @@ body {
   position: relative;
   display: flex;
   max-width: 100%;
+  overflow: visible;
 }
 .msg-row.peer .bubble-wrap { justify-content: flex-start; }
 .msg-row.me .bubble-wrap { justify-content: flex-end; }
@@ -988,8 +989,9 @@ body {
 .msg-hover {
   display: none;
   position: absolute;
-  top: -14px;
-  z-index: 6;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 8;
   align-items: center;
   height: 28px;
   padding: 0 4px;
@@ -997,9 +999,16 @@ body {
   border: 1px solid #e5e6eb;
   border-radius: 8px;
   box-shadow: 0 4px 14px rgba(31, 35, 41, .08);
+  white-space: nowrap;
 }
-.msg-row.peer .msg-hover { right: -4px; left: auto; }
-.msg-row.me .msg-hover { left: -4px; right: auto; }
+.msg-row.peer .msg-hover {
+  left: calc(100% + 8px);
+  right: auto;
+}
+.msg-row.me .msg-hover {
+  right: calc(100% + 8px);
+  left: auto;
+}
 .msg-row:hover .msg-hover,
 .msg-row.hover-on .msg-hover,
 .msg-row.menu-open .msg-hover { display: flex; }
@@ -1770,11 +1779,12 @@ body {
 .card-msg, .merge-msg {
   min-width: 180px;
   padding: 10px 12px;
-  background: #fff;
-  border-radius: 4px;
-  border: 1px solid #eee;
+  background: rgba(255,255,255,.55);
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,.06);
   cursor: pointer;
 }
+.bubble.peer .card-msg, .bubble.peer .merge-msg { background: #fff; }
 .card-msg .c-name { font-weight: 600; }
 .card-msg .c-sub, .merge-msg .m-sub { color: #888; font-size: 12px; margin-top: 4px; }
 .merge-msg .m-line { font-size: 13px; color: #333; margin-top: 2px; }

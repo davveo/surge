@@ -78,6 +78,9 @@ func TestJSONPayloadTypeAliases(t *testing.T) {
 		{`{"send":{"clientMsgId":"m1","payload":{"type":"STICKER","stickerId":"x","media":{"objectKey":"sticker/x"}}}}`, imv1.Payload_IMAGE},
 		{`{"send":{"clientMsgId":"m1","payload":{"type":"AUDIO","media":{"objectKey":"a"}}}}`, imv1.Payload_FILE},
 		{`{"requestId":"5","send":{"clientMsgId":"m1","payload":{"type":"TEXT","text":"hi","mentionUids":[],"ephemeral":true}}}`, imv1.Payload_TEXT},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"VIDEO","media":{"objectKey":"v","contentType":"video/mp4"}}}}`, imv1.Payload_VIDEO},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"CARD","cardUid":"u3","text":"u3"}}}`, imv1.Payload_CARD},
+		{`{"send":{"clientMsgId":"m1","payload":{"type":"MERGE","text":"聊天记录","mergeItems":[{"fromUid":"u1","text":"hi","type":1}]}}}`, imv1.Payload_MERGE},
 	}
 	for _, tc := range cases {
 		got, err := Decode(false, []byte(tc.raw))
@@ -87,6 +90,21 @@ func TestJSONPayloadTypeAliases(t *testing.T) {
 		if got.GetSend().GetPayload().GetType() != tc.want {
 			t.Fatalf("%s: type %v want %v", tc.raw, got.GetSend().GetPayload().GetType(), tc.want)
 		}
+	}
+}
+
+func TestJSONMergeKeepsItems(t *testing.T) {
+	raw := []byte(`{"send":{"clientMsgId":"m1","payload":{"type":"MERGE","text":"聊天记录","mergeItems":[{"fromUid":"u1","text":"hi","type":1},{"fromUid":"u2","text":"yo","type":1}]}}}`)
+	got, err := Decode(false, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := got.GetSend().GetPayload()
+	if p.GetType() != imv1.Payload_MERGE {
+		t.Fatalf("type %v", p.GetType())
+	}
+	if len(p.GetMergeItems()) != 2 || p.GetMergeItems()[0].GetText() != "hi" || p.GetMergeItems()[1].GetFromUid() != "u2" {
+		t.Fatalf("items %+v", p.GetMergeItems())
 	}
 }
 

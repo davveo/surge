@@ -1260,7 +1260,9 @@
 
   function isMergeMsg(m) {
     const t = payloadType(m.payload);
-    return t === "MERGE" || t === "8";
+    if (t === "MERGE" || t === "8") return true;
+    const items = (m.payload && (m.payload.mergeItems || m.payload.merge_items)) || [];
+    return items.length > 0;
   }
 
   function renderBody(m) {
@@ -1277,7 +1279,11 @@
     }
     if (isMergeMsg(m)) {
       const items = (m.payload && (m.payload.mergeItems || m.payload.merge_items)) || [];
-      const lines = items.slice(0, 4).map((it) => `<div class="m-line">${escapeHtml((it.fromUid || it.from_uid || "") + ": " + (it.text || "[消息]"))}</div>`).join("");
+      const lines = items.slice(0, 4).map((it) => {
+        const from = it.fromUid || it.from_uid || "";
+        const name = nickOf(from) || from;
+        return `<div class="m-line">${escapeHtml(name + ": " + (it.text || "[消息]"))}</div>`;
+      }).join("");
       return `<div class="merge-msg"><div class="c-name">聊天记录</div>${lines}<div class="m-sub">共 ${items.length} 条</div></div>`;
     }
     if (isImageMsg(m)) {
