@@ -406,6 +406,10 @@
 
   const modalState = { resolve: null, mode: "alert", multiline: false };
   function promptValue() {
+    if (modalState.mode === "select") {
+      const sel = $("modal-select");
+      return sel ? sel.value : "";
+    }
     if (!modalState.multiline) return $("modal-input").value;
     const ta = $("modal-textarea");
     return ta ? ta.value : "";
@@ -426,11 +430,12 @@
       const title = $("modal-title");
       const body = $("modal-body");
       const input = $("modal-input");
+      const sel = $("modal-select");
       const ta = $("modal-textarea");
       const cancel = $("modal-cancel");
       const ok = $("modal-ok");
       const card = $("modal") && $("modal").querySelector(".modal-card");
-      title.textContent = opts.title || (modalState.mode === "prompt" ? "请输入" : modalState.mode === "confirm" ? "确认" : "提示");
+      title.textContent = opts.title || (modalState.mode === "prompt" ? "请输入" : modalState.mode === "select" ? "请选择" : modalState.mode === "confirm" ? "确认" : "提示");
       if (opts.html) {
         body.innerHTML = opts.html;
         body.classList.remove("hidden");
@@ -439,12 +444,33 @@
         body.classList.toggle("hidden", !opts.message);
       }
       if (card) card.classList.toggle("modal-wide", modalState.multiline);
+      if (sel) {
+        sel.classList.add("hidden");
+        sel.innerHTML = "";
+      }
       if (modalState.mode === "prompt" && modalState.multiline && ta) {
         input.classList.add("hidden");
         input.value = "";
         ta.classList.remove("hidden");
         ta.value = opts.value == null ? "" : String(opts.value);
         ta.placeholder = opts.placeholder || "";
+      } else if (modalState.mode === "select" && sel) {
+        input.classList.add("hidden");
+        input.value = "";
+        if (ta) {
+          ta.classList.add("hidden");
+          ta.value = "";
+        }
+        const choices = opts.choices || [];
+        const cur = opts.value == null ? "" : String(opts.value);
+        sel.innerHTML = choices
+          .map((it) => {
+            const val = typeof it === "string" ? it : it.value;
+            const lab = typeof it === "string" ? it : it.label || it.value;
+            return `<option value="${escapeHtml(val)}"${val === cur ? " selected" : ""}>${escapeHtml(lab)}</option>`;
+          })
+          .join("");
+        sel.classList.remove("hidden");
       } else if (modalState.mode === "prompt") {
         if (ta) {
           ta.classList.add("hidden");
@@ -469,7 +495,8 @@
         if (modalState.mode === "prompt" && modalState.multiline && ta) {
           ta.focus();
           ta.setSelectionRange(ta.value.length, ta.value.length);
-        } else if (modalState.mode === "prompt") input.focus();
+        } else if (modalState.mode === "select" && sel) sel.focus();
+        else if (modalState.mode === "prompt") input.focus();
         else ok.focus();
       }, 30);
     });
@@ -483,6 +510,9 @@
   function dlgPrompt(message, value, title) {
     return dlgOpen({ mode: "prompt", message, value, title });
   }
+  function dlgSelect(message, choices, value, title) {
+    return dlgOpen({ mode: "select", message, choices, value, title });
+  }
   function dlgPromptArea(message, value, title) {
     return dlgOpen({
       mode: "prompt",
@@ -495,18 +525,24 @@
   }
   $("modal-ok").onclick = () => {
     if (modalState.mode === "confirm") closeDialog(true);
-    else if (modalState.mode === "prompt") closeDialog(promptValue());
+    else if (modalState.mode === "prompt" || modalState.mode === "select") closeDialog(promptValue());
     else closeDialog(true);
   };
   $("modal-cancel").onclick = () => closeDialog(modalState.mode === "confirm" ? false : null);
   $("modal").onclick = (e) => {
     if (e.target !== $("modal")) return;
-    closeDialog(modalState.mode === "confirm" ? false : modalState.mode === "prompt" ? null : true);
+    closeDialog(modalState.mode === "confirm" ? false : modalState.mode === "prompt" || modalState.mode === "select" ? null : true);
   };
   $("modal-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("modal-ok").click();
     if (e.key === "Escape") $("modal-cancel").click();
   });
+  if ($("modal-select")) {
+    $("modal-select").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("modal-ok").click();
+      if (e.key === "Escape") $("modal-cancel").click();
+    });
+  }
   if ($("modal-textarea")) {
     $("modal-textarea").addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -1050,7 +1086,7 @@
       toggleHidden("e2ee-btn", true);
       toggleHidden("block-btn", true);
       setComposerEnabled(false);
-      renderMsgs();
+      renderMsgs({ stick: true });
     }
     toast("已隐藏，可在会话列表底部找回");
     await loadConvs();
@@ -1064,7 +1100,7 @@
     } catch (_) {}
     if (cid === state.activeCid) {
       state.messages = [];
-      renderMsgs();
+      renderMsgs({ stick: true });
     }
     await hideConversation(cid);
   }
@@ -1748,9 +1784,15 @@
 
   function renderMsgs(opts) {
     const box = $("msgs");
-    const stick = !opts || opts.stick !== false;
     const prevH = box.scrollHeight;
     const prevTop = box.scrollTop;
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 96;
+    const stick =
+      opts && opts.stick === true
+        ? true
+        : opts && opts.stick === false
+          ? false
+          : nearBottom || !state.messages.length;
     const lastMine = lastMineSeq();
     const group = isGroup(state.activeCid);
     const splitAt = unreadSplitIndex();
@@ -1985,6 +2027,7 @@
     } else if (stick) box.scrollTop = box.scrollHeight;
     else box.scrollTop = box.scrollHeight - prevH + prevTop;
     syncJumpChrome();
+    maybeLoadOlder();
   }
 
   function unreadSplitIndex() {
@@ -3926,7 +3969,7 @@
     lockComposer();
     loadDraft(cid);
     loadPinned(cid);
-    await reloadTimeline();
+    await reloadTimeline({ reset: true });
     renderLists();
     await refreshGroup();
     markRead();
@@ -3938,7 +3981,7 @@
     }
   }
 
-  async function reloadTimeline() {
+  async function reloadTimeline({ stick, reset } = {}) {
     if (!state.activeCid) return;
     const cid = state.activeCid;
     const q = state.searchQ ? "&q=" + encodeURIComponent(state.searchQ) : "";
@@ -3948,18 +3991,33 @@
       m.cid = cid;
       return m;
     });
-    const seen = {};
-    fetched.forEach((m) => {
-      const id = String(field(m, "msgId", "msg_id") || "");
-      if (id) seen[id] = true;
-    });
-    const live = state.messages.filter((m) => {
-      if (String(field(m, "cid", "cid") || "") !== cid) return false;
-      const id = String(field(m, "msgId", "msg_id") || "");
-      if (id) return !seen[id];
-      return !!(m.clientMsgId && m.status && m.status !== "acked");
-    });
-    state.messages = fetched.concat(live);
+    if (reset) {
+      state.messages = fetched;
+    } else {
+      const byId = {};
+      const pendingLive = [];
+      const pendingSeen = {};
+      const takePending = (m) => {
+        if (!(m.clientMsgId && m.status && m.status !== "acked")) return;
+        if (pendingSeen[m.clientMsgId]) return;
+        pendingSeen[m.clientMsgId] = true;
+        pendingLive.push(m);
+      };
+      for (const m of state.messages) {
+        if (String(field(m, "cid", "cid") || "") !== cid) continue;
+        const id = String(field(m, "msgId", "msg_id") || "");
+        if (id) byId[id] = m;
+        else takePending(m);
+      }
+      for (const m of fetched) {
+        const id = String(field(m, "msgId", "msg_id") || "");
+        if (id) byId[id] = m;
+        else takePending(m);
+      }
+      state.messages = Object.keys(byId)
+        .map((k) => byId[k])
+        .concat(pendingLive);
+    }
     state.messages.sort((a, b) => {
       const sa = Number(field(a, "convSeq", "conv_seq") || 0);
       const sb = Number(field(b, "convSeq", "conv_seq") || 0);
@@ -3975,16 +4033,28 @@
       if (!state.messages.some((m) => m.clientMsgId && m.clientMsgId === p.clientMsgId)) state.messages.push(p);
     });
     await hydrateMsgProfiles();
-    renderMsgs();
+    if (reset || stick === true) renderMsgs({ stick: true });
+    else if (stick === false) renderMsgs({ stick: false });
+    else renderMsgs();
     watchEphemeral();
+  }
+
+  function maybeLoadOlder() {
+    const box = $("msgs");
+    if (!box) return;
+    if (state.hasMore && !state.loadingMore && !state.searchQ && box.scrollTop < 48) loadOlder();
   }
 
   async function loadOlder() {
     if (!state.activeCid || state.loadingMore || !state.hasMore || state.searchQ) return;
-    const first = state.messages[0];
-    const before = Number(field(first, "convSeq", "conv_seq") || 0);
+    let before = 0;
+    for (const m of state.messages) {
+      const seq = Number(field(m, "convSeq", "conv_seq") || 0);
+      if (seq > 0 && (!before || seq < before)) before = seq;
+    }
     if (!before) return;
     state.loadingMore = true;
+    let added = 0;
     try {
       const data = await api(
         "/v1/timeline?cid=" + encodeURIComponent(state.activeCid) + "&before=" + before + "&limit=50"
@@ -3994,18 +4064,33 @@
       if (!older.length) state.hasMore = false;
       if (older.length) {
         const cid = state.activeCid;
+        const seen = {};
+        state.messages.forEach((m) => {
+          const id = String(field(m, "msgId", "msg_id") || "");
+          if (id) seen[id] = true;
+        });
+        const fresh = [];
         for (const m of older) {
           m.cid = cid;
+          const id = String(field(m, "msgId", "msg_id") || "");
+          if (id && seen[id]) continue;
+          if (id) seen[id] = true;
           await decodeIncoming(m);
+          fresh.push(m);
         }
-        state.messages = older.concat(state.messages);
-        await hydrateMsgProfiles();
-        renderMsgs({ stick: false });
+        added = fresh.length;
+        if (!added) state.hasMore = false;
+        if (added) {
+          state.messages = fresh.concat(state.messages);
+          await hydrateMsgProfiles();
+          renderMsgs({ stick: false });
+        }
       }
     } catch (_) {
-      state.hasMore = false;
+      /* keep hasMore; a blip should not freeze pagination */
     }
     state.loadingMore = false;
+    if (added) maybeLoadOlder();
   }
 
   function sendFrame(body) {
@@ -4348,7 +4433,7 @@
         $("chat-sub").textContent = "";
         renderChatHeadAvatar();
         syncAnnouncePin();
-        renderMsgs();
+        renderMsgs({ stick: true });
         loadConvs();
       }
       setTab("chats");
@@ -4364,7 +4449,7 @@
         $("chat-sub").textContent = "";
         renderChatHeadAvatar();
         syncAnnouncePin();
-        renderMsgs();
+        renderMsgs({ stick: true });
         loadConvs();
       }
       setTab("chats");
@@ -4393,10 +4478,11 @@
           createdAtMs: Number(ev.createdAtMs || ev.created_at_ms || Date.now()),
         };
         state.messages.push(row);
-        renderMsgs();
+        const mineStick = from === state.uid ? { stick: true } : undefined;
+        renderMsgs(mineStick);
         decodeIncoming(row).then(async () => {
           if (from) await ensureProfiles([from]);
-          renderMsgs();
+          renderMsgs(mineStick);
           watchEphemeral();
         });
         refreshGroupRead();
@@ -4910,7 +4996,7 @@
       state.quote = null;
       $("quote-bar").classList.add("hidden");
     }
-    if (cid === state.activeCid) renderMsgs();
+    if (cid === state.activeCid) renderMsgs({ stick: true });
   }
 
   async function uploadFile(file) {
@@ -5938,7 +6024,7 @@
     try {
       await api("/v1/conversation-clear", { method: "POST", body: JSON.stringify({ cid: state.activeCid }) });
       state.messages = [];
-      renderMsgs();
+      renderMsgs({ stick: true });
       toast("已清空");
     } catch (err) {
       dlgAlert(err.message);
@@ -6008,14 +6094,19 @@
     await saveSettings();
     $("settings-box").classList.add("hidden");
   });
-  ["set-dark", "set-sound", "set-preview", "set-enter-send", "set-local-draft"].forEach((id) => {
-    const el = $(id);
-    if (!el) return;
-    el.onclick = () => {
+  const settingsBody = $("settings-box") && $("settings-box").querySelector(".settings-body");
+  if (settingsBody) {
+    settingsBody.addEventListener("click", (e) => {
+      if (e.target.closest("select, input, button, a")) return;
+      const row = e.target.closest(".set-row");
+      if (!row) return;
+      const el = row.querySelector(".side-switch");
+      if (!el) return;
+      e.preventDefault();
       el.classList.toggle("on");
-      if (id === "set-enter-send") setEnterSend(el.classList.contains("on"));
-    };
-  });
+      if (el.id === "set-enter-send") setEnterSend(el.classList.contains("on"));
+    });
+  }
   onClick("set-pass-btn", async () => {
     const oldP = ($("set-old-pass") && $("set-old-pass").value) || "";
     const neu = ($("set-new-pass") && $("set-new-pass").value) || "";
@@ -6076,7 +6167,7 @@
         return;
       }
       state.searchQ = "";
-      reloadTimeline().catch(() => {});
+      reloadTimeline({ reset: true }).catch(() => {});
     });
   }
   onClick("group-invite-qr-btn", async () => {
@@ -6329,7 +6420,7 @@
       syncAnnouncePin();
       setChatSide(false);
       setComposerEnabled(false);
-      renderMsgs();
+      renderMsgs({ stick: true });
       await loadConvs();
     } catch (err) {
       dlgAlert(err.message);
@@ -6385,7 +6476,7 @@
       syncAnnouncePin();
       setChatSide(false);
       setComposerEnabled(false);
-      renderMsgs();
+      renderMsgs({ stick: true });
       await loadConvs();
     } catch (err) {
       dlgAlert(err.message);
@@ -7179,7 +7270,14 @@
   onClick("md-hint", () => toast("支持 **粗体** 、`代码`、```代码块```"));
   onClick("group-mode-row", async () => {
     if (!isGroupOwner()) return;
-    const mode = await dlgPrompt("normal / verify / private / broadcast / anonymous / ephemeral", activeGroupMode() || "normal", "群类型");
+    const mode = await dlgSelect("", [
+      { value: "normal", label: "普通群" },
+      { value: "verify", label: "验证群" },
+      { value: "private", label: "私密群" },
+      { value: "broadcast", label: "广播群" },
+      { value: "anonymous", label: "匿名群" },
+      { value: "ephemeral", label: "阅后即焚群" },
+    ], activeGroupMode() || "normal", "群类型");
     if (!mode) return;
     try {
       await api("/v1/group-update", { method: "POST", body: JSON.stringify({ cid: state.activeCid, mode: String(mode).trim() }) });

@@ -1,5 +1,5 @@
 /* WeChat PC chrome. Dynamic list/bubble classes are used from app.js. */
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; }
 body {
   background: #c6c6c6;
   color: #111;
@@ -863,6 +863,8 @@ body {
   min-height: 0;
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: var(--chat-bg, #f5f5f5);
   padding: 22px 20px 16px;
 }
@@ -1527,6 +1529,11 @@ body {
   line-height: 1.55;
   font-family: inherit;
 }
+#modal-select {
+  appearance: auto;
+  cursor: pointer;
+  background: #fff;
+}
 .modal-input:focus {
   border-color: #07c160;
   background: #fff;
@@ -2064,12 +2071,41 @@ body {
 .badge.mention { background: #07c160; }
 
 .settings-body { display: flex; flex-direction: column; gap: 10px; }
+#settings-box .modal-card {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  min-height: 0;
+}
+#settings-box .modal-title,
+#settings-box .modal-actions {
+  flex: none;
+}
+#settings-box .settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+  white-space: normal;
+}
+#settings-box .settings-body > * {
+  flex-shrink: 0;
+}
 .set-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 14px;
   gap: 12px;
+}
+#settings-box .set-row:has(.side-switch) { cursor: pointer; }
+#settings-box .side-switch {
+  pointer-events: auto;
+  cursor: pointer;
 }
 .set-row select, .set-row input[type=time] {
   height: 28px;
