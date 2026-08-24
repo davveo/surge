@@ -3,12 +3,14 @@ package main
 import (
 	"testing"
 	"time"
+
+	"github.com/davveo/surge/pkg/mail"
+	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
 
 func TestNotifyOfflineEnqueuesWithoutBlocking(t *testing.T) {
 	m := &mailer{
-		host: "127.0.0.1:1",
-		from: "surge@example.com",
+		smtp: mail.Config{Host: "127.0.0.1:1", From: "surge@example.com"},
 		jobs: make(chan notifyJob, 8),
 	}
 	start := time.Now()
@@ -38,13 +40,22 @@ func TestNotifyOfflineSkipsWhenDisabled(t *testing.T) {
 
 func TestNotifyOfflineDropsWhenFull(t *testing.T) {
 	m := &mailer{
-		host: "127.0.0.1:1",
-		from: "surge@example.com",
+		smtp: mail.Config{Host: "127.0.0.1:1", From: "surge@example.com"},
 		jobs: make(chan notifyJob, 1),
 	}
 	m.jobs <- notifyJob{uid: "busy"}
 	m.NotifyOffline("u2", "x")
 	if len(m.jobs) != 1 {
 		t.Fatalf("queue len=%d", len(m.jobs))
+	}
+}
+
+func TestNotifyPreviewOmitsBody(t *testing.T) {
+	got := notifyPreview(&imv1.Payload{Type: imv1.Payload_TEXT, Text: "secret password 123"})
+	if got != "你有一条新消息" {
+		t.Fatalf("got %q", got)
+	}
+	if notifyPreview(&imv1.Payload{Type: imv1.Payload_IMAGE}) != "你收到一张图片" {
+		t.Fatal("image")
 	}
 }

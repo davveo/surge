@@ -49,6 +49,9 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_TLS: ${SMTP_TLS:-}
       SMS_WEBHOOK: ${SMS_WEBHOOK:-}
     ports:
       - "9000:9000"
@@ -83,7 +86,13 @@ services:
       REDIS_ADDR: redis:6379
       REDIS_PASS: ${REDIS_PASS:-}
       REDIS_DB: ${REDIS_DB:-0}
+      APP_ENV: ${APP_ENV:-dev}
       JWT_SECRET: ${JWT_SECRET:-surge-dev-secret}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_TLS: ${SMTP_TLS:-}
       WEB_DIR: /app/web
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}

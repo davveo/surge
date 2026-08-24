@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davveo/surge/pkg/auth"
 	"github.com/davveo/surge/pkg/route"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
@@ -53,6 +55,13 @@ func (a *httpAPI) tooMany(r *http.Request, key string, n int64, window time.Dura
 			}
 			return v > n
 		}
+		if auth.IsProduction() {
+			log.Printf("rate limit redis error, fail closed: %v", err)
+			return true
+		}
+	}
+	if auth.IsProduction() {
+		return true
 	}
 	if a.limit == nil {
 		return false

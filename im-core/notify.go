@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/smtp"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/davveo/surge/pkg/mail"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
 
@@ -23,8 +23,7 @@ type notifyJob struct {
 }
 
 type mailer struct {
-	host    string
-	from    string
+	smtp    mail.Config
 	smsHook string
 	store   Store
 	client  *http.Client
@@ -33,8 +32,7 @@ type mailer struct {
 
 func newMailer(store Store) *mailer {
 	m := &mailer{
-		host:    strings.TrimSpace(os.Getenv("SMTP_HOST")),
-		from:    strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		smtp:    mail.FromEnv(),
 		smsHook: strings.TrimSpace(os.Getenv("SMS_WEBHOOK")),
 		store:   store,
 		client:  &http.Client{Timeout: 5 * time.Second},
@@ -52,14 +50,14 @@ func (m *mailer) enabled() bool {
 	if m == nil {
 		return false
 	}
-	return (m.host != "" && m.from != "") || m.smsHook != ""
+	return (m.smtp.Host != "" && m.smtp.From != "") || m.smsHook != ""
 }
 
 func (s *server) notifyOffline(_ context.Context, uid string, gp *imv1.GatewayPush) {
 	if s.notify == nil || gp == nil || gp.Push == nil {
 		return
 	}
-	s.notify.NotifyOffline(uid, previewOf(gp.Push.GetPayload()))
+	s.notify.NotifyOffline(uid, notifyPreview(gp.Push.GetPayload()))
 }
 
 func (m *mailer) NotifyOffline(uid, preview string) {
@@ -93,17 +91,9 @@ func (m *mailer) deliver(ctx context.Context, uid, preview string) {
 	body := "你有一条新消息"
 	if preview != "" {
 		body = preview
-		if len([]rune(body)) > 80 {
-			body = string([]rune(body)[:80]) + "…"
-		}
 	}
-	if p.Email != "" && m.host != "" && m.from != "" {
-		msg := "From: " + m.from + "\r\nTo: " + p.Email + "\r\nSubject: Surge 新消息\r\n\r\n" + body
-		addr := m.host
-		if !strings.Contains(addr, ":") {
-			addr += ":25"
-		}
-		if err := smtp.SendMail(addr, nil, m.from, []string{p.Email}, []byte(msg)); err != nil {
+	if p.Email != "" && m.smtp.Host != "" && m.smtp.From != "" {
+		if err := mail.Send(m.smtp, p.Email, "Surge 新消息", body); err != nil {
 			log.Printf("smtp %s: %v", uid, err)
 		}
 	}

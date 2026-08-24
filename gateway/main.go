@@ -13,12 +13,16 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/davveo/surge/pkg/auth"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	cfg := loadConfig()
+	if err := auth.CheckProductionSecret(cfg.JWTSecret); err != nil {
+		log.Fatal(err)
+	}
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
@@ -28,6 +32,9 @@ func main() {
 	defer rdb.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := rdb.Ping(ctx).Err(); err != nil {
+		if auth.IsProduction() {
+			log.Fatalf("redis required in production: %v", err)
+		}
 		log.Printf("redis unavailable, falling back to in-memory presence/limits: %v", err)
 		_ = rdb.Close()
 		rdb = nil

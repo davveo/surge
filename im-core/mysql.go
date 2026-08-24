@@ -32,61 +32,120 @@ func migrate(db *sql.DB, schema string) error {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
-	alters := []string{
-		`ALTER TABLE conversations ADD COLUMN title VARCHAR(128) NOT NULL DEFAULT ''`,
-		`ALTER TABLE conversations ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'p2p'`,
-		`ALTER TABLE messages ADD COLUMN recalled TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE messages ADD COLUMN quote_msg_id VARCHAR(36) NOT NULL DEFAULT ''`,
-		`ALTER TABLE messages ADD COLUMN payload_media TEXT`,
-		`ALTER TABLE im_groups ADD COLUMN avatar_url VARCHAR(512) NOT NULL DEFAULT ''`,
-		`ALTER TABLE conversations ADD COLUMN hidden TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE conversations ADD COLUMN pinned TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE users ADD COLUMN email VARCHAR(128) NOT NULL DEFAULT ''`,
-		`ALTER TABLE users ADD COLUMN phone VARCHAR(32) NOT NULL DEFAULT ''`,
-		`ALTER TABLE users ADD COLUMN public_key TEXT`,
-		`ALTER TABLE im_groups ADD COLUMN muted_all TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE im_groups ADD COLUMN announcement TEXT`,
-		`ALTER TABLE im_groups ADD COLUMN join_approval TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE group_members ADD COLUMN nickname VARCHAR(64) NOT NULL DEFAULT ''`,
-		`ALTER TABLE group_members ADD COLUMN muted TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE group_members ADD COLUMN muted_until_ms BIGINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE group_members ADD COLUMN joined_at_ms BIGINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE im_groups ADD COLUMN history_days INT NOT NULL DEFAULT 0`,
-		`ALTER TABLE im_groups ADD COLUMN announce_ack TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE user_settings ADD COLUMN notify_at_muted TINYINT NOT NULL DEFAULT 1`,
-		`ALTER TABLE user_settings ADD COLUMN add_me VARCHAR(16) NOT NULL DEFAULT 'verify'`,
-		`ALTER TABLE user_settings ADD COLUMN hide_read TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE user_settings ADD COLUMN hide_typing TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE user_settings ADD COLUMN hide_last_seen TINYINT NOT NULL DEFAULT 0`,
-		`ALTER TABLE user_settings ADD COLUMN burn_sec INT NOT NULL DEFAULT 5`,
-		`ALTER TABLE user_settings MODIFY wallpaper VARCHAR(512) NOT NULL DEFAULT ''`,
-		`ALTER TABLE conversations ADD COLUMN cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0`,
-		`ALTER TABLE im_groups ADD COLUMN mode VARCHAR(32) NOT NULL DEFAULT 'normal'`,
-		`ALTER TABLE friend_requests ADD COLUMN hello VARCHAR(200) NOT NULL DEFAULT ''`,
-		`ALTER TABLE friend_requests ADD COLUMN source VARCHAR(64) NOT NULL DEFAULT ''`,
-		`ALTER TABLE conversations ADD COLUMN unread_mention INT UNSIGNED NOT NULL DEFAULT 0`,
-		`ALTER TABLE conversations ADD COLUMN draft_text TEXT`,
-		`CREATE TABLE IF NOT EXISTS hidden_messages (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+  id INT NOT NULL PRIMARY KEY,
+  name VARCHAR(128) NOT NULL,
+  applied_at_ms BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return fmt.Errorf("migrate schema_migrations: %w", err)
+	}
+	applied, err := loadAppliedMigrations(db)
+	if err != nil {
+		return err
+	}
+	for _, p := range schemaPatches {
+		if applied[p.id] {
+			continue
+		}
+		if _, err := db.Exec(p.sql); err != nil && !isIdempotentSchemaErr(err) {
+			return fmt.Errorf("migrate %d %s: %w", p.id, p.name, err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_migrations (id, name, applied_at_ms) VALUES (?, ?, ?)`,
+			p.id, p.name, time.Now().UnixMilli()); err != nil {
+			return fmt.Errorf("migrate stamp %d: %w", p.id, err)
+		}
+	}
+	return seedSeqs(db)
+}
+
+type schemaPatch struct {
+	id   int
+	name string
+	sql  string
+}
+
+func loadAppliedMigrations(db *sql.DB) (map[int]bool, error) {
+	rows, err := db.Query(`SELECT id FROM schema_migrations`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int]bool{}
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+func isIdempotentSchemaErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Duplicate column") ||
+		strings.Contains(msg, "already exists") ||
+		strings.Contains(msg, "Duplicate key name")
+}
+
+var schemaPatches = []schemaPatch{
+	{1, "conversations.title", `ALTER TABLE conversations ADD COLUMN title VARCHAR(128) NOT NULL DEFAULT ''`},
+	{2, "conversations.kind", `ALTER TABLE conversations ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'p2p'`},
+	{3, "messages.recalled", `ALTER TABLE messages ADD COLUMN recalled TINYINT NOT NULL DEFAULT 0`},
+	{4, "messages.quote_msg_id", `ALTER TABLE messages ADD COLUMN quote_msg_id VARCHAR(36) NOT NULL DEFAULT ''`},
+	{5, "messages.payload_media", `ALTER TABLE messages ADD COLUMN payload_media TEXT`},
+	{6, "im_groups.avatar_url", `ALTER TABLE im_groups ADD COLUMN avatar_url VARCHAR(512) NOT NULL DEFAULT ''`},
+	{7, "conversations.hidden", `ALTER TABLE conversations ADD COLUMN hidden TINYINT NOT NULL DEFAULT 0`},
+	{8, "conversations.pinned", `ALTER TABLE conversations ADD COLUMN pinned TINYINT NOT NULL DEFAULT 0`},
+	{9, "users.email", `ALTER TABLE users ADD COLUMN email VARCHAR(128) NOT NULL DEFAULT ''`},
+	{10, "users.phone", `ALTER TABLE users ADD COLUMN phone VARCHAR(32) NOT NULL DEFAULT ''`},
+	{11, "users.public_key", `ALTER TABLE users ADD COLUMN public_key TEXT`},
+	{12, "im_groups.muted_all", `ALTER TABLE im_groups ADD COLUMN muted_all TINYINT NOT NULL DEFAULT 0`},
+	{13, "im_groups.announcement", `ALTER TABLE im_groups ADD COLUMN announcement TEXT`},
+	{14, "im_groups.join_approval", `ALTER TABLE im_groups ADD COLUMN join_approval TINYINT NOT NULL DEFAULT 0`},
+	{15, "group_members.nickname", `ALTER TABLE group_members ADD COLUMN nickname VARCHAR(64) NOT NULL DEFAULT ''`},
+	{16, "group_members.muted", `ALTER TABLE group_members ADD COLUMN muted TINYINT NOT NULL DEFAULT 0`},
+	{17, "group_members.muted_until_ms", `ALTER TABLE group_members ADD COLUMN muted_until_ms BIGINT NOT NULL DEFAULT 0`},
+	{18, "group_members.joined_at_ms", `ALTER TABLE group_members ADD COLUMN joined_at_ms BIGINT NOT NULL DEFAULT 0`},
+	{19, "im_groups.history_days", `ALTER TABLE im_groups ADD COLUMN history_days INT NOT NULL DEFAULT 0`},
+	{20, "im_groups.announce_ack", `ALTER TABLE im_groups ADD COLUMN announce_ack TINYINT NOT NULL DEFAULT 0`},
+	{21, "user_settings.notify_at_muted", `ALTER TABLE user_settings ADD COLUMN notify_at_muted TINYINT NOT NULL DEFAULT 1`},
+	{22, "user_settings.add_me", `ALTER TABLE user_settings ADD COLUMN add_me VARCHAR(16) NOT NULL DEFAULT 'verify'`},
+	{23, "user_settings.hide_read", `ALTER TABLE user_settings ADD COLUMN hide_read TINYINT NOT NULL DEFAULT 0`},
+	{24, "user_settings.hide_typing", `ALTER TABLE user_settings ADD COLUMN hide_typing TINYINT NOT NULL DEFAULT 0`},
+	{25, "user_settings.hide_last_seen", `ALTER TABLE user_settings ADD COLUMN hide_last_seen TINYINT NOT NULL DEFAULT 0`},
+	{26, "user_settings.burn_sec", `ALTER TABLE user_settings ADD COLUMN burn_sec INT NOT NULL DEFAULT 5`},
+	{27, "user_settings.wallpaper", `ALTER TABLE user_settings MODIFY wallpaper VARCHAR(512) NOT NULL DEFAULT ''`},
+	{28, "conversations.cleared_seq", `ALTER TABLE conversations ADD COLUMN cleared_seq BIGINT UNSIGNED NOT NULL DEFAULT 0`},
+	{29, "im_groups.mode", `ALTER TABLE im_groups ADD COLUMN mode VARCHAR(32) NOT NULL DEFAULT 'normal'`},
+	{30, "friend_requests.hello", `ALTER TABLE friend_requests ADD COLUMN hello VARCHAR(200) NOT NULL DEFAULT ''`},
+	{31, "friend_requests.source", `ALTER TABLE friend_requests ADD COLUMN source VARCHAR(64) NOT NULL DEFAULT ''`},
+	{32, "conversations.unread_mention", `ALTER TABLE conversations ADD COLUMN unread_mention INT UNSIGNED NOT NULL DEFAULT 0`},
+	{33, "conversations.draft_text", `ALTER TABLE conversations ADD COLUMN draft_text TEXT`},
+	{34, "hidden_messages", `CREATE TABLE IF NOT EXISTS hidden_messages (
   uid VARCHAR(64) NOT NULL,
   msg_id CHAR(36) NOT NULL,
   PRIMARY KEY (uid, msg_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS group_join_requests (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{35, "group_join_requests", `CREATE TABLE IF NOT EXISTS group_join_requests (
   cid VARCHAR(128) NOT NULL,
   uid VARCHAR(64) NOT NULL,
   from_uid VARCHAR(64) NOT NULL,
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (cid, uid),
   KEY idx_cid (cid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS message_reactions (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{36, "message_reactions", `CREATE TABLE IF NOT EXISTS message_reactions (
   msg_id CHAR(36) NOT NULL,
   uid VARCHAR(64) NOT NULL,
   emoji VARCHAR(16) NOT NULL,
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (msg_id, uid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS favorites (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{37, "favorites", `CREATE TABLE IF NOT EXISTS favorites (
   fav_id CHAR(36) NOT NULL,
   uid VARCHAR(64) NOT NULL,
   cid VARCHAR(128) NOT NULL,
@@ -97,24 +156,24 @@ func migrate(db *sql.DB, schema string) error {
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (fav_id),
   UNIQUE KEY uk_uid_msg (uid, msg_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS group_invites (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{38, "group_invites", `CREATE TABLE IF NOT EXISTS group_invites (
   token VARCHAR(32) NOT NULL,
   cid VARCHAR(128) NOT NULL,
   from_uid VARCHAR(64) NOT NULL,
   created_at_ms BIGINT NOT NULL,
   expires_at_ms BIGINT NOT NULL,
   PRIMARY KEY (token)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS chat_pins (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{39, "chat_pins", `CREATE TABLE IF NOT EXISTS chat_pins (
   cid VARCHAR(128) NOT NULL,
   msg_id CHAR(36) NOT NULL,
   from_uid VARCHAR(64) NOT NULL,
   preview VARCHAR(512) NOT NULL,
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (cid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS reports (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{40, "reports", `CREATE TABLE IF NOT EXISTS reports (
   id CHAR(36) NOT NULL,
   uid VARCHAR(64) NOT NULL,
   cid VARCHAR(128) NOT NULL,
@@ -122,8 +181,8 @@ func migrate(db *sql.DB, schema string) error {
   reason VARCHAR(256) NOT NULL,
   created_at_ms BIGINT NOT NULL,
   PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-		`CREATE TABLE IF NOT EXISTS user_settings (
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
+	{41, "user_settings", `CREATE TABLE IF NOT EXISTS user_settings (
   uid VARCHAR(64) NOT NULL,
   dark TINYINT NOT NULL DEFAULT 0,
   wallpaper VARCHAR(64) NOT NULL DEFAULT '',
@@ -132,14 +191,7 @@ func migrate(db *sql.DB, schema string) error {
   dnd_start VARCHAR(8) NOT NULL DEFAULT '',
   dnd_end VARCHAR(8) NOT NULL DEFAULT '',
   PRIMARY KEY (uid)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
-	}
-	for _, a := range alters {
-		if _, err := db.Exec(a); err != nil && !strings.Contains(err.Error(), "Duplicate column") && !strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("migrate alter: %w", err)
-		}
-	}
-	return seedSeqs(db)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`},
 }
 
 func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload, quoteMsgID string) (*sendResult, error) {

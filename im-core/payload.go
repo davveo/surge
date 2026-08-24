@@ -139,6 +139,46 @@ func previewOf(p *imv1.Payload) string {
 	}
 }
 
+func notifyPreview(p *imv1.Payload) string {
+	if p == nil {
+		return "你有一条新消息"
+	}
+	switch p.Type {
+	case imv1.Payload_IMAGE:
+		if p.StickerId != "" {
+			return "你收到一个表情"
+		}
+		return "你收到一张图片"
+	case imv1.Payload_VIDEO:
+		return "你收到一条视频"
+	case imv1.Payload_CARD:
+		return "你收到一张名片"
+	case imv1.Payload_MERGE:
+		return "你收到一条聊天记录"
+	case imv1.Payload_FILE:
+		name := ""
+		ct := ""
+		if p.Media != nil {
+			name = p.Media.Filename
+			ct = strings.ToLower(p.Media.ContentType)
+		}
+		if strings.HasPrefix(ct, "audio/") || isVoiceFilename(name) {
+			return "你收到一条语音"
+		}
+		return "你收到一个文件"
+	case imv1.Payload_RECALL:
+		return "有一条消息被撤回"
+	default:
+		if p.E2Ee {
+			return "你收到一条加密消息"
+		}
+		if p.Ephemeral {
+			return "你收到一条阅后即焚消息"
+		}
+		return "你有一条新消息"
+	}
+}
+
 func isVoiceFilename(name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
 	if n == "" {

@@ -95,7 +95,7 @@ Gateway 启动时 Redis ping 失败会把 `rdb` 置 `nil`（`gateway/main.go`）
 | Redis | `6379` | `REDIS_ADDR` |
 | MinIO S3 | 主机 `9001` → 容器 `9000` | `MINIO_ENDPOINT=minio:9000`，`MINIO_PUBLIC_URL=http://127.0.0.1:9001` |
 
-JWT 默认密钥 `surge-dev-secret`（`JWT_SECRET`）。生产必须换。
+JWT 默认密钥 `surge-dev-secret`（`JWT_SECRET`）。`APP_ENV=production`（或 `ENV=production`）时拒绝默认密钥，进程直接退出。
 
 ### 2.3 请求怎么进业务
 
@@ -126,7 +126,7 @@ WSS：`gateway/ws.go` `dispatch` 按 Envelope oneof 分发；`onSend` / `onSync`
 | `server.locks` | `im-core/server.go` | 进程级 `map[cid]*Mutex`，只增不删 |
 | `mysqlStore` | `im-core/mysql.go` | 进程级，`MaxOpenConns=32` |
 | `redisSeq` / `redisRouter` | `seq.go` / `route.go` | 包装同一 Redis client |
-| `mailer` | `im-core/notify.go` | 可选；`SMTP_HOST`+`SMTP_FROM` / `SMS_WEBHOOK` |
+| `mailer` | `im-core/notify.go` | 可选；`SMTP_HOST`+`SMTP_FROM`，`SMTP_USER`/`SMTP_PASS` 走 STARTTLS；邮件只发类型摘要不含正文 |
 
 ---
 
@@ -639,7 +639,7 @@ seq 测试用 `memSeq`，生产用 `redisSeq`。
 
 WSS `auth` 只接受 access JWT，不接受 refresh。
 
-默认 `JWT_SECRET=surge-dev-secret`。`CheckOrigin` 恒 true。两者都是演示级。
+默认 `JWT_SECRET=surge-dev-secret`。`APP_ENV=production` 时必须换成非默认值。`CheckOrigin` 恒 true。后者仍是演示级。
 
 ### 10.2 设备与踢下线
 

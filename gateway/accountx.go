@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/smtp"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/davveo/surge/pkg/mail"
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
 
@@ -146,17 +145,7 @@ func randDigits(n int) string {
 }
 
 func (a *httpAPI) sendMail(to, subject, body string) {
-	host := strings.TrimSpace(os.Getenv("SMTP_HOST"))
-	from := strings.TrimSpace(os.Getenv("SMTP_FROM"))
-	if to == "" || host == "" || from == "" {
-		return
-	}
-	addr := host
-	if !strings.Contains(addr, ":") {
-		addr += ":25"
-	}
-	msg := "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject + "\r\n\r\n" + body
-	if err := smtp.SendMail(addr, nil, from, []string{to}, []byte(msg)); err != nil {
+	if err := mail.Send(mail.FromEnv(), to, subject, body); err != nil {
 		log.Printf("smtp %s: %v", to, err)
 	}
 }
