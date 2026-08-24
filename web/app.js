@@ -4912,7 +4912,7 @@
         } catch (_) {}
       }, 1000);
     } catch (err) {
-      $("qr-hint").textContent = "二维码加载失败，可改用上方 uid 登录";
+      $("qr-hint").textContent = "二维码加载失败，可改用账号登录";
       console.error(err);
     }
   }
@@ -5307,6 +5307,28 @@
     await sessionEnter(data.uid, data.access_token, data.refresh_token);
   }
 
+  function setAuthTab(tab) {
+    document.querySelectorAll(".auth-tab").forEach((btn) => {
+      btn.classList.toggle("on", btn.dataset.auth === tab);
+    });
+    if ($("auth-pane-login")) $("auth-pane-login").classList.toggle("hidden", tab !== "login");
+    if ($("auth-pane-register")) $("auth-pane-register").classList.toggle("hidden", tab !== "register");
+    if ($("auth-pane-qr")) $("auth-pane-qr").classList.toggle("hidden", tab !== "qr");
+    if (tab === "qr" && !state.qrTicket) startQR();
+    if (tab === "login" && $("login-uid")) $("login-uid").focus();
+    if (tab === "register") {
+      if ($("register-uid") && $("login-uid") && !$("register-uid").value) {
+        $("register-uid").value = $("login-uid").value;
+      }
+      if ($("register-pass") && $("login-pass") && !$("register-pass").value) {
+        $("register-pass").value = $("login-pass").value;
+      }
+      if ($("register-uid")) $("register-uid").focus();
+    }
+  }
+  document.querySelectorAll(".auth-tab").forEach((btn) => {
+    btn.onclick = () => setAuthTab(btn.dataset.auth);
+  });
   $("login-btn").onclick = async () => {
     const uid = $("login-uid").value.trim();
     const password = $("login-pass").value;
@@ -5315,8 +5337,8 @@
     enter(uid, password).catch((e) => dlgAlert(e.message));
   };
   $("register-btn").onclick = () => {
-    const uid = $("login-uid").value.trim();
-    const password = $("login-pass").value;
+    const uid = ($("register-uid") && $("register-uid").value.trim()) || $("login-uid").value.trim();
+    const password = ($("register-pass") && $("register-pass").value) || $("login-pass").value;
     const email = $("login-email") ? $("login-email").value.trim() : "";
     const phone = $("login-phone") ? $("login-phone").value.trim() : "";
     if ((!uid && !email && !phone) || !password) {
@@ -5342,6 +5364,13 @@
   });
   $("login-pass").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("login-btn").click();
+  });
+  ["register-uid", "login-email", "login-phone", "register-pass"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("register-btn").click();
+    });
   });
   $("logout").onclick = () => {
     sessionStorage.clear();
@@ -7280,8 +7309,6 @@
         maybeJoinFromURL();
       })
       .catch((e) => dlgAlert(e.message));
-  } else {
-    startQR();
   }
 
   function syncJumpChrome() {

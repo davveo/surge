@@ -1,5 +1,5 @@
-const CACHE = "surge-im-v3";
-const PRECACHE = ["/", "/app.css?v=im-ux10", "/app.js?v=im-ux10", "/manifest.json"];
+const CACHE = "surge-im-v5";
+const PRECACHE = ["/", "/app.css?v=im-ux11", "/app.js?v=im-ux11", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(

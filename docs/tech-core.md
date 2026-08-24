@@ -729,8 +729,8 @@ var sensitiveWords = []string{"违禁词"}
 
 `web/sw.js`：
 
-- Cache 名 `surge-im-v3`。改静态资源必须改这个字符串，否则旧 SW 继续伺候旧 JS。
-- precache：`/`、`/app.css?v=im-ux10`、`/app.js?v=im-ux10`、`/manifest.json`。query 与 html 引用要一起改。
+- Cache 名 `surge-im-v5`。改静态资源必须改这个字符串，否则旧 SW 继续伺候旧 JS。
+- precache：`/`、`/app.css?v=im-ux11`、`/app.js?v=im-ux11`、`/manifest.json`。query 与 html 引用要一起改。
 - `/v1/*` **不缓存**。策略：网络优先，失败回 cache。
 - `skipWaiting` + `clients.claim`。
 
