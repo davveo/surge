@@ -51,7 +51,7 @@ func main() {
 	}
 	cancel()
 
-	store := newMySQLStore(db, newRedisSeq(rdb))
+	store := newMySQLStore(db, nil)
 	srvImpl := newServer(store, newRedisRouter(rdb))
 	srvImpl.notify = newMailer(store)
 	srv := grpc.NewServer()

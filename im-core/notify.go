@@ -13,33 +13,77 @@ import (
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
 
+const notifyQueue = 256
+const notifyWorkers = 4
+const notifyTimeout = 8 * time.Second
+
+type notifyJob struct {
+	uid     string
+	preview string
+}
+
 type mailer struct {
 	host    string
 	from    string
 	smsHook string
 	store   Store
 	client  *http.Client
+	jobs    chan notifyJob
 }
 
 func newMailer(store Store) *mailer {
-	return &mailer{
+	m := &mailer{
 		host:    strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		from:    strings.TrimSpace(os.Getenv("SMTP_FROM")),
 		smsHook: strings.TrimSpace(os.Getenv("SMS_WEBHOOK")),
 		store:   store,
 		client:  &http.Client{Timeout: 5 * time.Second},
+		jobs:    make(chan notifyJob, notifyQueue),
 	}
+	if m.enabled() {
+		for i := 0; i < notifyWorkers; i++ {
+			go m.loop()
+		}
+	}
+	return m
 }
 
-func (s *server) notifyOffline(ctx context.Context, uid string, gp *imv1.GatewayPush) {
+func (m *mailer) enabled() bool {
+	if m == nil {
+		return false
+	}
+	return (m.host != "" && m.from != "") || m.smsHook != ""
+}
+
+func (s *server) notifyOffline(_ context.Context, uid string, gp *imv1.GatewayPush) {
 	if s.notify == nil || gp == nil || gp.Push == nil {
 		return
 	}
-	s.notify.NotifyOffline(ctx, uid, previewOf(gp.Push.GetPayload()))
+	s.notify.NotifyOffline(uid, previewOf(gp.Push.GetPayload()))
 }
 
-func (m *mailer) NotifyOffline(ctx context.Context, uid, preview string) {
-	if m == nil || uid == "" {
+func (m *mailer) NotifyOffline(uid, preview string) {
+	if m == nil || uid == "" || !m.enabled() {
+		return
+	}
+	job := notifyJob{uid: uid, preview: preview}
+	select {
+	case m.jobs <- job:
+	default:
+		log.Printf("notify queue full, drop uid=%s", uid)
+	}
+}
+
+func (m *mailer) loop() {
+	for job := range m.jobs {
+		ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+		m.deliver(ctx, job.uid, job.preview)
+		cancel()
+	}
+}
+
+func (m *mailer) deliver(ctx context.Context, uid, preview string) {
+	if m.store == nil {
 		return
 	}
 	p, err := m.store.GetProfile(ctx, uid)
@@ -49,6 +93,9 @@ func (m *mailer) NotifyOffline(ctx context.Context, uid, preview string) {
 	body := "你有一条新消息"
 	if preview != "" {
 		body = preview
+		if len([]rune(body)) > 80 {
+			body = string([]rune(body)[:80]) + "…"
+		}
 	}
 	if p.Email != "" && m.host != "" && m.from != "" {
 		msg := "From: " + m.from + "\r\nTo: " + p.Email + "\r\nSubject: Surge 新消息\r\n\r\n" + body

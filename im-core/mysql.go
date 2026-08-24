@@ -139,7 +139,7 @@ func migrate(db *sql.DB, schema string) error {
 			return fmt.Errorf("migrate alter: %w", err)
 		}
 	}
-	return nil
+	return seedSeqs(db)
 }
 
 func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUID string, payload *imv1.Payload, quoteMsgID string) (*sendResult, error) {
@@ -167,10 +167,6 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		}
 	}
 
-	convSeq, err := s.seq.Next(ctx, convSeqKey(canonical))
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now().UnixMilli()
 	msgID := uuid.NewString()
 	payload = enrichPayload(payload, s.lookupQuoteText(ctx, canonical, quoteMsgID))
@@ -179,6 +175,16 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	members = uniqueUIDs(members)
+	seqs, err := bumpSeqs(ctx, tx, seqKeys(canonical, members))
+	if err != nil {
+		return nil, err
+	}
+	convSeq := seqs[convSeqKey(canonical)]
+	if convSeq == 0 {
+		return nil, fmt.Errorf("seq missing conv %s", canonical)
+	}
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO messages (msg_id, client_msg_id, cid, conv_seq, from_uid, payload_type, payload_text, payload_media, created_at_ms, recalled, quote_msg_id)
@@ -192,18 +198,17 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 	}
 
 	preview := previewOf(payload)
+	inboxes := make([]inboxRow, 0, len(members))
+	convs := make([]convUpsert, 0, len(members))
 	var deliveries []delivery
 	var senderSync uint64
 	for _, uid := range members {
-		syncSeq, err := s.seq.Next(ctx, syncSeqKey(uid))
-		if err != nil {
-			return nil, err
+		syncSeq := seqs[syncSeqKey(uid)]
+		if syncSeq == 0 {
+			return nil, fmt.Errorf("seq missing sync %s", uid)
 		}
 		if uid == fromUID {
 			senderSync = syncSeq
-		}
-		if err := insertInbox(ctx, tx, uid, syncSeq, canonical, msgID, convSeq, fromUID, now); err != nil {
-			return nil, err
 		}
 		peerLabel := peer
 		if kind == conv.KindGroup {
@@ -211,20 +216,32 @@ func (s *mysqlStore) Send(ctx context.Context, fromUID, clientMsgID, cid, peerUI
 		} else if uid != fromUID {
 			peerLabel = fromUID
 		}
-		if err := upsertConv(ctx, tx, uid, canonical, peerLabel, title, kind, msgID, convSeq, preview, now, uid != fromUID); err != nil {
-			return nil, err
-		}
-		if uid != fromUID && payloadMentions(payload, uid) {
-			if _, err := tx.ExecContext(ctx, `UPDATE conversations SET unread_mention = unread_mention + 1 WHERE uid = ? AND cid = ?`, uid, canonical); err != nil {
-				return nil, err
-			}
-		}
+		unreadInc, mentionInc := 0, 0
 		if uid != fromUID {
+			unreadInc = 1
+			if payloadMentions(payload, uid) {
+				mentionInc = 1
+			}
 			deliveries = append(deliveries, delivery{uid: uid, push: &imv1.Push{
 				Cid: canonical, MsgId: msgID, ConvSeq: convSeq, SyncSeq: syncSeq,
 				FromUid: fromUID, Payload: payload, CreatedAtMs: now,
 			}})
 		}
+		inboxes = append(inboxes, inboxRow{
+			uid: uid, syncSeq: syncSeq, cid: canonical, msgID: msgID,
+			convSeq: convSeq, fromUID: fromUID, now: now,
+		})
+		convs = append(convs, convUpsert{
+			uid: uid, cid: canonical, peer: peerLabel, title: title, kind: kind,
+			msgID: msgID, convSeq: convSeq, text: preview, now: now,
+			unreadInc: unreadInc, mentionInc: mentionInc,
+		})
+	}
+	if err := insertInboxBatch(ctx, tx, inboxes); err != nil {
+		return nil, err
+	}
+	if err := upsertConvBatch(ctx, tx, convs); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		if isDupErr(err) {
@@ -270,12 +287,50 @@ func (s *mysqlStore) targets(ctx context.Context, fromUID, cid, peer string) (ti
 	return "", conv.KindP2P, []string{fromUID, peer}, nil
 }
 
+type inboxRow struct {
+	uid, cid, msgID, fromUID string
+	syncSeq, convSeq         uint64
+	now                      int64
+}
+
+type convUpsert struct {
+	uid, cid, peer, title, kind, msgID, text string
+	convSeq                                  uint64
+	now                                      int64
+	unreadInc, mentionInc                    int
+}
+
+const sqlWriteBatch = 80
+
 func insertInbox(ctx context.Context, tx *sql.Tx, uid string, syncSeq uint64, cid, msgID string, convSeq uint64, fromUID string, now int64) error {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (uid, sync_seq, cid, msg_id, conv_seq, from_uid, created_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, uid, syncSeq, cid, msgID, convSeq, fromUID, now)
-	if err != nil {
-		return fmt.Errorf("insert inbox: %w", err)
+	return insertInboxBatch(ctx, tx, []inboxRow{{
+		uid: uid, syncSeq: syncSeq, cid: cid, msgID: msgID, convSeq: convSeq, fromUID: fromUID, now: now,
+	}})
+}
+
+func insertInboxBatch(ctx context.Context, tx *sql.Tx, rows []inboxRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	for i := 0; i < len(rows); i += sqlWriteBatch {
+		j := i + sqlWriteBatch
+		if j > len(rows) {
+			j = len(rows)
+		}
+		chunk := rows[i:j]
+		var sb strings.Builder
+		args := make([]any, 0, len(chunk)*7)
+		sb.WriteString(`INSERT INTO inbox (uid, sync_seq, cid, msg_id, conv_seq, from_uid, created_at_ms) VALUES `)
+		for k, row := range chunk {
+			if k > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(`(?,?,?,?,?,?,?)`)
+			args = append(args, row.uid, row.syncSeq, row.cid, row.msgID, row.convSeq, row.fromUID, row.now)
+		}
+		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
+			return fmt.Errorf("insert inbox: %w", err)
+		}
 	}
 	return nil
 }
@@ -285,21 +340,46 @@ func upsertConv(ctx context.Context, tx *sql.Tx, uid, cid, peer, title, kind, ms
 	if incoming {
 		unreadInc = 1
 	}
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO conversations (uid, cid, peer_uid, last_msg_id, last_conv_seq, last_text, unread, updated_at_ms, title, kind)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE
+	return upsertConvBatch(ctx, tx, []convUpsert{{
+		uid: uid, cid: cid, peer: peer, title: title, kind: kind, msgID: msgID,
+		convSeq: convSeq, text: text, now: now, unreadInc: unreadInc,
+	}})
+}
+
+func upsertConvBatch(ctx context.Context, tx *sql.Tx, rows []convUpsert) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	for i := 0; i < len(rows); i += sqlWriteBatch {
+		j := i + sqlWriteBatch
+		if j > len(rows) {
+			j = len(rows)
+		}
+		chunk := rows[i:j]
+		var sb strings.Builder
+		args := make([]any, 0, len(chunk)*12)
+		sb.WriteString(`INSERT INTO conversations (uid, cid, peer_uid, last_msg_id, last_conv_seq, last_text, unread, unread_mention, updated_at_ms, title, kind)
+VALUES `)
+		for k, row := range chunk {
+			if k > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(`(?,?,?,?,?,?,?,?,?,?,?)`)
+			args = append(args, row.uid, row.cid, row.peer, row.msgID, row.convSeq, row.text, row.unreadInc, row.mentionInc, row.now, row.title, row.kind)
+		}
+		sb.WriteString(` ON DUPLICATE KEY UPDATE
 			last_msg_id = VALUES(last_msg_id),
 			last_conv_seq = VALUES(last_conv_seq),
 			last_text = VALUES(last_text),
-			unread = unread + ?,
+			unread = unread + VALUES(unread),
+			unread_mention = unread_mention + VALUES(unread_mention),
 			updated_at_ms = VALUES(updated_at_ms),
 			title = IF(VALUES(title)='', title, VALUES(title)),
 			kind = IF(VALUES(kind)='', kind, VALUES(kind)),
-			hidden = 0`,
-		uid, cid, peer, msgID, convSeq, text, unreadInc, now, title, kind, unreadInc)
-	if err != nil {
-		return fmt.Errorf("upsert conversation: %w", err)
+			hidden = 0`)
+		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
+			return fmt.Errorf("upsert conversation: %w", err)
+		}
 	}
 	return nil
 }
