@@ -73,6 +73,7 @@ service IMCore {
   rpc GetPinnedMessage(GetGroupRequest) returns (PinnedMessage);
   rpc ReportMessage(ReportRequest) returns (HideConversationResponse);
   rpc GetSettings(ListFriendsRequest) returns (UserSettings);
+  rpc GetSettingsBatch(GetProfilesRequest) returns (SettingsBatchResponse);
   rpc SetSettings(UserSettings) returns (UserSettings);
   rpc ResetPassword(LoginRequest) returns (UserProfile);
   rpc DeleteAccount(GetProfileRequest) returns (HideConversationResponse);
@@ -631,4 +632,8 @@ message UserSettings {
   bool hide_typing = 11;
   bool hide_last_seen = 12;
   int32 burn_sec = 13;
+}
+
+message SettingsBatchResponse {
+  repeated UserSettings settings = 1;
 }

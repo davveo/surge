@@ -66,21 +66,45 @@ func (a *httpAPI) presence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw := strings.TrimSpace(r.URL.Query().Get("uids"))
-	uids := strings.FieldsFunc(raw, func(c rune) bool { return c == ',' || c == ' ' })
+	seen := map[string]struct{}{}
+	var uids []string
+	for _, uid := range strings.FieldsFunc(raw, func(c rune) bool { return c == ',' || c == ' ' }) {
+		uid = strings.TrimSpace(uid)
+		if uid == "" {
+			continue
+		}
+		if _, ok := seen[uid]; ok {
+			continue
+		}
+		seen[uid] = struct{}{}
+		uids = append(uids, uid)
+	}
+	hide := map[string]bool{}
+	need := make([]string, 0, len(uids))
+	for _, uid := range uids {
+		if uid != self {
+			need = append(need, uid)
+		}
+	}
+	if len(need) > 0 {
+		if resp, err := a.core.GetSettingsBatch(r.Context(), &imv1.GetProfilesRequest{Uids: need}); err == nil {
+			for _, st := range resp.GetSettings() {
+				if st.GetHideLastSeen() {
+					hide[st.GetUid()] = true
+				}
+			}
+		}
+	}
 	online := map[string]bool{}
 	for _, uid := range uids {
-		hide := false
-		if st, err := a.core.GetSettings(r.Context(), &imv1.ListFriendsRequest{Uid: uid}); err == nil && st.GetHideLastSeen() && uid != self {
-			hide = true
+		if hide[uid] {
+			online[uid] = false
+			continue
 		}
 		on := a.ws != nil && a.ws.hub != nil && a.ws.hub.isOnline(uid)
 		if !on && a.rdb != nil {
 			n, err := a.rdb.Exists(r.Context(), route.Key(uid)).Result()
 			on = err == nil && n > 0
-		}
-		if hide {
-			online[uid] = false
-			continue
 		}
 		online[uid] = on
 	}

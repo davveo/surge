@@ -948,6 +948,7 @@ body {
   background: var(--chat-bg, #f5f5f5);
   padding: 22px 20px 16px;
 }
+.msg-block { display: contents; }
 #app.wall-green { --chat-bg: #cfe8c7; }
 #app.wall-gray { --chat-bg: #ececec; }
 #app.wall-night { --chat-bg: #1d2b1f; }

@@ -119,6 +119,18 @@ func (s *server) GetSettings(ctx context.Context, req *imv1.ListFriendsRequest) 
 	return st, nil
 }
 
+func (s *server) GetSettingsBatch(ctx context.Context, req *imv1.GetProfilesRequest) (*imv1.SettingsBatchResponse, error) {
+	hide, err := s.store.HideLastSeenMap(ctx, req.GetUids())
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]*imv1.UserSettings, 0, len(req.GetUids()))
+	for _, uid := range uniqueUIDs(req.GetUids()) {
+		out = append(out, &imv1.UserSettings{Uid: uid, HideLastSeen: hide[uid]})
+	}
+	return &imv1.SettingsBatchResponse{Settings: out}, nil
+}
+
 func (s *server) SetSettings(ctx context.Context, req *imv1.UserSettings) (*imv1.UserSettings, error) {
 	st, err := s.store.SetSettings(ctx, req)
 	if err != nil {

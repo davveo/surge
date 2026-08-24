@@ -89,6 +89,7 @@ type Store interface {
 	AddFriend(ctx context.Context, uid, peerUID string) (already bool, err error)
 	ListFriends(ctx context.Context, uid string) ([]string, error)
 	AreFriends(ctx context.Context, uid, peerUID string) (bool, error)
+	AreFriendsMany(ctx context.Context, uid string, peers []string) (map[string]bool, error)
 	CreateGroup(ctx context.Context, ownerUID, name string, memberUIDs []string, mode string) (*groupInfo, error)
 	InviteGroup(ctx context.Context, operatorUID, cid string, memberUIDs []string) (*groupInfo, error)
 	KickGroup(ctx context.Context, operatorUID, cid, memberUID string) (*groupInfo, error)
@@ -157,6 +158,7 @@ type Store interface {
 	GetPinnedMessage(ctx context.Context, uid, cid string) (*imv1.PinnedMessage, error)
 	ReportMessage(ctx context.Context, uid, cid, msgID, reason string) error
 	GetSettings(ctx context.Context, uid string) (*imv1.UserSettings, error)
+	HideLastSeenMap(ctx context.Context, uids []string) (map[string]bool, error)
 	SetSettings(ctx context.Context, st *imv1.UserSettings) (*imv1.UserSettings, error)
 	ResetPassword(ctx context.Context, uid, newPassword string) error
 	DeleteAccount(ctx context.Context, uid string) error
@@ -604,6 +606,18 @@ func (s *memoryStore) AreFriends(_ context.Context, uid, peerUID string) (bool, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.hasFriend(uid, peerUID), nil
+}
+
+func (s *memoryStore) AreFriendsMany(_ context.Context, uid string, peers []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, peer := range uniqueUIDs(peers) {
+		if conv.IsFileHelper(peer) || conv.IsFileHelper(uid) || s.hasFriend(uid, peer) {
+			out[peer] = true
+		}
+	}
+	return out, nil
 }
 
 func (s *memoryStore) hasFriend(uid, peerUID string) bool {

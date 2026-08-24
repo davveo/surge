@@ -1782,6 +1782,273 @@
     return dayKeyOf(ms);
   }
 
+  function msgIdOf(m, i) {
+    return String(field(m, "msgId", "msg_id") || m.clientMsgId || ("tmp:" + i + ":" + createdAtMs(m)));
+  }
+
+  function msgSigOf(m, i, ctx) {
+    const id = msgIdOf(m, i);
+    const recalled = !!(m.recalled || (m.payload && (m.payload.type === "RECALL" || m.payload.type === 2)));
+    const reacts = (m.reactions || [])
+      .map((r) => [r.emoji || r.Emoji || "", r.count || r.Count || 0, r.mine || r.Mine ? 1 : 0].join(":"))
+      .join(",");
+    const seq = Number(field(m, "convSeq", "conv_seq") || 0);
+    const gRead = ctx.group && senderOf(m) === state.uid && seq ? groupReadCount(seq) : 0;
+    const read = !ctx.group && senderOf(m) === state.uid && seq && seq === ctx.lastMine && state.peerReadSeq >= seq ? 1 : 0;
+    const prevMs = i ? createdAtMs(state.messages[i - 1]) : 0;
+    return [
+      id,
+      m.status || "",
+      recalled ? 1 : 0,
+      m._burnLeft || 0,
+      reacts,
+      (m.payload && m.payload.text) || "",
+      seq,
+      ctx.splitAt === i ? 1 : 0,
+      read,
+      gRead,
+      state.highlightId === id ? 1 : 0,
+      ctx.selecting && state.selected[id] ? 1 : 0,
+      dayKeyOf(createdAtMs(m)),
+      dayKeyOf(prevMs),
+    ].join("|");
+  }
+
+  function bindMsgMedia(root) {
+    if (!root) return;
+    root.querySelectorAll("video.msg-video").forEach((v) => bindVideoPoster(v));
+    root.querySelectorAll(".voice-bar").forEach((bar) => bindVoiceBar(bar));
+  }
+
+  function makeMsgBlock(item) {
+    const el = document.createElement("div");
+    el.className = "msg-block";
+    el.dataset.mid = item.mid;
+    el.dataset.sig = item.sig;
+    el.innerHTML = item.html;
+    bindMsgMedia(el);
+    return el;
+  }
+
+  function sameIds(a, b) {
+    return a.length === b.length && a.every((id, i) => id === b[i]);
+  }
+
+  function patchMsgNode(el, item) {
+    if (!el || el.dataset.sig === item.sig) return;
+    el.dataset.mid = item.mid;
+    el.dataset.sig = item.sig;
+    el.innerHTML = item.html;
+    bindMsgMedia(el);
+  }
+
+  function applyMsgPatch(box, items, force) {
+    const existing = [...box.querySelectorAll(":scope > .msg-block")];
+    const oldIds = existing.map((el) => el.dataset.mid);
+    const newIds = items.map((x) => x.mid);
+    if (force || !existing.length || !items.length) {
+      const frag = document.createDocumentFragment();
+      items.forEach((item) => frag.appendChild(makeMsgBlock(item)));
+      box.replaceChildren(frag);
+      return;
+    }
+    if (sameIds(oldIds, newIds)) {
+      existing.forEach((el, i) => patchMsgNode(el, items[i]));
+      return;
+    }
+    if (newIds.length > oldIds.length && sameIds(oldIds, newIds.slice(0, oldIds.length))) {
+      existing.forEach((el, i) => patchMsgNode(el, items[i]));
+      const frag = document.createDocumentFragment();
+      for (let i = oldIds.length; i < items.length; i++) frag.appendChild(makeMsgBlock(items[i]));
+      box.appendChild(frag);
+      return;
+    }
+    if (newIds.length > oldIds.length && sameIds(oldIds, newIds.slice(newIds.length - oldIds.length))) {
+      const add = items.length - oldIds.length;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < add; i++) frag.appendChild(makeMsgBlock(items[i]));
+      box.insertBefore(frag, existing[0] || null);
+      const nodes = [...box.querySelectorAll(":scope > .msg-block")];
+      for (let i = add; i < items.length; i++) patchMsgNode(nodes[i], items[i]);
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    items.forEach((item) => frag.appendChild(makeMsgBlock(item)));
+    box.replaceChildren(frag);
+  }
+
+  function ensureMsgsDelegate(box) {
+    if (box._surgeDelegated) return;
+    box._surgeDelegated = true;
+    box.addEventListener("click", onMsgsClick);
+    box.addEventListener("dblclick", onMsgsDblClick);
+    box.addEventListener("contextmenu", onMsgsContext);
+    box.addEventListener("change", onMsgsChange);
+  }
+
+  function onMsgsClick(e) {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const img = t.closest("img.thumb");
+    if (img) {
+      e.stopPropagation();
+      openLightbox(img.dataset.full || img.src, "image");
+      return;
+    }
+    const vthumb = t.closest(".video-thumb");
+    if (vthumb) {
+      e.stopPropagation();
+      openLightbox(vthumb.dataset.full, "video");
+      return;
+    }
+    const who = t.closest(".msg-nick, .msg-face");
+    if (who) {
+      e.stopPropagation();
+      const uid = who.dataset.uid;
+      if (!uid || uid === state.uid || isAnonGroup()) return;
+      if (isGroup(state.activeCid)) openMemberCard(uid);
+      return;
+    }
+    const merge = t.closest(".merge-msg");
+    if (merge) {
+      e.stopPropagation();
+      const bubble = merge.closest(".bubble");
+      const id = bubble && bubble.dataset.id;
+      const m = state.messages.find((x) => field(x, "msgId", "msg_id") === id);
+      openMergeDetail(m);
+      return;
+    }
+    const poll = t.closest(".poll-opt");
+    if (poll) {
+      e.stopPropagation();
+      const i = Number(poll.dataset.i);
+      const m = state.messages.find((x) => field(x, "msgId", "msg_id") === poll.dataset.id);
+      const pollData = parseSpecial((m && m.payload && m.payload.text) || "", "poll");
+      const opt = pollData && pollData.opts && pollData.opts[i];
+      if (opt) sendPayload({ type: "TEXT", text: "投票：" + opt });
+      return;
+    }
+    const chain = t.closest(".chain-add");
+    if (chain) {
+      e.stopPropagation();
+      (async () => {
+        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === chain.dataset.id);
+        const data = parseSpecial((m && m.payload && m.payload.text) || "", "chain");
+        if (!data) return;
+        const line = await dlgPrompt("接龙内容", "", data.title || "接龙");
+        if (line == null || !String(line).trim()) return;
+        data.items = data.items || [];
+        data.items.push((nickOf(state.uid) || state.uid) + "：" + String(line).trim());
+        sendPayload({ type: "TEXT", text: "::surge:chain::" + JSON.stringify(data) });
+      })();
+      return;
+    }
+    const quote = t.closest(".quote-card");
+    if (quote) {
+      e.stopPropagation();
+      const id = quote.dataset.qid;
+      if (id) jumpToMessage(state.activeCid, id, 0, state.activePeer);
+      return;
+    }
+    const fail = t.closest(".fail-dot");
+    if (fail) {
+      e.stopPropagation();
+      retryOrDrop(fail.dataset.cid);
+      return;
+    }
+    const read = t.closest(".read-mark[data-seq]");
+    if (read) {
+      e.stopPropagation();
+      showReaders(Number(read.dataset.seq));
+      return;
+    }
+    const check = t.closest(".msg-check");
+    if (check) {
+      e.stopPropagation();
+      return;
+    }
+    const hoverBtn = t.closest(".msg-hover button, .msg-hover button");
+    if (hoverBtn) {
+      e.stopPropagation();
+      const wrap = hoverBtn.closest(".msg-hover, .msg-hover");
+      onHoverAction(hoverBtn.dataset.h, wrap && wrap.dataset.id, hoverBtn);
+      return;
+    }
+    const chip = t.closest(".react-chip");
+    if (chip) {
+      e.stopPropagation();
+      toggleReact(chip.dataset.id, chip.dataset.emoji);
+      return;
+    }
+    const card = t.closest(".card-msg");
+    if (card) {
+      e.stopPropagation();
+      openMemberCard(card.dataset.card);
+      return;
+    }
+    const stt = t.closest("[data-act=stt]");
+    if (stt) {
+      e.stopPropagation();
+      showVoiceText(stt.dataset.id);
+      return;
+    }
+    const reedit = t.closest(".reedit-btn, .reedit-btn");
+    if (reedit) {
+      e.stopPropagation();
+      const mid = reedit.dataset.mid;
+      const m = mid
+        ? state.messages.find((x, i) => msgIdOf(x, i) === mid)
+        : state.messages[Number(reedit.dataset.i)];
+      const text = (m && m._reeditText) || "";
+      if (!text) return;
+      $("draft").value = text;
+      fitDraft();
+      $("draft").focus();
+      return;
+    }
+    const fold = t.closest(".fold-toggle");
+    if (fold) {
+      e.stopPropagation();
+      const wrap = fold.closest(".long-msg");
+      if (!wrap) return;
+      const open = wrap.classList.contains("collapsed");
+      wrap.classList.toggle("collapsed", !open);
+      fold.textContent = open ? "收起" : "展开";
+      return;
+    }
+    const bubble = t.closest(".bubble");
+    if (!bubble) return;
+    if (t.closest("a,button,img,.voice-bar,.quote-card,.card-msg,.merge-msg,video,.video-thumb")) return;
+    if (!window.matchMedia || !window.matchMedia("(hover: none)").matches) return;
+    const row = bubble.closest(".msg-row");
+    if (!row) return;
+    document.querySelectorAll(".msg-row.hover-on").forEach((r) => {
+      if (r !== row) r.classList.remove("hover-on");
+    });
+    row.classList.toggle("hover-on");
+  }
+
+  function onMsgsDblClick(e) {
+    const bubble = e.target.closest && e.target.closest(".bubble");
+    if (!bubble) return;
+    quoteMsg(bubble.dataset.id);
+  }
+
+  function onMsgsContext(e) {
+    const bubble = e.target.closest && e.target.closest(".bubble");
+    if (!bubble) return;
+    e.preventDefault();
+    showMsgMenu(e.clientX, e.clientY, bubble.dataset.id, bubble.closest(".msg-row"));
+  }
+
+  function onMsgsChange(e) {
+    const el = e.target;
+    if (!(el instanceof Element) || !el.classList.contains("msg-check")) return;
+    if (el.checked) state.selected[el.dataset.id] = true;
+    else delete state.selected[el.dataset.id];
+    if ($("select-count")) $("select-count").textContent = "已选 " + Object.keys(state.selected).length;
+  }
+
   function renderMsgs(opts) {
     const box = $("msgs");
     const prevH = box.scrollHeight;
@@ -1796,8 +2063,12 @@
     const lastMine = lastMineSeq();
     const group = isGroup(state.activeCid);
     const splitAt = unreadSplitIndex();
-    box.innerHTML = state.messages
-      .map((m, i) => {
+    ensureMsgsDelegate(box);
+    const ctx = { lastMine, group, splitAt, selecting: !!state.selecting };
+    const items = state.messages.map((m, i) => {
+      const mid = msgIdOf(m, i);
+      const sig = msgSigOf(m, i, ctx);
+      const html = (() => {
         const mine = senderOf(m) === state.uid;
         const recalled = m.recalled || (m.payload && (m.payload.type === "RECALL" || m.payload.type === 2));
         const burned = recalled && ((m.payload && m.payload.text) === "已销毁");
@@ -1818,7 +2089,7 @@
                 ? "你撤回了一条消息"
                 : "对方撤回了一条消息"
             : maskGroupText((m.payload && m.payload.text) || "");
-          const reBtn = canRe ? `<button type="button" class="reedit-btn" data-i="${i}">重新编辑</button>` : "";
+          const reBtn = canRe ? `<button type="button" class="reedit-btn" data-mid="${escapeHtml(mid)}">重新编辑</button>` : "";
           return `${day}${split}<div class="msg-row system"><span class="sys-notice">${escapeHtml(sysText)}${reBtn}</span></div>`;
         }
         const st = m.status ? " " + m.status : "";
@@ -1873,152 +2144,13 @@
           ? `<div class="msg-hover" data-id="${escapeHtml(id)}">${hoverToolbarHTML()}</div>`
           : "";
         return `${day}${split}<div class="msg-row${mine ? " me" : " peer"}${group ? " grp" : ""}${reacts ? " has-react" : ""}${state.selecting ? " selecting" : ""}">${check}${mine ? "" : face}<div class="msg-col">${who}<div class="bubble-wrap"><div class="bubble${mine ? " me" : " peer"}${st}${recCls}${eph ? " burn" : ""}${hl}" data-id="${id}" data-seq="${seq}">${failDot}${quote}${recalled ? escapeHtml(body) : body}${burnHint}${read}${gRead}</div>${hover}</div>${reacts}</div>${mine ? face : ""}</div>`;
-      })
-      .join("");
-    box.querySelectorAll("img.thumb").forEach((img) => {
-      img.onclick = (e) => {
-        e.stopPropagation();
-        openLightbox(img.dataset.full || img.src, "image");
-      };
+      })();
+      return { mid, sig, html };
     });
-    box.querySelectorAll(".video-thumb").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        openLightbox(el.dataset.full, "video");
-      };
-    });
-    box.querySelectorAll(".msg-nick, .msg-face").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        const uid = el.dataset.uid;
-        if (!uid || uid === state.uid || isAnonGroup()) return;
-        if (isGroup(state.activeCid)) openMemberCard(uid);
-      };
-    });
-    box.querySelectorAll(".merge-msg").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        const bubble = el.closest(".bubble");
-        const id = bubble && bubble.dataset.id;
-        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === id);
-        openMergeDetail(m);
-      };
-    });
-    box.querySelectorAll(".poll-opt").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const i = Number(btn.dataset.i);
-        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === btn.dataset.id);
-        const poll = parseSpecial((m && m.payload && m.payload.text) || "", "poll");
-        const opt = poll && poll.opts && poll.opts[i];
-        if (opt) sendPayload({ type: "TEXT", text: "投票：" + opt });
-      };
-    });
-    box.querySelectorAll(".chain-add").forEach((btn) => {
-      btn.onclick = async (e) => {
-        e.stopPropagation();
-        const m = state.messages.find((x) => field(x, "msgId", "msg_id") === btn.dataset.id);
-        const chain = parseSpecial((m && m.payload && m.payload.text) || "", "chain");
-        if (!chain) return;
-        const line = await dlgPrompt("接龙内容", "", chain.title || "接龙");
-        if (line == null || !String(line).trim()) return;
-        chain.items = chain.items || [];
-        chain.items.push((nickOf(state.uid) || state.uid) + "：" + String(line).trim());
-        sendPayload({ type: "TEXT", text: "::surge:chain::" + JSON.stringify(chain) });
-      };
-    });
-    box.querySelectorAll("video.msg-video").forEach((v) => bindVideoPoster(v));
-    box.querySelectorAll(".quote-card").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        const id = el.dataset.qid;
-        if (id) jumpToMessage(state.activeCid, id, 0, state.activePeer);
-      };
-    });
-    box.querySelectorAll(".fail-dot").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        retryOrDrop(btn.dataset.cid);
-      };
-    });
-    box.querySelectorAll(".read-mark[data-seq]").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        showReaders(Number(el.dataset.seq));
-      };
-    });
-    box.querySelectorAll(".msg-check").forEach((el) => {
-      el.onclick = (e) => e.stopPropagation();
-      el.onchange = () => {
-        if (el.checked) state.selected[el.dataset.id] = true;
-        else delete state.selected[el.dataset.id];
-        if ($("select-count")) $("select-count").textContent = "已选 " + Object.keys(state.selected).length;
-      };
-    });
-    box.querySelectorAll(".bubble:not(.system)").forEach((el) => {
-      el.ondblclick = () => quoteMsg(el.dataset.id);
-      el.oncontextmenu = (e) => {
-        e.preventDefault();
-        showMsgMenu(e.clientX, e.clientY, el.dataset.id, el.closest(".msg-row"));
-      };
-      el.onclick = (e) => {
-        if (e.target.closest("a,button,img,.voice-bar,.quote-card,.card-msg,.merge-msg,video,.video-thumb")) return;
-        if (!window.matchMedia || !window.matchMedia("(hover: none)").matches) return;
-        const row = el.closest(".msg-row");
-        if (!row) return;
-        document.querySelectorAll(".msg-row.hover-on").forEach((r) => {
-          if (r !== row) r.classList.remove("hover-on");
-        });
-        row.classList.toggle("hover-on");
-      };
-    });
-    box.querySelectorAll(".msg-hover button").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const id = btn.closest(".msg-hover").dataset.id;
-        onHoverAction(btn.dataset.h, id, btn);
-      };
-    });
-    box.querySelectorAll(".react-chip").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        toggleReact(el.dataset.id, el.dataset.emoji);
-      };
-    });
-    box.querySelectorAll(".card-msg").forEach((el) => {
-      el.onclick = (e) => {
-        e.stopPropagation();
-        openMemberCard(el.dataset.card);
-      };
-    });
-    box.querySelectorAll("[data-act=stt]").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        showVoiceText(btn.dataset.id);
-      };
-    });
-    box.querySelectorAll(".reedit-btn").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const m = state.messages[Number(btn.dataset.i)];
-        const text = (m && m._reeditText) || "";
-        if (!text) return;
-        $("draft").value = text;
-        fitDraft();
-        $("draft").focus();
-      };
-    });
-    box.querySelectorAll(".fold-toggle").forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const wrap = btn.closest(".long-msg");
-        if (!wrap) return;
-        const open = wrap.classList.contains("collapsed");
-        wrap.classList.toggle("collapsed", !open);
-        btn.textContent = open ? "收起" : "展开";
-      };
-    });
-    box.querySelectorAll(".voice-bar").forEach((bar) => bindVoiceBar(bar));
+    const force = box._msgCid !== state.activeCid || box._msgSelecting !== ctx.selecting;
+    box._msgCid = state.activeCid;
+    box._msgSelecting = ctx.selecting;
+    applyMsgPatch(box, items, force);
     if (stick && state.jumpUnread) {
       const el = $("unread-split");
       if (el) el.scrollIntoView({ block: "center" });

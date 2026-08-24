@@ -69,17 +69,8 @@ func (s *mysqlStore) CreateGroup(ctx context.Context, ownerUID, name string, mem
 	if len(members) > maxGroupMembers {
 		return nil, errTooLarge
 	}
-	for _, uid := range members {
-		if uid == ownerUID {
-			continue
-		}
-		ok, err := s.AreFriends(ctx, ownerUID, uid)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("%w: add friend first", errNotFriends)
-		}
+	if err := s.requireFriends(ctx, ownerUID, members); err != nil {
+		return nil, err
 	}
 	cid := conv.GroupPrefix() + uuid.NewString()
 	now := time.Now().UnixMilli()
@@ -147,17 +138,17 @@ func (s *mysqlStore) InviteGroup(ctx context.Context, operatorUID, cid string, m
 	for _, m := range g.Members {
 		existing[m.UID] = struct{}{}
 	}
+	var candidates []string
 	for _, uid := range uniqueUIDs(memberUIDs) {
 		if _, ok := existing[uid]; ok {
 			continue
 		}
-		ok, err := s.AreFriends(ctx, operatorUID, uid)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, fmt.Errorf("%w: add friend first", errNotFriends)
-		}
+		candidates = append(candidates, uid)
+	}
+	if err := s.requireFriends(ctx, operatorUID, candidates); err != nil {
+		return nil, err
+	}
+	for _, uid := range candidates {
 		if pending {
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO group_join_requests (cid, uid, from_uid, created_at_ms) VALUES (?, ?, ?, ?)

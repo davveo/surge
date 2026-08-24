@@ -388,6 +388,34 @@ func (s *mysqlStore) GetSettings(ctx context.Context, uid string) (*imv1.UserSet
 	return fillSettingsDefaults(st), nil
 }
 
+func (s *mysqlStore) HideLastSeenMap(ctx context.Context, uids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	uids = uniqueUIDs(uids)
+	if len(uids) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(uids))
+	for _, uid := range uids {
+		args = append(args, uid)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT uid, hide_last_seen FROM user_settings WHERE uid IN (`+inPlaceholders(len(uids))+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var uid string
+		var hide int
+		if err := rows.Scan(&uid, &hide); err != nil {
+			return nil, err
+		}
+		if hide != 0 {
+			out[uid] = true
+		}
+	}
+	return out, rows.Err()
+}
+
 func (s *mysqlStore) SetSettings(ctx context.Context, st *imv1.UserSettings) (*imv1.UserSettings, error) {
 	if st == nil || strings.TrimSpace(st.Uid) == "" {
 		return nil, fmt.Errorf("%w: uid required", errInvalid)

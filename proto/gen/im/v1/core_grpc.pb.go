@@ -84,6 +84,7 @@ const (
 	IMCore_GetPinnedMessage_FullMethodName   = "/surge.im.v1.IMCore/GetPinnedMessage"
 	IMCore_ReportMessage_FullMethodName      = "/surge.im.v1.IMCore/ReportMessage"
 	IMCore_GetSettings_FullMethodName        = "/surge.im.v1.IMCore/GetSettings"
+	IMCore_GetSettingsBatch_FullMethodName   = "/surge.im.v1.IMCore/GetSettingsBatch"
 	IMCore_SetSettings_FullMethodName        = "/surge.im.v1.IMCore/SetSettings"
 	IMCore_ResetPassword_FullMethodName      = "/surge.im.v1.IMCore/ResetPassword"
 	IMCore_DeleteAccount_FullMethodName      = "/surge.im.v1.IMCore/DeleteAccount"
@@ -159,6 +160,7 @@ type IMCoreClient interface {
 	GetPinnedMessage(ctx context.Context, in *GetGroupRequest, opts ...grpc.CallOption) (*PinnedMessage, error)
 	ReportMessage(ctx context.Context, in *ReportRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
 	GetSettings(ctx context.Context, in *ListFriendsRequest, opts ...grpc.CallOption) (*UserSettings, error)
+	GetSettingsBatch(ctx context.Context, in *GetProfilesRequest, opts ...grpc.CallOption) (*SettingsBatchResponse, error)
 	SetSettings(ctx context.Context, in *UserSettings, opts ...grpc.CallOption) (*UserSettings, error)
 	ResetPassword(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*UserProfile, error)
 	DeleteAccount(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*HideConversationResponse, error)
@@ -758,6 +760,15 @@ func (c *iMCoreClient) GetSettings(ctx context.Context, in *ListFriendsRequest, 
 	return out, nil
 }
 
+func (c *iMCoreClient) GetSettingsBatch(ctx context.Context, in *GetProfilesRequest, opts ...grpc.CallOption) (*SettingsBatchResponse, error) {
+	out := new(SettingsBatchResponse)
+	err := c.cc.Invoke(ctx, IMCore_GetSettingsBatch_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *iMCoreClient) SetSettings(ctx context.Context, in *UserSettings, opts ...grpc.CallOption) (*UserSettings, error) {
 	out := new(UserSettings)
 	err := c.cc.Invoke(ctx, IMCore_SetSettings_FullMethodName, in, out, opts...)
@@ -863,6 +874,7 @@ type IMCoreServer interface {
 	GetPinnedMessage(context.Context, *GetGroupRequest) (*PinnedMessage, error)
 	ReportMessage(context.Context, *ReportRequest) (*HideConversationResponse, error)
 	GetSettings(context.Context, *ListFriendsRequest) (*UserSettings, error)
+	GetSettingsBatch(context.Context, *GetProfilesRequest) (*SettingsBatchResponse, error)
 	SetSettings(context.Context, *UserSettings) (*UserSettings, error)
 	ResetPassword(context.Context, *LoginRequest) (*UserProfile, error)
 	DeleteAccount(context.Context, *GetProfileRequest) (*HideConversationResponse, error)
@@ -1068,6 +1080,9 @@ func (UnimplementedIMCoreServer) ReportMessage(context.Context, *ReportRequest) 
 }
 func (UnimplementedIMCoreServer) GetSettings(context.Context, *ListFriendsRequest) (*UserSettings, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSettings not implemented")
+}
+func (UnimplementedIMCoreServer) GetSettingsBatch(context.Context, *GetProfilesRequest) (*SettingsBatchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSettingsBatch not implemented")
 }
 func (UnimplementedIMCoreServer) SetSettings(context.Context, *UserSettings) (*UserSettings, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetSettings not implemented")
@@ -2264,6 +2279,24 @@ func _IMCore_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IMCore_GetSettingsBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IMCoreServer).GetSettingsBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IMCore_GetSettingsBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IMCoreServer).GetSettingsBatch(ctx, req.(*GetProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IMCore_SetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UserSettings)
 	if err := dec(in); err != nil {
@@ -2602,6 +2635,10 @@ var IMCore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSettings",
 			Handler:    _IMCore_GetSettings_Handler,
+		},
+		{
+			MethodName: "GetSettingsBatch",
+			Handler:    _IMCore_GetSettingsBatch_Handler,
 		},
 		{
 			MethodName: "SetSettings",

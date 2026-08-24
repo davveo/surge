@@ -114,11 +114,36 @@ func (h *Hub) push(gp *imv1.GatewayPush) {
 	}
 }
 
+func envelopeImportant(env *imv1.Envelope) bool {
+	if env == nil {
+		return false
+	}
+	return env.GetPush() != nil || env.GetRecalled() != nil || env.GetAck() != nil || env.GetSyncResp() != nil || env.GetAuthOk() != nil || env.GetError() != nil
+}
+
 func (c *Conn) enqueue(env *imv1.Envelope) {
+	if c == nil || env == nil {
+		return
+	}
+	defer func() { _ = recover() }()
 	select {
 	case c.send <- env:
+		return
 	default:
+	}
+	if !envelopeImportant(env) {
 		log.Printf("conn %s send queue full, drop %T", c.id, env.Body)
+		return
+	}
+	timer := time.NewTimer(sendQueueWait)
+	defer timer.Stop()
+	select {
+	case c.send <- env:
+	case <-timer.C:
+		log.Printf("conn %s send queue stalled, closing", c.id)
+		if c.ws != nil {
+			_ = c.ws.Close()
+		}
 	}
 }
 
@@ -192,12 +217,16 @@ func (h *Hub) clearRoute(ctx context.Context, c *Conn) {
 	_ = h.rdb.Set(ctx, key, b, route.TTL).Err()
 }
 
+const sendQueueSize = 256
+
+var sendQueueWait = 400 * time.Millisecond
+
 func newConn(ws *websocket.Conn, hub *Hub) *Conn {
 	return &Conn{
 		id:     uuid.NewString(),
 		binary: true,
 		ws:     ws,
-		send:   make(chan *imv1.Envelope, 64),
+		send:   make(chan *imv1.Envelope, sendQueueSize),
 		hub:    hub,
 	}
 }

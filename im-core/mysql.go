@@ -613,6 +613,71 @@ func (s *mysqlStore) AreFriends(ctx context.Context, uid, peerUID string) (bool,
 	return true, nil
 }
 
+func inPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimRight(strings.Repeat("?,", n), ",")
+}
+
+func (s *mysqlStore) AreFriendsMany(ctx context.Context, uid string, peers []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	var need []string
+	for _, peer := range uniqueUIDs(peers) {
+		if conv.IsFileHelper(peer) || conv.IsFileHelper(uid) {
+			out[peer] = true
+			continue
+		}
+		if peer == uid {
+			continue
+		}
+		need = append(need, peer)
+	}
+	if len(need) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, 1+len(need))
+	args = append(args, uid)
+	for _, peer := range need {
+		args = append(args, peer)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT peer_uid FROM friends WHERE uid = ? AND peer_uid IN (`+inPlaceholders(len(need))+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var peer string
+		if err := rows.Scan(&peer); err != nil {
+			return nil, err
+		}
+		out[peer] = true
+	}
+	return out, rows.Err()
+}
+
+func (s *mysqlStore) requireFriends(ctx context.Context, uid string, peers []string) error {
+	var check []string
+	for _, peer := range uniqueUIDs(peers) {
+		if peer != uid {
+			check = append(check, peer)
+		}
+	}
+	if len(check) == 0 {
+		return nil
+	}
+	ok, err := s.AreFriendsMany(ctx, uid, check)
+	if err != nil {
+		return err
+	}
+	for _, peer := range check {
+		if !ok[peer] {
+			return fmt.Errorf("%w: add friend first", errNotFriends)
+		}
+	}
+	return nil
+}
+
 func isDupErr(err error) bool {
 	if err == nil {
 		return false

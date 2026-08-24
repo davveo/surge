@@ -5743,6 +5743,53 @@ func (x *UserSettings) GetBurnSec() int32 {
 	return 0
 }
 
+type SettingsBatchResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Settings []*UserSettings `protobuf:"bytes,1,rep,name=settings,proto3" json:"settings,omitempty"`
+}
+
+func (x *SettingsBatchResponse) Reset() {
+	*x = SettingsBatchResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_im_v1_core_proto_msgTypes[87]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SettingsBatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettingsBatchResponse) ProtoMessage() {}
+
+func (x *SettingsBatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_im_v1_core_proto_msgTypes[87]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettingsBatchResponse.ProtoReflect.Descriptor instead.
+func (*SettingsBatchResponse) Descriptor() ([]byte, []int) {
+	return file_proto_im_v1_core_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *SettingsBatchResponse) GetSettings() []*UserSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 var File_proto_im_v1_core_proto protoreflect.FileDescriptor
 
 var file_proto_im_v1_core_proto_rawDesc = []byte{
@@ -6366,8 +6413,13 @@ var file_proto_im_v1_core_proto_rawDesc = []byte{
 	0x0a, 0x0e, 0x68, 0x69, 0x64, 0x65, 0x5f, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x73, 0x65, 0x65, 0x6e,
 	0x18, 0x0c, 0x20, 0x01, 0x28, 0x08, 0x52, 0x0c, 0x68, 0x69, 0x64, 0x65, 0x4c, 0x61, 0x73, 0x74,
 	0x53, 0x65, 0x65, 0x6e, 0x12, 0x19, 0x0a, 0x08, 0x62, 0x75, 0x72, 0x6e, 0x5f, 0x73, 0x65, 0x63,
-	0x18, 0x0d, 0x20, 0x01, 0x28, 0x05, 0x52, 0x07, 0x62, 0x75, 0x72, 0x6e, 0x53, 0x65, 0x63, 0x32,
-	0xb2, 0x2a, 0x0a, 0x06, 0x49, 0x4d, 0x43, 0x6f, 0x72, 0x65, 0x12, 0x49, 0x0a, 0x04, 0x53, 0x65,
+	0x18, 0x0d, 0x20, 0x01, 0x28, 0x05, 0x52, 0x07, 0x62, 0x75, 0x72, 0x6e, 0x53, 0x65, 0x63, 0x22,
+	0x4e, 0x0a, 0x15, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x42, 0x61, 0x74, 0x63, 0x68,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x35, 0x0a, 0x08, 0x73, 0x65, 0x74, 0x74,
+	0x69, 0x6e, 0x67, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x73, 0x75, 0x72,
+	0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73, 0x65, 0x72, 0x53, 0x65, 0x74,
+	0x74, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x08, 0x73, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x32,
+	0x8b, 0x2b, 0x0a, 0x06, 0x49, 0x4d, 0x43, 0x6f, 0x72, 0x65, 0x12, 0x49, 0x0a, 0x04, 0x53, 0x65,
 	0x6e, 0x64, 0x12, 0x1f, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31,
 	0x2e, 0x53, 0x65, 0x6e, 0x64, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x52, 0x65, 0x71, 0x75,
 	0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76,
@@ -6686,30 +6738,36 @@ var file_proto_im_v1_core_proto_rawDesc = []byte{
 	0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x4c, 0x69, 0x73, 0x74, 0x46, 0x72, 0x69, 0x65,
 	0x6e, 0x64, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x19, 0x2e, 0x73, 0x75, 0x72,
 	0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73, 0x65, 0x72, 0x53, 0x65, 0x74,
-	0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x43, 0x0a, 0x0b, 0x53, 0x65, 0x74, 0x53, 0x65, 0x74, 0x74,
-	0x69, 0x6e, 0x67, 0x73, 0x12, 0x19, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e,
-	0x76, 0x31, 0x2e, 0x55, 0x73, 0x65, 0x72, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x1a,
-	0x19, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73,
-	0x65, 0x72, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x44, 0x0a, 0x0d, 0x52, 0x65,
-	0x73, 0x65, 0x74, 0x50, 0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x12, 0x19, 0x2e, 0x73, 0x75,
-	0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x4c, 0x6f, 0x67, 0x69, 0x6e, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69,
-	0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73, 0x65, 0x72, 0x50, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65,
-	0x12, 0x56, 0x0a, 0x0d, 0x44, 0x65, 0x6c, 0x65, 0x74, 0x65, 0x41, 0x63, 0x63, 0x6f, 0x75, 0x6e,
-	0x74, 0x12, 0x1e, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e,
-	0x47, 0x65, 0x74, 0x50, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x1a, 0x25, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e,
-	0x48, 0x69, 0x64, 0x65, 0x43, 0x6f, 0x6e, 0x76, 0x65, 0x72, 0x73, 0x61, 0x74, 0x69, 0x6f, 0x6e,
-	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x5a, 0x0a, 0x11, 0x52, 0x65, 0x76, 0x6f,
-	0x6b, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x49, 0x6e, 0x76, 0x69, 0x74, 0x65, 0x12, 0x1e, 0x2e,
-	0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x4a, 0x6f, 0x69, 0x6e,
-	0x49, 0x6e, 0x76, 0x69, 0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x25, 0x2e,
-	0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x69, 0x64, 0x65,
-	0x43, 0x6f, 0x6e, 0x76, 0x65, 0x72, 0x73, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x42, 0x2e, 0x5a, 0x2c, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x64, 0x61, 0x76, 0x76, 0x65, 0x6f, 0x2f, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2f,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x65, 0x6e, 0x2f, 0x69, 0x6d, 0x2f, 0x76, 0x31, 0x3b,
-	0x69, 0x6d, 0x76, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x57, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x53, 0x65, 0x74, 0x74,
+	0x69, 0x6e, 0x67, 0x73, 0x42, 0x61, 0x74, 0x63, 0x68, 0x12, 0x1f, 0x2e, 0x73, 0x75, 0x72, 0x67,
+	0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50, 0x72, 0x6f, 0x66, 0x69,
+	0x6c, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x22, 0x2e, 0x73, 0x75, 0x72,
+	0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67,
+	0x73, 0x42, 0x61, 0x74, 0x63, 0x68, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x43,
+	0x0a, 0x0b, 0x53, 0x65, 0x74, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x19, 0x2e,
+	0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73, 0x65, 0x72,
+	0x53, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x73, 0x1a, 0x19, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65,
+	0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73, 0x65, 0x72, 0x53, 0x65, 0x74, 0x74, 0x69,
+	0x6e, 0x67, 0x73, 0x12, 0x44, 0x0a, 0x0d, 0x52, 0x65, 0x73, 0x65, 0x74, 0x50, 0x61, 0x73, 0x73,
+	0x77, 0x6f, 0x72, 0x64, 0x12, 0x19, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e,
+	0x76, 0x31, 0x2e, 0x4c, 0x6f, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x18, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x73,
+	0x65, 0x72, 0x50, 0x72, 0x6f, 0x66, 0x69, 0x6c, 0x65, 0x12, 0x56, 0x0a, 0x0d, 0x44, 0x65, 0x6c,
+	0x65, 0x74, 0x65, 0x41, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x1e, 0x2e, 0x73, 0x75, 0x72,
+	0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x74, 0x50, 0x72, 0x6f, 0x66,
+	0x69, 0x6c, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x25, 0x2e, 0x73, 0x75, 0x72,
+	0x67, 0x65, 0x2e, 0x69, 0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x69, 0x64, 0x65, 0x43, 0x6f, 0x6e,
+	0x76, 0x65, 0x72, 0x73, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x12, 0x5a, 0x0a, 0x11, 0x52, 0x65, 0x76, 0x6f, 0x6b, 0x65, 0x47, 0x72, 0x6f, 0x75, 0x70,
+	0x49, 0x6e, 0x76, 0x69, 0x74, 0x65, 0x12, 0x1e, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69,
+	0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x4a, 0x6f, 0x69, 0x6e, 0x49, 0x6e, 0x76, 0x69, 0x74, 0x65, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x25, 0x2e, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2e, 0x69,
+	0x6d, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x69, 0x64, 0x65, 0x43, 0x6f, 0x6e, 0x76, 0x65, 0x72, 0x73,
+	0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x2e, 0x5a,
+	0x2c, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x64, 0x61, 0x76, 0x76,
+	0x65, 0x6f, 0x2f, 0x73, 0x75, 0x72, 0x67, 0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67,
+	0x65, 0x6e, 0x2f, 0x69, 0x6d, 0x2f, 0x76, 0x31, 0x3b, 0x69, 0x6d, 0x76, 0x31, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -6724,7 +6782,7 @@ func file_proto_im_v1_core_proto_rawDescGZIP() []byte {
 	return file_proto_im_v1_core_proto_rawDescData
 }
 
-var file_proto_im_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 87)
+var file_proto_im_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 88)
 var file_proto_im_v1_core_proto_goTypes = []interface{}{
 	(*WatermarkRequest)(nil),           // 0: surge.im.v1.WatermarkRequest
 	(*WatermarkResponse)(nil),          // 1: surge.im.v1.WatermarkResponse
@@ -6813,188 +6871,192 @@ var file_proto_im_v1_core_proto_goTypes = []interface{}{
 	(*PinnedMessage)(nil),              // 84: surge.im.v1.PinnedMessage
 	(*ReportRequest)(nil),              // 85: surge.im.v1.ReportRequest
 	(*UserSettings)(nil),               // 86: surge.im.v1.UserSettings
-	(*Payload)(nil),                    // 87: surge.im.v1.Payload
-	(*Ack)(nil),                        // 88: surge.im.v1.Ack
-	(*Push)(nil),                       // 89: surge.im.v1.Push
-	(*SyncResponse)(nil),               // 90: surge.im.v1.SyncResponse
-	(*Typing)(nil),                     // 91: surge.im.v1.Typing
-	(*RecallNotify)(nil),               // 92: surge.im.v1.RecallNotify
-	(*ReadReceipt)(nil),                // 93: surge.im.v1.ReadReceipt
+	(*SettingsBatchResponse)(nil),      // 87: surge.im.v1.SettingsBatchResponse
+	(*Payload)(nil),                    // 88: surge.im.v1.Payload
+	(*Ack)(nil),                        // 89: surge.im.v1.Ack
+	(*Push)(nil),                       // 90: surge.im.v1.Push
+	(*SyncResponse)(nil),               // 91: surge.im.v1.SyncResponse
+	(*Typing)(nil),                     // 92: surge.im.v1.Typing
+	(*RecallNotify)(nil),               // 93: surge.im.v1.RecallNotify
+	(*ReadReceipt)(nil),                // 94: surge.im.v1.ReadReceipt
 }
 var file_proto_im_v1_core_proto_depIdxs = []int32{
-	87, // 0: surge.im.v1.SendMessageRequest.payload:type_name -> surge.im.v1.Payload
-	88, // 1: surge.im.v1.SendMessageResponse.ack:type_name -> surge.im.v1.Ack
-	89, // 2: surge.im.v1.SendMessageResponse.peer_push:type_name -> surge.im.v1.Push
-	3,  // 3: surge.im.v1.SendMessageResponse.peer_route:type_name -> surge.im.v1.RecipientHint
-	3,  // 4: surge.im.v1.SendMessageResponse.fanout_routes:type_name -> surge.im.v1.RecipientHint
-	90, // 5: surge.im.v1.SyncInboxResponse.sync:type_name -> surge.im.v1.SyncResponse
-	27, // 6: surge.im.v1.Conversation.peer_profile:type_name -> surge.im.v1.UserProfile
-	8,  // 7: surge.im.v1.ListConversationsResponse.conversations:type_name -> surge.im.v1.Conversation
-	87, // 8: surge.im.v1.TimelineMessage.payload:type_name -> surge.im.v1.Payload
-	73, // 9: surge.im.v1.TimelineMessage.reactions:type_name -> surge.im.v1.ReactionBucket
-	11, // 10: surge.im.v1.GetTimelineResponse.messages:type_name -> surge.im.v1.TimelineMessage
-	89, // 11: surge.im.v1.GatewayPush.push:type_name -> surge.im.v1.Push
-	91, // 12: surge.im.v1.GatewayPush.typing:type_name -> surge.im.v1.Typing
-	92, // 13: surge.im.v1.GatewayPush.recalled:type_name -> surge.im.v1.RecallNotify
-	93, // 14: surge.im.v1.GatewayPush.read:type_name -> surge.im.v1.ReadReceipt
-	16, // 15: surge.im.v1.ListFriendsResponse.friends:type_name -> surge.im.v1.Friend
-	27, // 16: surge.im.v1.SearchUsersResponse.users:type_name -> surge.im.v1.UserProfile
-	33, // 17: surge.im.v1.GroupResponse.members:type_name -> surge.im.v1.GroupMember
-	27, // 18: surge.im.v1.GetProfilesResponse.users:type_name -> surge.im.v1.UserProfile
-	46, // 19: surge.im.v1.ListFriendRequestsResponse.incoming:type_name -> surge.im.v1.FriendRequestState
-	46, // 20: surge.im.v1.ListFriendRequestsResponse.outgoing:type_name -> surge.im.v1.FriendRequestState
-	58, // 21: surge.im.v1.GetReadStateResponse.cursors:type_name -> surge.im.v1.ReadCursor
-	11, // 22: surge.im.v1.SearchHit.message:type_name -> surge.im.v1.TimelineMessage
-	60, // 23: surge.im.v1.SearchMessagesResponse.hits:type_name -> surge.im.v1.SearchHit
-	63, // 24: surge.im.v1.ListFriendTagsResponse.tags:type_name -> surge.im.v1.TagGroup
-	67, // 25: surge.im.v1.ListStickersResponse.stickers:type_name -> surge.im.v1.Sticker
-	70, // 26: surge.im.v1.ListJoinRequestsResponse.requests:type_name -> surge.im.v1.JoinRequest
-	73, // 27: surge.im.v1.ReactionList.reactions:type_name -> surge.im.v1.ReactionBucket
-	87, // 28: surge.im.v1.Favorite.payload:type_name -> surge.im.v1.Payload
-	77, // 29: surge.im.v1.ListFavoritesResponse.favorites:type_name -> surge.im.v1.Favorite
-	2,  // 30: surge.im.v1.IMCore.Send:input_type -> surge.im.v1.SendMessageRequest
-	5,  // 31: surge.im.v1.IMCore.Sync:input_type -> surge.im.v1.SyncInboxRequest
-	0,  // 32: surge.im.v1.IMCore.Watermark:input_type -> surge.im.v1.WatermarkRequest
-	7,  // 33: surge.im.v1.IMCore.ListConversations:input_type -> surge.im.v1.ListConversationsRequest
-	10, // 34: surge.im.v1.IMCore.GetTimeline:input_type -> surge.im.v1.GetTimelineRequest
-	14, // 35: surge.im.v1.IMCore.AddFriend:input_type -> surge.im.v1.AddFriendRequest
-	17, // 36: surge.im.v1.IMCore.ListFriends:input_type -> surge.im.v1.ListFriendsRequest
-	19, // 37: surge.im.v1.IMCore.LookupUser:input_type -> surge.im.v1.LookupUserRequest
-	21, // 38: surge.im.v1.IMCore.SearchUsers:input_type -> surge.im.v1.SearchUsersRequest
-	23, // 39: surge.im.v1.IMCore.Register:input_type -> surge.im.v1.RegisterRequest
-	24, // 40: surge.im.v1.IMCore.VerifyPassword:input_type -> surge.im.v1.LoginRequest
-	25, // 41: surge.im.v1.IMCore.GetProfile:input_type -> surge.im.v1.GetProfileRequest
-	26, // 42: surge.im.v1.IMCore.UpdateProfile:input_type -> surge.im.v1.UpdateProfileRequest
-	34, // 43: surge.im.v1.IMCore.CreateGroup:input_type -> surge.im.v1.CreateGroupRequest
-	36, // 44: surge.im.v1.IMCore.InviteGroup:input_type -> surge.im.v1.InviteGroupRequest
-	37, // 45: surge.im.v1.IMCore.KickGroup:input_type -> surge.im.v1.KickGroupRequest
-	38, // 46: surge.im.v1.IMCore.GetGroup:input_type -> surge.im.v1.GetGroupRequest
-	28, // 47: surge.im.v1.IMCore.UpdateGroup:input_type -> surge.im.v1.UpdateGroupRequest
-	40, // 48: surge.im.v1.IMCore.Recall:input_type -> surge.im.v1.RecallMessageRequest
-	41, // 49: surge.im.v1.IMCore.MarkRead:input_type -> surge.im.v1.MarkReadRequest
-	91, // 50: surge.im.v1.IMCore.FanoutTyping:input_type -> surge.im.v1.Typing
-	29, // 51: surge.im.v1.IMCore.SetMute:input_type -> surge.im.v1.SetMuteRequest
-	31, // 52: surge.im.v1.IMCore.ListMutes:input_type -> surge.im.v1.ListMutesRequest
-	42, // 53: surge.im.v1.IMCore.GetProfiles:input_type -> surge.im.v1.GetProfilesRequest
-	44, // 54: surge.im.v1.IMCore.RemoveFriend:input_type -> surge.im.v1.RemoveFriendRequest
-	14, // 55: surge.im.v1.IMCore.RequestFriend:input_type -> surge.im.v1.AddFriendRequest
-	14, // 56: surge.im.v1.IMCore.AcceptFriend:input_type -> surge.im.v1.AddFriendRequest
-	14, // 57: surge.im.v1.IMCore.DeclineFriend:input_type -> surge.im.v1.AddFriendRequest
-	17, // 58: surge.im.v1.IMCore.ListFriendRequests:input_type -> surge.im.v1.ListFriendsRequest
-	48, // 59: surge.im.v1.IMCore.BlockUser:input_type -> surge.im.v1.BlockUserRequest
-	48, // 60: surge.im.v1.IMCore.UnblockUser:input_type -> surge.im.v1.BlockUserRequest
-	17, // 61: surge.im.v1.IMCore.ListBlocks:input_type -> surge.im.v1.ListFriendsRequest
-	51, // 62: surge.im.v1.IMCore.SetRemark:input_type -> surge.im.v1.SetRemarkRequest
-	52, // 63: surge.im.v1.IMCore.LeaveGroup:input_type -> surge.im.v1.LeaveGroupRequest
-	52, // 64: surge.im.v1.IMCore.DissolveGroup:input_type -> surge.im.v1.LeaveGroupRequest
-	53, // 65: surge.im.v1.IMCore.TransferOwner:input_type -> surge.im.v1.TransferOwnerRequest
-	54, // 66: surge.im.v1.IMCore.HideConversation:input_type -> surge.im.v1.HideConversationRequest
-	29, // 67: surge.im.v1.IMCore.SetPin:input_type -> surge.im.v1.SetMuteRequest
-	56, // 68: surge.im.v1.IMCore.GetReadState:input_type -> surge.im.v1.GetReadStateRequest
-	59, // 69: surge.im.v1.IMCore.SearchMessages:input_type -> surge.im.v1.SearchMessagesRequest
-	29, // 70: surge.im.v1.IMCore.SetGroupMuteAll:input_type -> surge.im.v1.SetMuteRequest
-	62, // 71: surge.im.v1.IMCore.SetFriendTags:input_type -> surge.im.v1.SetFriendTagsRequest
-	17, // 72: surge.im.v1.IMCore.ListFriendTags:input_type -> surge.im.v1.ListFriendsRequest
-	65, // 73: surge.im.v1.IMCore.SetPublicKey:input_type -> surge.im.v1.SetPublicKeyRequest
-	42, // 74: surge.im.v1.IMCore.GetPublicKeys:input_type -> surge.im.v1.GetProfilesRequest
-	40, // 75: surge.im.v1.IMCore.ConsumeEphemeral:input_type -> surge.im.v1.RecallMessageRequest
-	66, // 76: surge.im.v1.IMCore.AddSticker:input_type -> surge.im.v1.AddStickerRequest
-	17, // 77: surge.im.v1.IMCore.ListStickers:input_type -> surge.im.v1.ListFriendsRequest
-	40, // 78: surge.im.v1.IMCore.DeleteMessage:input_type -> surge.im.v1.RecallMessageRequest
-	54, // 79: surge.im.v1.IMCore.ClearConversation:input_type -> surge.im.v1.HideConversationRequest
-	69, // 80: surge.im.v1.IMCore.SetMember:input_type -> surge.im.v1.SetMemberRequest
-	38, // 81: surge.im.v1.IMCore.ListJoinRequests:input_type -> surge.im.v1.GetGroupRequest
-	52, // 82: surge.im.v1.IMCore.RequestJoin:input_type -> surge.im.v1.LeaveGroupRequest
-	72, // 83: surge.im.v1.IMCore.DecideJoin:input_type -> surge.im.v1.DecideJoinRequest
-	74, // 84: surge.im.v1.IMCore.ReactMessage:input_type -> surge.im.v1.ReactMessageRequest
-	76, // 85: surge.im.v1.IMCore.AddFavorite:input_type -> surge.im.v1.FavoriteRequest
-	78, // 86: surge.im.v1.IMCore.ListFavorites:input_type -> surge.im.v1.ListFavoritesRequest
-	76, // 87: surge.im.v1.IMCore.DeleteFavorite:input_type -> surge.im.v1.FavoriteRequest
-	38, // 88: surge.im.v1.IMCore.CreateGroupInvite:input_type -> surge.im.v1.GetGroupRequest
-	81, // 89: surge.im.v1.IMCore.JoinByInvite:input_type -> surge.im.v1.JoinInviteRequest
-	82, // 90: surge.im.v1.IMCore.SetDraft:input_type -> surge.im.v1.SetDraftRequest
-	83, // 91: surge.im.v1.IMCore.PinChatMessage:input_type -> surge.im.v1.PinChatMessageRequest
-	38, // 92: surge.im.v1.IMCore.GetPinnedMessage:input_type -> surge.im.v1.GetGroupRequest
-	85, // 93: surge.im.v1.IMCore.ReportMessage:input_type -> surge.im.v1.ReportRequest
-	17, // 94: surge.im.v1.IMCore.GetSettings:input_type -> surge.im.v1.ListFriendsRequest
-	86, // 95: surge.im.v1.IMCore.SetSettings:input_type -> surge.im.v1.UserSettings
-	24, // 96: surge.im.v1.IMCore.ResetPassword:input_type -> surge.im.v1.LoginRequest
-	25, // 97: surge.im.v1.IMCore.DeleteAccount:input_type -> surge.im.v1.GetProfileRequest
-	81, // 98: surge.im.v1.IMCore.RevokeGroupInvite:input_type -> surge.im.v1.JoinInviteRequest
-	4,  // 99: surge.im.v1.IMCore.Send:output_type -> surge.im.v1.SendMessageResponse
-	6,  // 100: surge.im.v1.IMCore.Sync:output_type -> surge.im.v1.SyncInboxResponse
-	1,  // 101: surge.im.v1.IMCore.Watermark:output_type -> surge.im.v1.WatermarkResponse
-	9,  // 102: surge.im.v1.IMCore.ListConversations:output_type -> surge.im.v1.ListConversationsResponse
-	12, // 103: surge.im.v1.IMCore.GetTimeline:output_type -> surge.im.v1.GetTimelineResponse
-	15, // 104: surge.im.v1.IMCore.AddFriend:output_type -> surge.im.v1.AddFriendResponse
-	18, // 105: surge.im.v1.IMCore.ListFriends:output_type -> surge.im.v1.ListFriendsResponse
-	20, // 106: surge.im.v1.IMCore.LookupUser:output_type -> surge.im.v1.LookupUserResponse
-	22, // 107: surge.im.v1.IMCore.SearchUsers:output_type -> surge.im.v1.SearchUsersResponse
-	27, // 108: surge.im.v1.IMCore.Register:output_type -> surge.im.v1.UserProfile
-	27, // 109: surge.im.v1.IMCore.VerifyPassword:output_type -> surge.im.v1.UserProfile
-	27, // 110: surge.im.v1.IMCore.GetProfile:output_type -> surge.im.v1.UserProfile
-	27, // 111: surge.im.v1.IMCore.UpdateProfile:output_type -> surge.im.v1.UserProfile
-	35, // 112: surge.im.v1.IMCore.CreateGroup:output_type -> surge.im.v1.CreateGroupResponse
-	39, // 113: surge.im.v1.IMCore.InviteGroup:output_type -> surge.im.v1.GroupResponse
-	39, // 114: surge.im.v1.IMCore.KickGroup:output_type -> surge.im.v1.GroupResponse
-	39, // 115: surge.im.v1.IMCore.GetGroup:output_type -> surge.im.v1.GroupResponse
-	39, // 116: surge.im.v1.IMCore.UpdateGroup:output_type -> surge.im.v1.GroupResponse
-	92, // 117: surge.im.v1.IMCore.Recall:output_type -> surge.im.v1.RecallNotify
-	93, // 118: surge.im.v1.IMCore.MarkRead:output_type -> surge.im.v1.ReadReceipt
-	91, // 119: surge.im.v1.IMCore.FanoutTyping:output_type -> surge.im.v1.Typing
-	30, // 120: surge.im.v1.IMCore.SetMute:output_type -> surge.im.v1.MuteState
-	32, // 121: surge.im.v1.IMCore.ListMutes:output_type -> surge.im.v1.ListMutesResponse
-	43, // 122: surge.im.v1.IMCore.GetProfiles:output_type -> surge.im.v1.GetProfilesResponse
-	45, // 123: surge.im.v1.IMCore.RemoveFriend:output_type -> surge.im.v1.RemoveFriendResponse
-	46, // 124: surge.im.v1.IMCore.RequestFriend:output_type -> surge.im.v1.FriendRequestState
-	15, // 125: surge.im.v1.IMCore.AcceptFriend:output_type -> surge.im.v1.AddFriendResponse
-	46, // 126: surge.im.v1.IMCore.DeclineFriend:output_type -> surge.im.v1.FriendRequestState
-	47, // 127: surge.im.v1.IMCore.ListFriendRequests:output_type -> surge.im.v1.ListFriendRequestsResponse
-	49, // 128: surge.im.v1.IMCore.BlockUser:output_type -> surge.im.v1.BlockUserResponse
-	49, // 129: surge.im.v1.IMCore.UnblockUser:output_type -> surge.im.v1.BlockUserResponse
-	50, // 130: surge.im.v1.IMCore.ListBlocks:output_type -> surge.im.v1.ListBlocksResponse
-	16, // 131: surge.im.v1.IMCore.SetRemark:output_type -> surge.im.v1.Friend
-	39, // 132: surge.im.v1.IMCore.LeaveGroup:output_type -> surge.im.v1.GroupResponse
-	39, // 133: surge.im.v1.IMCore.DissolveGroup:output_type -> surge.im.v1.GroupResponse
-	39, // 134: surge.im.v1.IMCore.TransferOwner:output_type -> surge.im.v1.GroupResponse
-	55, // 135: surge.im.v1.IMCore.HideConversation:output_type -> surge.im.v1.HideConversationResponse
-	30, // 136: surge.im.v1.IMCore.SetPin:output_type -> surge.im.v1.MuteState
-	57, // 137: surge.im.v1.IMCore.GetReadState:output_type -> surge.im.v1.GetReadStateResponse
-	61, // 138: surge.im.v1.IMCore.SearchMessages:output_type -> surge.im.v1.SearchMessagesResponse
-	39, // 139: surge.im.v1.IMCore.SetGroupMuteAll:output_type -> surge.im.v1.GroupResponse
-	16, // 140: surge.im.v1.IMCore.SetFriendTags:output_type -> surge.im.v1.Friend
-	64, // 141: surge.im.v1.IMCore.ListFriendTags:output_type -> surge.im.v1.ListFriendTagsResponse
-	27, // 142: surge.im.v1.IMCore.SetPublicKey:output_type -> surge.im.v1.UserProfile
-	43, // 143: surge.im.v1.IMCore.GetPublicKeys:output_type -> surge.im.v1.GetProfilesResponse
-	92, // 144: surge.im.v1.IMCore.ConsumeEphemeral:output_type -> surge.im.v1.RecallNotify
-	67, // 145: surge.im.v1.IMCore.AddSticker:output_type -> surge.im.v1.Sticker
-	68, // 146: surge.im.v1.IMCore.ListStickers:output_type -> surge.im.v1.ListStickersResponse
-	55, // 147: surge.im.v1.IMCore.DeleteMessage:output_type -> surge.im.v1.HideConversationResponse
-	55, // 148: surge.im.v1.IMCore.ClearConversation:output_type -> surge.im.v1.HideConversationResponse
-	39, // 149: surge.im.v1.IMCore.SetMember:output_type -> surge.im.v1.GroupResponse
-	71, // 150: surge.im.v1.IMCore.ListJoinRequests:output_type -> surge.im.v1.ListJoinRequestsResponse
-	39, // 151: surge.im.v1.IMCore.RequestJoin:output_type -> surge.im.v1.GroupResponse
-	39, // 152: surge.im.v1.IMCore.DecideJoin:output_type -> surge.im.v1.GroupResponse
-	75, // 153: surge.im.v1.IMCore.ReactMessage:output_type -> surge.im.v1.ReactionList
-	77, // 154: surge.im.v1.IMCore.AddFavorite:output_type -> surge.im.v1.Favorite
-	79, // 155: surge.im.v1.IMCore.ListFavorites:output_type -> surge.im.v1.ListFavoritesResponse
-	55, // 156: surge.im.v1.IMCore.DeleteFavorite:output_type -> surge.im.v1.HideConversationResponse
-	80, // 157: surge.im.v1.IMCore.CreateGroupInvite:output_type -> surge.im.v1.GroupInvite
-	39, // 158: surge.im.v1.IMCore.JoinByInvite:output_type -> surge.im.v1.GroupResponse
-	55, // 159: surge.im.v1.IMCore.SetDraft:output_type -> surge.im.v1.HideConversationResponse
-	84, // 160: surge.im.v1.IMCore.PinChatMessage:output_type -> surge.im.v1.PinnedMessage
-	84, // 161: surge.im.v1.IMCore.GetPinnedMessage:output_type -> surge.im.v1.PinnedMessage
-	55, // 162: surge.im.v1.IMCore.ReportMessage:output_type -> surge.im.v1.HideConversationResponse
-	86, // 163: surge.im.v1.IMCore.GetSettings:output_type -> surge.im.v1.UserSettings
-	86, // 164: surge.im.v1.IMCore.SetSettings:output_type -> surge.im.v1.UserSettings
-	27, // 165: surge.im.v1.IMCore.ResetPassword:output_type -> surge.im.v1.UserProfile
-	55, // 166: surge.im.v1.IMCore.DeleteAccount:output_type -> surge.im.v1.HideConversationResponse
-	55, // 167: surge.im.v1.IMCore.RevokeGroupInvite:output_type -> surge.im.v1.HideConversationResponse
-	99, // [99:168] is the sub-list for method output_type
-	30, // [30:99] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	88,  // 0: surge.im.v1.SendMessageRequest.payload:type_name -> surge.im.v1.Payload
+	89,  // 1: surge.im.v1.SendMessageResponse.ack:type_name -> surge.im.v1.Ack
+	90,  // 2: surge.im.v1.SendMessageResponse.peer_push:type_name -> surge.im.v1.Push
+	3,   // 3: surge.im.v1.SendMessageResponse.peer_route:type_name -> surge.im.v1.RecipientHint
+	3,   // 4: surge.im.v1.SendMessageResponse.fanout_routes:type_name -> surge.im.v1.RecipientHint
+	91,  // 5: surge.im.v1.SyncInboxResponse.sync:type_name -> surge.im.v1.SyncResponse
+	27,  // 6: surge.im.v1.Conversation.peer_profile:type_name -> surge.im.v1.UserProfile
+	8,   // 7: surge.im.v1.ListConversationsResponse.conversations:type_name -> surge.im.v1.Conversation
+	88,  // 8: surge.im.v1.TimelineMessage.payload:type_name -> surge.im.v1.Payload
+	73,  // 9: surge.im.v1.TimelineMessage.reactions:type_name -> surge.im.v1.ReactionBucket
+	11,  // 10: surge.im.v1.GetTimelineResponse.messages:type_name -> surge.im.v1.TimelineMessage
+	90,  // 11: surge.im.v1.GatewayPush.push:type_name -> surge.im.v1.Push
+	92,  // 12: surge.im.v1.GatewayPush.typing:type_name -> surge.im.v1.Typing
+	93,  // 13: surge.im.v1.GatewayPush.recalled:type_name -> surge.im.v1.RecallNotify
+	94,  // 14: surge.im.v1.GatewayPush.read:type_name -> surge.im.v1.ReadReceipt
+	16,  // 15: surge.im.v1.ListFriendsResponse.friends:type_name -> surge.im.v1.Friend
+	27,  // 16: surge.im.v1.SearchUsersResponse.users:type_name -> surge.im.v1.UserProfile
+	33,  // 17: surge.im.v1.GroupResponse.members:type_name -> surge.im.v1.GroupMember
+	27,  // 18: surge.im.v1.GetProfilesResponse.users:type_name -> surge.im.v1.UserProfile
+	46,  // 19: surge.im.v1.ListFriendRequestsResponse.incoming:type_name -> surge.im.v1.FriendRequestState
+	46,  // 20: surge.im.v1.ListFriendRequestsResponse.outgoing:type_name -> surge.im.v1.FriendRequestState
+	58,  // 21: surge.im.v1.GetReadStateResponse.cursors:type_name -> surge.im.v1.ReadCursor
+	11,  // 22: surge.im.v1.SearchHit.message:type_name -> surge.im.v1.TimelineMessage
+	60,  // 23: surge.im.v1.SearchMessagesResponse.hits:type_name -> surge.im.v1.SearchHit
+	63,  // 24: surge.im.v1.ListFriendTagsResponse.tags:type_name -> surge.im.v1.TagGroup
+	67,  // 25: surge.im.v1.ListStickersResponse.stickers:type_name -> surge.im.v1.Sticker
+	70,  // 26: surge.im.v1.ListJoinRequestsResponse.requests:type_name -> surge.im.v1.JoinRequest
+	73,  // 27: surge.im.v1.ReactionList.reactions:type_name -> surge.im.v1.ReactionBucket
+	88,  // 28: surge.im.v1.Favorite.payload:type_name -> surge.im.v1.Payload
+	77,  // 29: surge.im.v1.ListFavoritesResponse.favorites:type_name -> surge.im.v1.Favorite
+	86,  // 30: surge.im.v1.SettingsBatchResponse.settings:type_name -> surge.im.v1.UserSettings
+	2,   // 31: surge.im.v1.IMCore.Send:input_type -> surge.im.v1.SendMessageRequest
+	5,   // 32: surge.im.v1.IMCore.Sync:input_type -> surge.im.v1.SyncInboxRequest
+	0,   // 33: surge.im.v1.IMCore.Watermark:input_type -> surge.im.v1.WatermarkRequest
+	7,   // 34: surge.im.v1.IMCore.ListConversations:input_type -> surge.im.v1.ListConversationsRequest
+	10,  // 35: surge.im.v1.IMCore.GetTimeline:input_type -> surge.im.v1.GetTimelineRequest
+	14,  // 36: surge.im.v1.IMCore.AddFriend:input_type -> surge.im.v1.AddFriendRequest
+	17,  // 37: surge.im.v1.IMCore.ListFriends:input_type -> surge.im.v1.ListFriendsRequest
+	19,  // 38: surge.im.v1.IMCore.LookupUser:input_type -> surge.im.v1.LookupUserRequest
+	21,  // 39: surge.im.v1.IMCore.SearchUsers:input_type -> surge.im.v1.SearchUsersRequest
+	23,  // 40: surge.im.v1.IMCore.Register:input_type -> surge.im.v1.RegisterRequest
+	24,  // 41: surge.im.v1.IMCore.VerifyPassword:input_type -> surge.im.v1.LoginRequest
+	25,  // 42: surge.im.v1.IMCore.GetProfile:input_type -> surge.im.v1.GetProfileRequest
+	26,  // 43: surge.im.v1.IMCore.UpdateProfile:input_type -> surge.im.v1.UpdateProfileRequest
+	34,  // 44: surge.im.v1.IMCore.CreateGroup:input_type -> surge.im.v1.CreateGroupRequest
+	36,  // 45: surge.im.v1.IMCore.InviteGroup:input_type -> surge.im.v1.InviteGroupRequest
+	37,  // 46: surge.im.v1.IMCore.KickGroup:input_type -> surge.im.v1.KickGroupRequest
+	38,  // 47: surge.im.v1.IMCore.GetGroup:input_type -> surge.im.v1.GetGroupRequest
+	28,  // 48: surge.im.v1.IMCore.UpdateGroup:input_type -> surge.im.v1.UpdateGroupRequest
+	40,  // 49: surge.im.v1.IMCore.Recall:input_type -> surge.im.v1.RecallMessageRequest
+	41,  // 50: surge.im.v1.IMCore.MarkRead:input_type -> surge.im.v1.MarkReadRequest
+	92,  // 51: surge.im.v1.IMCore.FanoutTyping:input_type -> surge.im.v1.Typing
+	29,  // 52: surge.im.v1.IMCore.SetMute:input_type -> surge.im.v1.SetMuteRequest
+	31,  // 53: surge.im.v1.IMCore.ListMutes:input_type -> surge.im.v1.ListMutesRequest
+	42,  // 54: surge.im.v1.IMCore.GetProfiles:input_type -> surge.im.v1.GetProfilesRequest
+	44,  // 55: surge.im.v1.IMCore.RemoveFriend:input_type -> surge.im.v1.RemoveFriendRequest
+	14,  // 56: surge.im.v1.IMCore.RequestFriend:input_type -> surge.im.v1.AddFriendRequest
+	14,  // 57: surge.im.v1.IMCore.AcceptFriend:input_type -> surge.im.v1.AddFriendRequest
+	14,  // 58: surge.im.v1.IMCore.DeclineFriend:input_type -> surge.im.v1.AddFriendRequest
+	17,  // 59: surge.im.v1.IMCore.ListFriendRequests:input_type -> surge.im.v1.ListFriendsRequest
+	48,  // 60: surge.im.v1.IMCore.BlockUser:input_type -> surge.im.v1.BlockUserRequest
+	48,  // 61: surge.im.v1.IMCore.UnblockUser:input_type -> surge.im.v1.BlockUserRequest
+	17,  // 62: surge.im.v1.IMCore.ListBlocks:input_type -> surge.im.v1.ListFriendsRequest
+	51,  // 63: surge.im.v1.IMCore.SetRemark:input_type -> surge.im.v1.SetRemarkRequest
+	52,  // 64: surge.im.v1.IMCore.LeaveGroup:input_type -> surge.im.v1.LeaveGroupRequest
+	52,  // 65: surge.im.v1.IMCore.DissolveGroup:input_type -> surge.im.v1.LeaveGroupRequest
+	53,  // 66: surge.im.v1.IMCore.TransferOwner:input_type -> surge.im.v1.TransferOwnerRequest
+	54,  // 67: surge.im.v1.IMCore.HideConversation:input_type -> surge.im.v1.HideConversationRequest
+	29,  // 68: surge.im.v1.IMCore.SetPin:input_type -> surge.im.v1.SetMuteRequest
+	56,  // 69: surge.im.v1.IMCore.GetReadState:input_type -> surge.im.v1.GetReadStateRequest
+	59,  // 70: surge.im.v1.IMCore.SearchMessages:input_type -> surge.im.v1.SearchMessagesRequest
+	29,  // 71: surge.im.v1.IMCore.SetGroupMuteAll:input_type -> surge.im.v1.SetMuteRequest
+	62,  // 72: surge.im.v1.IMCore.SetFriendTags:input_type -> surge.im.v1.SetFriendTagsRequest
+	17,  // 73: surge.im.v1.IMCore.ListFriendTags:input_type -> surge.im.v1.ListFriendsRequest
+	65,  // 74: surge.im.v1.IMCore.SetPublicKey:input_type -> surge.im.v1.SetPublicKeyRequest
+	42,  // 75: surge.im.v1.IMCore.GetPublicKeys:input_type -> surge.im.v1.GetProfilesRequest
+	40,  // 76: surge.im.v1.IMCore.ConsumeEphemeral:input_type -> surge.im.v1.RecallMessageRequest
+	66,  // 77: surge.im.v1.IMCore.AddSticker:input_type -> surge.im.v1.AddStickerRequest
+	17,  // 78: surge.im.v1.IMCore.ListStickers:input_type -> surge.im.v1.ListFriendsRequest
+	40,  // 79: surge.im.v1.IMCore.DeleteMessage:input_type -> surge.im.v1.RecallMessageRequest
+	54,  // 80: surge.im.v1.IMCore.ClearConversation:input_type -> surge.im.v1.HideConversationRequest
+	69,  // 81: surge.im.v1.IMCore.SetMember:input_type -> surge.im.v1.SetMemberRequest
+	38,  // 82: surge.im.v1.IMCore.ListJoinRequests:input_type -> surge.im.v1.GetGroupRequest
+	52,  // 83: surge.im.v1.IMCore.RequestJoin:input_type -> surge.im.v1.LeaveGroupRequest
+	72,  // 84: surge.im.v1.IMCore.DecideJoin:input_type -> surge.im.v1.DecideJoinRequest
+	74,  // 85: surge.im.v1.IMCore.ReactMessage:input_type -> surge.im.v1.ReactMessageRequest
+	76,  // 86: surge.im.v1.IMCore.AddFavorite:input_type -> surge.im.v1.FavoriteRequest
+	78,  // 87: surge.im.v1.IMCore.ListFavorites:input_type -> surge.im.v1.ListFavoritesRequest
+	76,  // 88: surge.im.v1.IMCore.DeleteFavorite:input_type -> surge.im.v1.FavoriteRequest
+	38,  // 89: surge.im.v1.IMCore.CreateGroupInvite:input_type -> surge.im.v1.GetGroupRequest
+	81,  // 90: surge.im.v1.IMCore.JoinByInvite:input_type -> surge.im.v1.JoinInviteRequest
+	82,  // 91: surge.im.v1.IMCore.SetDraft:input_type -> surge.im.v1.SetDraftRequest
+	83,  // 92: surge.im.v1.IMCore.PinChatMessage:input_type -> surge.im.v1.PinChatMessageRequest
+	38,  // 93: surge.im.v1.IMCore.GetPinnedMessage:input_type -> surge.im.v1.GetGroupRequest
+	85,  // 94: surge.im.v1.IMCore.ReportMessage:input_type -> surge.im.v1.ReportRequest
+	17,  // 95: surge.im.v1.IMCore.GetSettings:input_type -> surge.im.v1.ListFriendsRequest
+	42,  // 96: surge.im.v1.IMCore.GetSettingsBatch:input_type -> surge.im.v1.GetProfilesRequest
+	86,  // 97: surge.im.v1.IMCore.SetSettings:input_type -> surge.im.v1.UserSettings
+	24,  // 98: surge.im.v1.IMCore.ResetPassword:input_type -> surge.im.v1.LoginRequest
+	25,  // 99: surge.im.v1.IMCore.DeleteAccount:input_type -> surge.im.v1.GetProfileRequest
+	81,  // 100: surge.im.v1.IMCore.RevokeGroupInvite:input_type -> surge.im.v1.JoinInviteRequest
+	4,   // 101: surge.im.v1.IMCore.Send:output_type -> surge.im.v1.SendMessageResponse
+	6,   // 102: surge.im.v1.IMCore.Sync:output_type -> surge.im.v1.SyncInboxResponse
+	1,   // 103: surge.im.v1.IMCore.Watermark:output_type -> surge.im.v1.WatermarkResponse
+	9,   // 104: surge.im.v1.IMCore.ListConversations:output_type -> surge.im.v1.ListConversationsResponse
+	12,  // 105: surge.im.v1.IMCore.GetTimeline:output_type -> surge.im.v1.GetTimelineResponse
+	15,  // 106: surge.im.v1.IMCore.AddFriend:output_type -> surge.im.v1.AddFriendResponse
+	18,  // 107: surge.im.v1.IMCore.ListFriends:output_type -> surge.im.v1.ListFriendsResponse
+	20,  // 108: surge.im.v1.IMCore.LookupUser:output_type -> surge.im.v1.LookupUserResponse
+	22,  // 109: surge.im.v1.IMCore.SearchUsers:output_type -> surge.im.v1.SearchUsersResponse
+	27,  // 110: surge.im.v1.IMCore.Register:output_type -> surge.im.v1.UserProfile
+	27,  // 111: surge.im.v1.IMCore.VerifyPassword:output_type -> surge.im.v1.UserProfile
+	27,  // 112: surge.im.v1.IMCore.GetProfile:output_type -> surge.im.v1.UserProfile
+	27,  // 113: surge.im.v1.IMCore.UpdateProfile:output_type -> surge.im.v1.UserProfile
+	35,  // 114: surge.im.v1.IMCore.CreateGroup:output_type -> surge.im.v1.CreateGroupResponse
+	39,  // 115: surge.im.v1.IMCore.InviteGroup:output_type -> surge.im.v1.GroupResponse
+	39,  // 116: surge.im.v1.IMCore.KickGroup:output_type -> surge.im.v1.GroupResponse
+	39,  // 117: surge.im.v1.IMCore.GetGroup:output_type -> surge.im.v1.GroupResponse
+	39,  // 118: surge.im.v1.IMCore.UpdateGroup:output_type -> surge.im.v1.GroupResponse
+	93,  // 119: surge.im.v1.IMCore.Recall:output_type -> surge.im.v1.RecallNotify
+	94,  // 120: surge.im.v1.IMCore.MarkRead:output_type -> surge.im.v1.ReadReceipt
+	92,  // 121: surge.im.v1.IMCore.FanoutTyping:output_type -> surge.im.v1.Typing
+	30,  // 122: surge.im.v1.IMCore.SetMute:output_type -> surge.im.v1.MuteState
+	32,  // 123: surge.im.v1.IMCore.ListMutes:output_type -> surge.im.v1.ListMutesResponse
+	43,  // 124: surge.im.v1.IMCore.GetProfiles:output_type -> surge.im.v1.GetProfilesResponse
+	45,  // 125: surge.im.v1.IMCore.RemoveFriend:output_type -> surge.im.v1.RemoveFriendResponse
+	46,  // 126: surge.im.v1.IMCore.RequestFriend:output_type -> surge.im.v1.FriendRequestState
+	15,  // 127: surge.im.v1.IMCore.AcceptFriend:output_type -> surge.im.v1.AddFriendResponse
+	46,  // 128: surge.im.v1.IMCore.DeclineFriend:output_type -> surge.im.v1.FriendRequestState
+	47,  // 129: surge.im.v1.IMCore.ListFriendRequests:output_type -> surge.im.v1.ListFriendRequestsResponse
+	49,  // 130: surge.im.v1.IMCore.BlockUser:output_type -> surge.im.v1.BlockUserResponse
+	49,  // 131: surge.im.v1.IMCore.UnblockUser:output_type -> surge.im.v1.BlockUserResponse
+	50,  // 132: surge.im.v1.IMCore.ListBlocks:output_type -> surge.im.v1.ListBlocksResponse
+	16,  // 133: surge.im.v1.IMCore.SetRemark:output_type -> surge.im.v1.Friend
+	39,  // 134: surge.im.v1.IMCore.LeaveGroup:output_type -> surge.im.v1.GroupResponse
+	39,  // 135: surge.im.v1.IMCore.DissolveGroup:output_type -> surge.im.v1.GroupResponse
+	39,  // 136: surge.im.v1.IMCore.TransferOwner:output_type -> surge.im.v1.GroupResponse
+	55,  // 137: surge.im.v1.IMCore.HideConversation:output_type -> surge.im.v1.HideConversationResponse
+	30,  // 138: surge.im.v1.IMCore.SetPin:output_type -> surge.im.v1.MuteState
+	57,  // 139: surge.im.v1.IMCore.GetReadState:output_type -> surge.im.v1.GetReadStateResponse
+	61,  // 140: surge.im.v1.IMCore.SearchMessages:output_type -> surge.im.v1.SearchMessagesResponse
+	39,  // 141: surge.im.v1.IMCore.SetGroupMuteAll:output_type -> surge.im.v1.GroupResponse
+	16,  // 142: surge.im.v1.IMCore.SetFriendTags:output_type -> surge.im.v1.Friend
+	64,  // 143: surge.im.v1.IMCore.ListFriendTags:output_type -> surge.im.v1.ListFriendTagsResponse
+	27,  // 144: surge.im.v1.IMCore.SetPublicKey:output_type -> surge.im.v1.UserProfile
+	43,  // 145: surge.im.v1.IMCore.GetPublicKeys:output_type -> surge.im.v1.GetProfilesResponse
+	93,  // 146: surge.im.v1.IMCore.ConsumeEphemeral:output_type -> surge.im.v1.RecallNotify
+	67,  // 147: surge.im.v1.IMCore.AddSticker:output_type -> surge.im.v1.Sticker
+	68,  // 148: surge.im.v1.IMCore.ListStickers:output_type -> surge.im.v1.ListStickersResponse
+	55,  // 149: surge.im.v1.IMCore.DeleteMessage:output_type -> surge.im.v1.HideConversationResponse
+	55,  // 150: surge.im.v1.IMCore.ClearConversation:output_type -> surge.im.v1.HideConversationResponse
+	39,  // 151: surge.im.v1.IMCore.SetMember:output_type -> surge.im.v1.GroupResponse
+	71,  // 152: surge.im.v1.IMCore.ListJoinRequests:output_type -> surge.im.v1.ListJoinRequestsResponse
+	39,  // 153: surge.im.v1.IMCore.RequestJoin:output_type -> surge.im.v1.GroupResponse
+	39,  // 154: surge.im.v1.IMCore.DecideJoin:output_type -> surge.im.v1.GroupResponse
+	75,  // 155: surge.im.v1.IMCore.ReactMessage:output_type -> surge.im.v1.ReactionList
+	77,  // 156: surge.im.v1.IMCore.AddFavorite:output_type -> surge.im.v1.Favorite
+	79,  // 157: surge.im.v1.IMCore.ListFavorites:output_type -> surge.im.v1.ListFavoritesResponse
+	55,  // 158: surge.im.v1.IMCore.DeleteFavorite:output_type -> surge.im.v1.HideConversationResponse
+	80,  // 159: surge.im.v1.IMCore.CreateGroupInvite:output_type -> surge.im.v1.GroupInvite
+	39,  // 160: surge.im.v1.IMCore.JoinByInvite:output_type -> surge.im.v1.GroupResponse
+	55,  // 161: surge.im.v1.IMCore.SetDraft:output_type -> surge.im.v1.HideConversationResponse
+	84,  // 162: surge.im.v1.IMCore.PinChatMessage:output_type -> surge.im.v1.PinnedMessage
+	84,  // 163: surge.im.v1.IMCore.GetPinnedMessage:output_type -> surge.im.v1.PinnedMessage
+	55,  // 164: surge.im.v1.IMCore.ReportMessage:output_type -> surge.im.v1.HideConversationResponse
+	86,  // 165: surge.im.v1.IMCore.GetSettings:output_type -> surge.im.v1.UserSettings
+	87,  // 166: surge.im.v1.IMCore.GetSettingsBatch:output_type -> surge.im.v1.SettingsBatchResponse
+	86,  // 167: surge.im.v1.IMCore.SetSettings:output_type -> surge.im.v1.UserSettings
+	27,  // 168: surge.im.v1.IMCore.ResetPassword:output_type -> surge.im.v1.UserProfile
+	55,  // 169: surge.im.v1.IMCore.DeleteAccount:output_type -> surge.im.v1.HideConversationResponse
+	55,  // 170: surge.im.v1.IMCore.RevokeGroupInvite:output_type -> surge.im.v1.HideConversationResponse
+	101, // [101:171] is the sub-list for method output_type
+	31,  // [31:101] is the sub-list for method input_type
+	31,  // [31:31] is the sub-list for extension type_name
+	31,  // [31:31] is the sub-list for extension extendee
+	0,   // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_proto_im_v1_core_proto_init() }
@@ -8048,6 +8110,18 @@ func file_proto_im_v1_core_proto_init() {
 				return nil
 			}
 		}
+		file_proto_im_v1_core_proto_msgTypes[87].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SettingsBatchResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -8055,7 +8129,7 @@ func file_proto_im_v1_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_im_v1_core_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   87,
+			NumMessages:   88,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	imv1 "github.com/davveo/surge/proto/gen/im/v1"
 )
@@ -64,5 +65,47 @@ func TestHubPushRosterSkipsSelf(t *testing.T) {
 	case <-c.send:
 		t.Fatal("should not push roster to self")
 	default:
+	}
+}
+
+func TestEnqueueDropsTypingWhenFull(t *testing.T) {
+	c := &Conn{id: "c", send: make(chan *imv1.Envelope, 1)}
+	c.send <- &imv1.Envelope{}
+	c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Typing{Typing: &imv1.Typing{}}})
+	if len(c.send) != 1 {
+		t.Fatal("typing should drop when queue is full")
+	}
+}
+
+func TestEnqueueWaitsForPush(t *testing.T) {
+	old := sendQueueWait
+	sendQueueWait = 300 * time.Millisecond
+	defer func() { sendQueueWait = old }()
+	c := &Conn{id: "c", send: make(chan *imv1.Envelope, 1)}
+	c.send <- &imv1.Envelope{}
+	go func() {
+		time.Sleep(40 * time.Millisecond)
+		<-c.send
+	}()
+	c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Push{Push: &imv1.Push{Cid: "x"}}})
+	select {
+	case env := <-c.send:
+		if env.GetPush() == nil {
+			t.Fatal("want queued push")
+		}
+	default:
+		t.Fatal("push should wait and enqueue")
+	}
+}
+
+func TestEnqueueStallsWithoutEnqueue(t *testing.T) {
+	old := sendQueueWait
+	sendQueueWait = 20 * time.Millisecond
+	defer func() { sendQueueWait = old }()
+	c := &Conn{id: "c", send: make(chan *imv1.Envelope, 1)}
+	c.send <- &imv1.Envelope{}
+	c.enqueue(&imv1.Envelope{Body: &imv1.Envelope_Push{Push: &imv1.Push{Cid: "x"}}})
+	if len(c.send) != 1 {
+		t.Fatal("stalled push should not replace the queued frame")
 	}
 }

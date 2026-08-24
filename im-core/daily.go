@@ -296,7 +296,6 @@ func (s *memoryStore) ReportMessage(_ context.Context, uid, cid, msgID, reason s
 	return nil
 }
 
-
 func (s *memoryStore) GetSettings(_ context.Context, uid string) (*imv1.UserSettings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -305,6 +304,18 @@ func (s *memoryStore) GetSettings(_ context.Context, uid string) (*imv1.UserSett
 		return fillSettingsDefaults(&cp), nil
 	}
 	return defaultSettings(uid), nil
+}
+
+func (s *memoryStore) HideLastSeenMap(_ context.Context, uids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, uid := range uniqueUIDs(uids) {
+		if st := s.settings[uid]; st != nil && st.HideLastSeen {
+			out[uid] = true
+		}
+	}
+	return out, nil
 }
 
 func (s *memoryStore) SetSettings(_ context.Context, st *imv1.UserSettings) (*imv1.UserSettings, error) {
